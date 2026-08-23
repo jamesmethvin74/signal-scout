@@ -1,0 +1,12 @@
+{
+  "name": "Signal Scout",
+  "short_name": "Signal Scout",
+  "description": "A location-aware shortwave and medium-wave listening guide.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "categories": ["utilities", "education", "lifestyle"]
+}
