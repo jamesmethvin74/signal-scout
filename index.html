@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <meta name="description" content="Signal Scout helps radio listeners find shortwave and medium-wave signals they may be able to hear right now." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Signal Scout — What can I hear?</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="signal-logo" aria-hidden="true"></div>
+        <div>
+          <h1>Signal Scout</h1>
+          <p>What can I hear?</p>
+        </div>
+      </div>
+      <div class="utc-clock" id="utcClock">--:-- UTC</div>
+    </header>
+
+    <main>
+      <section class="location-card">
+        <div>
+          <span class="eyebrow">Listening from</span>
+          <h2 id="locationName">Location not set</h2>
+          <p id="locationMeta">Use your location to rank signals by distance, path, power, and band conditions.</p>
+        </div>
+        <button class="primary-button" id="locationButton">◎ Use my location</button>
+      </section>
+
+      <section class="time-picker" aria-label="Time">
+        <button class="chip active" data-offset="0">Now</button>
+        <button class="chip" data-offset="1">+1 hr</button>
+        <button class="chip" data-offset="3">+3 hr</button>
+        <button class="chip" data-offset="6">Later tonight</button>
+      </section>
+
+      <section class="toolbar">
+        <div class="band-tabs" aria-label="Band">
+          <button class="tab active" data-band="SW">Shortwave</button>
+          <button class="tab" data-band="MW">Medium wave</button>
+          <button class="tab" data-band="LW">Longwave</button>
+        </div>
+        <div class="filters">
+          <input id="searchInput" type="search" placeholder="Station, country, frequency…" autocomplete="off" />
+          <select id="languageFilter" aria-label="Language">
+            <option value="all">All languages</option>
+            <option value="English">English</option>
+            <option value="Spanish">Spanish</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </section>
+
+      <aside class="notice">
+        Reception ratings are estimates, not promises. Antenna, local noise, solar conditions, and propagation can make radio wonderfully unpredictable.
+      </aside>
+
+      <section class="results-header">
+        <h2 id="resultsTitle">Best bets on the air</h2>
+        <span id="resultCount"></span>
+      </section>
+
+      <section class="signal-grid" id="signalGrid" aria-live="polite"></section>
+
+      <footer class="source-note">
+        MVP data uses a curated current shortwave starter set plus central-Arkansas AM examples. The next milestone is automated full HFCC/EiBi/FCC ingestion.
+      </footer>
+    </main>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Primary">
+    <div class="bottom-nav-inner">
+      <button class="nav-button active"><b>⌁</b><span>On air</span></button>
+      <button class="nav-button" id="bestBetsButton"><b>★</b><span>Best bets</span></button>
+      <button class="nav-button" id="aboutButton"><b>ⓘ</b><span>About</span></button>
+    </div>
+  </nav>
+
+  <script src="stations.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
