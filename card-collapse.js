@@ -37,6 +37,28 @@
     else if (stationName) stationName.insertAdjacentElement('afterend', line);
   }
 
+  function receptionMeterClass(score) {
+    if (score >= 80) return 'meter-excellent';
+    if (score >= 62) return 'meter-good';
+    if (score >= 42) return 'meter-possible';
+    return 'meter-long';
+  }
+
+  function decorateReceptionMeter(card) {
+    const meter = card.querySelector('.score-meter');
+    const scoreText = card.querySelector('.score small')?.textContent || '';
+    const score = Number(scoreText.split('/')[0]);
+    if (!meter || !Number.isFinite(score)) return;
+
+    meter.classList.remove('meter-excellent', 'meter-good', 'meter-possible', 'meter-long');
+    meter.classList.add(receptionMeterClass(score));
+    meter.setAttribute('role', 'meter');
+    meter.setAttribute('aria-valuemin', '0');
+    meter.setAttribute('aria-valuemax', '100');
+    meter.setAttribute('aria-valuenow', String(score));
+    meter.setAttribute('aria-label', `Reception score ${score} out of 100`);
+  }
+
   function setExpanded(card, expanded) {
     card.classList.toggle('card-expanded', expanded);
     card.classList.toggle('card-collapsed', !expanded);
@@ -53,6 +75,7 @@
     if (!card.classList.contains('signal-card')) return;
     markSummaryDetails(card);
     addTransmitterSummary(card);
+    decorateReceptionMeter(card);
 
     if (!card.querySelector('[data-card-toggle]')) {
       const button = document.createElement('button');
@@ -84,6 +107,24 @@
       margin-top: 2px;
       color: #b7c8da;
     }
+
+    .score-meter {
+      background: repeating-linear-gradient(90deg, #14262c 0 5px, transparent 5px 7px) !important;
+      border-color: #254047 !important;
+    }
+
+    .score-meter i {
+      display: block;
+      height: 100%;
+      border-radius: 0 !important;
+      background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 7px) !important;
+      filter: drop-shadow(0 0 2px currentColor);
+    }
+
+    .score-meter.meter-excellent i { color: #61e786; }
+    .score-meter.meter-good i { color: #c7df5a; }
+    .score-meter.meter-possible i { color: #efbd5c; }
+    .score-meter.meter-long i { color: #ff7077; }
 
     .card-toggle {
       width: 100%;
