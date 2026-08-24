@@ -1,5 +1,10 @@
 (() => {
   const stations = window.SIGNAL_SCOUT_STATIONS || [];
+  const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
+  const LOCATION_STORAGE_VERSION = 1;
+  const LOCATION_REFRESH_MS = 15 * 60 * 1000;
+  let locationRequestInFlight = false;
+
   const state = {
     band: 'SW',
     offsetHours: 0,
@@ -15,6 +20,100 @@
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
   const pad = (value) => String(value).padStart(2, '0');
+
+  function validStoredLocation(value) {
+    const lat = Number(value?.lat);
+    const lon = Number(value?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return null;
+    }
+
+    const accuracyValue = Number(value?.accuracy);
+    const updatedAtValue = Number(value?.updatedAt);
+    const deviceTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+    return {
+      lat,
+      lon,
+      label: typeof value?.label === 'string' && value.label.trim()
+        ? value.label.trim()
+        : `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+      timeZone: typeof value?.timeZone === 'string' && value.timeZone.trim()
+        ? value.timeZone.trim()
+        : deviceTimeZone,
+      accuracy: Number.isFinite(accuracyValue) && accuracyValue >= 0 ? accuracyValue : null,
+      updatedAt: Number.isFinite(updatedAtValue) && updatedAtValue > 0 ? updatedAtValue : 0
+    };
+  }
+
+  function loadStoredLocation() {
+    try {
+      const raw = window.localStorage?.getItem(LOCATION_STORAGE_KEY);
+      if (!raw) return null;
+      const payload = JSON.parse(raw);
+      if (!payload || payload.version !== LOCATION_STORAGE_VERSION) return null;
+      return validStoredLocation(payload);
+    } catch {
+      return null;
+    }
+  }
+
+  function saveStoredLocation(location) {
+    const normalized = validStoredLocation(location);
+    if (!normalized) return false;
+    try {
+      window.localStorage?.setItem(LOCATION_STORAGE_KEY, JSON.stringify({
+        version: LOCATION_STORAGE_VERSION,
+        ...normalized
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function updateLocationUI(location, buttonText = '✓ Located') {
+    const normalized = validStoredLocation(location);
+    if (!normalized) return;
+
+    $('#locationName').textContent = normalized.label;
+    const accuracyText = normalized.accuracy == null
+      ? ''
+      : ` · accuracy ±${Math.round(normalized.accuracy)} m`;
+    $('#locationMeta').textContent = `${normalized.lat.toFixed(3)}, ${normalized.lon.toFixed(3)}${accuracyText} · ${normalized.timeZone}`;
+    $('#locationButton').textContent = buttonText;
+  }
+
+  function applyLocation(location, { persist = false, rerender = true, buttonText = '✓ Located' } = {}) {
+    const normalized = validStoredLocation(location);
+    if (!normalized) return false;
+
+    state.user.lat = normalized.lat;
+    state.user.lon = normalized.lon;
+    state.user.label = normalized.label;
+    state.user.timeZone = normalized.timeZone;
+    updateLocationUI(normalized, buttonText);
+    if (persist) saveStoredLocation(normalized);
+    if (rerender) render();
+    return true;
+  }
+
+  function restoreStoredLocation() {
+    const stored = loadStoredLocation();
+    if (!stored) return null;
+    applyLocation(stored, { rerender: false });
+    return stored;
+  }
+
+  async function geolocationPermissionState() {
+    if (!navigator.permissions?.query) return null;
+    try {
+      const result = await navigator.permissions.query({ name: 'geolocation' });
+      return result?.state || null;
+    } catch {
+      return null;
+    }
+  }
 
   function updateClock() {
     const now = new Date();
@@ -377,39 +476,116 @@
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   }
 
-  function requestLocation() {
+  async function requestLocation({ automatic = false, permissionState = null } = {}) {
     const button = $('#locationButton');
+    const saved = loadStoredLocation();
+
     if (!navigator.geolocation) {
-      $('#locationMeta').textContent = 'Geolocation is not available in this browser.';
+      if (!saved) $('#locationMeta').textContent = 'Geolocation is not available in this browser.';
+      return;
+    }
+    if (locationRequestInFlight) return;
+
+    let permission = permissionState;
+    if (permission == null) permission = await geolocationPermissionState();
+
+    if (permission === 'denied') {
+      if (saved) {
+        applyLocation(saved, { rerender: false, buttonText: '◎ Try again' });
+        $('#locationMeta').textContent += ' · location access blocked by browser';
+      } else {
+        $('#locationMeta').textContent = 'Location access is blocked. Allow location for Signal Scout in your browser settings, then try again.';
+        button.textContent = '◎ Try again';
+      }
       return;
     }
 
-    button.textContent = 'Locating…';
+    locationRequestInFlight = true;
+    button.textContent = automatic && saved ? 'Refreshing…' : 'Locating…';
+
+    const options = {
+      enableHighAccuracy: false,
+      maximumAge: 300000
+    };
+    if (permission === 'granted') options.timeout = 10000;
+
     navigator.geolocation.getCurrentPosition(async (position) => {
-      state.user.lat = position.coords.latitude;
-      state.user.lon = position.coords.longitude;
-      const [label, timeZone] = await Promise.all([
-        reverseGeocode(state.user.lat, state.user.lon),
-        resolveTimeZone(state.user.lat, state.user.lon)
-      ]);
-      state.user.label = label;
-      state.user.timeZone = timeZone;
-      $('#locationName').textContent = state.user.label;
-      $('#locationMeta').textContent = `${state.user.lat.toFixed(3)}, ${state.user.lon.toFixed(3)} · accuracy ±${Math.round(position.coords.accuracy)} m · ${state.user.timeZone}`;
-      button.textContent = '✓ Located';
-      render();
-    }, () => {
-      $('#locationMeta').textContent = 'Location permission was not granted. You can still browse schedules, but reception ratings stay generic.';
+      try {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        const [label, timeZone] = await Promise.all([
+          reverseGeocode(lat, lon),
+          resolveTimeZone(lat, lon)
+        ]);
+        const location = {
+          lat,
+          lon,
+          label,
+          timeZone,
+          accuracy: position.coords.accuracy,
+          updatedAt: Date.now()
+        };
+        applyLocation(location, { persist: true, buttonText: '✓ Located' });
+      } finally {
+        locationRequestInFlight = false;
+      }
+    }, (error) => {
+      locationRequestInFlight = false;
+      const fallback = loadStoredLocation();
+      if (fallback) {
+        applyLocation(fallback, { buttonText: '◎ Update location' });
+        return;
+      }
+
+      if (error?.code === 1) {
+        $('#locationMeta').textContent = 'Location permission was not granted. You can still browse schedules, but reception ratings stay generic.';
+      } else {
+        $('#locationMeta').textContent = 'Signal Scout could not determine your location. You can still browse schedules and try again anytime.';
+      }
       button.textContent = '◎ Try again';
       render();
-    }, {
-      enableHighAccuracy: false,
-      timeout: 10000,
-      maximumAge: 300000
-    });
+    }, options);
   }
 
-  $('#locationButton').addEventListener('click', requestLocation);
+  async function refreshGrantedLocation() {
+    const permission = await geolocationPermissionState();
+    if (permission !== 'granted') return;
+    const saved = loadStoredLocation();
+    if (saved && saved.updatedAt && Date.now() - saved.updatedAt < LOCATION_REFRESH_MS) return;
+    requestLocation({ automatic: true, permissionState: permission });
+  }
+
+  async function initializeLocation() {
+    const saved = restoreStoredLocation();
+    if (saved) render();
+
+    if (!navigator.geolocation) {
+      if (!saved) $('#locationMeta').textContent = 'Geolocation is not available in this browser.';
+      return;
+    }
+
+    const permission = await geolocationPermissionState();
+    if (permission === 'denied') {
+      if (!saved) {
+        $('#locationMeta').textContent = 'Location access is blocked. Allow location for Signal Scout in your browser settings, then try again.';
+        $('#locationButton').textContent = '◎ Try again';
+      }
+      return;
+    }
+
+    if (permission === 'granted') {
+      if (!saved || !saved.updatedAt || Date.now() - saved.updatedAt >= LOCATION_REFRESH_MS) {
+        requestLocation({ automatic: true, permissionState: permission });
+      }
+      return;
+    }
+
+    // First visit (or a browser without the Permissions API): ask once if there
+    // is no saved location. A saved location is restored without re-prompting.
+    if (!saved) requestLocation({ automatic: true, permissionState: permission });
+  }
+
+  $('#locationButton').addEventListener('click', () => requestLocation());
   $('#searchInput').addEventListener('input', render);
   $('#languageFilter').addEventListener('change', render);
 
@@ -444,4 +620,6 @@
   updateClock();
   window.setInterval(updateClock, 30000);
   render();
+  initializeLocation();
+  window.setInterval(refreshGrantedLocation, LOCATION_REFRESH_MS);
 })();
