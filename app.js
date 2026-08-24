@@ -4,7 +4,12 @@
     band: 'SW',
     offsetHours: 0,
     bestOnly: false,
-    user: { lat: null, lon: null, label: 'Location not set' }
+    user: {
+      lat: null,
+      lon: null,
+      label: 'Location not set',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    }
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -197,10 +202,64 @@
     return !language.includes('English') && !language.includes('Spanish');
   }
 
-  function shortwaveSchedule(station) {
+  function utcScheduleText(station) {
     const start = `${station.start.slice(0, 2)}:${station.start.slice(2)}`;
     const end = station.end === '2400' ? '24:00' : `${station.end.slice(0, 2)}:${station.end.slice(2)}`;
     return `${start}–${end} UTC`;
+  }
+
+  function shortwaveSchedule(station, selectedDate) {
+    const startMinutes = hhmmToMinutes(station.start);
+    const endMinutes = hhmmToMinutes(station.end);
+    const selectedMinutes = selectedDate.getUTCHours() * 60 + selectedDate.getUTCMinutes();
+
+    let startDayOffset = 0;
+    let endDayOffset = 0;
+
+    if (startMinutes === 0 && endMinutes === 1440) {
+      endDayOffset = 1;
+    } else if (endMinutes <= startMinutes) {
+      if (selectedMinutes < endMinutes) {
+        startDayOffset = -1;
+      } else {
+        endDayOffset = 1;
+      }
+    }
+
+    const baseUtc = Date.UTC(
+      selectedDate.getUTCFullYear(),
+      selectedDate.getUTCMonth(),
+      selectedDate.getUTCDate(),
+      0, 0, 0, 0
+    );
+
+    const startDate = new Date(baseUtc + (startDayOffset * 1440 + startMinutes) * 60000);
+    const endDate = new Date(baseUtc + (endDayOffset * 1440 + endMinutes) * 60000);
+    const timeZone = state.user.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+    try {
+      const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      const zoneFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        timeZoneName: 'short'
+      });
+      const zone = zoneFormatter.formatToParts(selectedDate).find((part) => part.type === 'timeZoneName')?.value || '';
+
+      return {
+        local: `${timeFormatter.format(startDate)}–${timeFormatter.format(endDate)}${zone ? ` ${zone}` : ''}`,
+        utc: utcScheduleText(station)
+      };
+    } catch {
+      return {
+        local: utcScheduleText(station),
+        utc: ''
+      };
+    }
   }
 
   function formatFrequency(station) {
@@ -210,11 +269,13 @@
     return { value: station.frequency.toLocaleString(), unit: 'kHz' };
   }
 
-  function renderCard(station, scored) {
+  function renderCard(station, scored, selectedDate) {
     const [label, labelClass] = receptionLabel(scored.score);
     const frequency = formatFrequency(station);
     const distance = scored.distance == null ? 'Location needed' : `${Math.round(scored.distance).toLocaleString()} mi`;
-    const schedule = station.band === 'SW' ? shortwaveSchedule(station) : 'Local station; power varies day/night';
+    const schedule = station.band === 'SW'
+      ? shortwaveSchedule(station, selectedDate)
+      : { local: 'Local station; power varies day/night', utc: '' };
     const power = station.band === 'SW'
       ? `${station.power} kW`
       : `${scored.isNight ? station.nightPower : station.dayPower} kW ${scored.isNight ? 'night' : 'day'}`;
@@ -241,7 +302,7 @@
         <div class="details">
           <div class="detail">Transmitter<b>${station.transmitter}</b></div>
           <div class="detail">Distance<b>${distance}</b></div>
-          <div class="detail">Schedule<b>${schedule}</b></div>
+          <div class="detail">Schedule<b>${schedule.local}${schedule.utc ? `<span style="display:block;margin-top:2px;color:#8fa4bc;font-size:11px;font-weight:600">${schedule.utc}</span>` : ''}</b></div>
           <div class="detail">Power<b>${power}</b></div>
         </div>
         <div class="why"><b>Why this rating:</b> ${scored.why}</div>
@@ -284,7 +345,7 @@
     $('#resultCount').textContent = `${results.length} signal${results.length === 1 ? '' : 's'}`;
 
     $('#signalGrid').innerHTML = results.length
-      ? results.map(({ station, scored }) => renderCard(station, scored)).join('')
+      ? results.map(({ station, scored }) => renderCard(station, scored, date)).join('')
       : '<div class="empty-state">Nothing in the starter dataset matches those filters at this time. Try another hour, language, or band.</div>';
   }
 
@@ -303,6 +364,19 @@
     }
   }
 
+  async function resolveTimeZone(lat, lon) {
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=temperature_2m&timezone=auto`;
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('Timezone lookup failed');
+      const json = await response.json();
+      if (json.timezone) return json.timezone;
+    } catch {
+      // Fall through to the device timezone if the coordinate lookup is unavailable.
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+
   function requestLocation() {
     const button = $('#locationButton');
     if (!navigator.geolocation) {
@@ -314,9 +388,14 @@
     navigator.geolocation.getCurrentPosition(async (position) => {
       state.user.lat = position.coords.latitude;
       state.user.lon = position.coords.longitude;
-      state.user.label = await reverseGeocode(state.user.lat, state.user.lon);
+      const [label, timeZone] = await Promise.all([
+        reverseGeocode(state.user.lat, state.user.lon),
+        resolveTimeZone(state.user.lat, state.user.lon)
+      ]);
+      state.user.label = label;
+      state.user.timeZone = timeZone;
       $('#locationName').textContent = state.user.label;
-      $('#locationMeta').textContent = `${state.user.lat.toFixed(3)}, ${state.user.lon.toFixed(3)} · accuracy ±${Math.round(position.coords.accuracy)} m`;
+      $('#locationMeta').textContent = `${state.user.lat.toFixed(3)}, ${state.user.lon.toFixed(3)} · accuracy ±${Math.round(position.coords.accuracy)} m · ${state.user.timeZone}`;
       button.textContent = '✓ Located';
       render();
     }, () => {
