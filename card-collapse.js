@@ -11,6 +11,32 @@
     });
   }
 
+  function addTransmitterSummary(card) {
+    if (card.querySelector('[data-transmitter-summary]')) return;
+
+    const transmitterDetail = [...card.querySelectorAll('.details .detail')]
+      .find((detail) => detailLabel(detail) === 'transmitter');
+    const transmitter = transmitterDetail?.querySelector('b')?.textContent?.trim();
+    if (!transmitter) return;
+
+    const country = card.querySelector('.tags .tag:not([data-band-label])')?.textContent?.trim() || '';
+    const transmitterLower = transmitter.toLowerCase();
+    const countryLower = country.toLowerCase();
+    const location = country && transmitterLower !== countryLower && !transmitterLower.includes(countryLower)
+      ? `${transmitter}, ${country}`
+      : transmitter;
+
+    const line = document.createElement('div');
+    line.className = 'station-description transmitter-summary';
+    line.dataset.transmitterSummary = 'true';
+    line.textContent = `Transmitter: ${location}`;
+
+    const description = card.querySelector('.station-description');
+    const stationName = card.querySelector('.station-name');
+    if (description) description.insertAdjacentElement('afterend', line);
+    else if (stationName) stationName.insertAdjacentElement('afterend', line);
+  }
+
   function setExpanded(card, expanded) {
     card.classList.toggle('card-expanded', expanded);
     card.classList.toggle('card-collapsed', !expanded);
@@ -26,6 +52,7 @@
   function decorateCard(card) {
     if (!card.classList.contains('signal-card')) return;
     markSummaryDetails(card);
+    addTransmitterSummary(card);
 
     if (!card.querySelector('[data-card-toggle]')) {
       const button = document.createElement('button');
@@ -53,6 +80,11 @@
   const style = document.createElement('style');
   style.id = 'signal-scout-collapse-styles';
   style.textContent = `
+    .transmitter-summary {
+      margin-top: 2px;
+      color: #b7c8da;
+    }
+
     .card-toggle {
       width: 100%;
       display: flex;
