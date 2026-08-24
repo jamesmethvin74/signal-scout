@@ -14,4 +14,6 @@ Signal Scout is a location-aware radio listening guide for shortwave, medium wav
 - Reception-likelihood scoring
 - Station, frequency, transmitter, distance, schedule, language, format, and power details
 
-The initial frontend is deliberately static and lightweight so it can be deployed cheaply on GitHub Pages or Cloudflare Pages. Full automated HFCC/EiBi/FCC ingestion is the next data milestone.
+The initial frontend is deliberately static and lightweight so it can be deployed cheaply on Cloudflare Workers. Full automated HFCC/EiBi/FCC ingestion is the next data milestone.
+
+Deployment connection verification: 2026-08-23 19:49 CDT.
