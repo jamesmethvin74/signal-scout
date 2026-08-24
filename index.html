@@ -7,6 +7,7 @@
   <meta name="description" content="Signal Scout helps radio listeners find shortwave, medium-wave, and amateur radio signals and bands they may be able to hear right now." />
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="lookup.css?v=1" />
   <title>Signal Scout — What can I hear?</title>
 </head>
 <body>
@@ -70,12 +71,59 @@
       <footer class="source-note">
         Loading full A26 HFCC + EiBi shortwave schedules…
       </footer>
+
+      <section class="lookup-view" id="lookupView" hidden aria-labelledby="lookupHeading">
+        <div class="lookup-hero">
+          <div class="lookup-kicker">Reverse the search</div>
+          <h2 id="lookupHeading">What am I hearing?</h2>
+          <p>Enter the frequency on your dial. Signal Scout will find what is scheduled there now and let you compare it against a live remote receiver.</p>
+
+          <div class="lookup-console">
+            <div class="lookup-frequency-wrap">
+              <input id="lookupFrequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955" aria-label="Frequency in kilohertz" />
+              <span>kHz</span>
+            </div>
+            <select id="lookupMode" aria-label="Receiver mode">
+              <option value="am">AM</option>
+              <option value="sam">SAM</option>
+              <option value="usb">USB</option>
+              <option value="lsb">LSB</option>
+            </select>
+            <button class="lookup-submit" id="lookupSubmit">Find signal</button>
+          </div>
+
+          <div class="lookup-controls">
+            <div class="lookup-time-chips" aria-label="Lookup time">
+              <button class="chip active" data-lookup-offset="0">Now</button>
+              <button class="chip" data-lookup-offset="1">+1 hr</button>
+              <button class="chip" data-lookup-offset="3">+3 hr</button>
+              <button class="chip" data-lookup-offset="6">Later tonight</button>
+            </div>
+            <div class="lookup-time-label" id="lookupTimeLabel"></div>
+          </div>
+
+          <div class="lookup-receiver-row">
+            <label for="lookupReceiver">Live receiver</label>
+            <select id="lookupReceiver" aria-label="Live remote receiver"></select>
+          </div>
+
+          <div class="lookup-helper">
+            <b>Tip:</b> 9955 means 9.955 MHz. If nothing is scheduled exactly there, Signal Scout also checks ±5 kHz in case your dial is slightly off or you landed next to the carrier.
+          </div>
+        </div>
+
+        <div class="lookup-summary" id="lookupSummary">Enter a frequency to identify what may be on the air.</div>
+        <div class="lookup-results" id="lookupResults" aria-live="polite">
+          <div class="lookup-empty">Spin the dial, type the frequency, and work backward from the signal.</div>
+        </div>
+      </section>
     </main>
   </div>
 
   <nav class="bottom-nav" aria-label="Primary">
     <div class="bottom-nav-inner">
-      <button class="nav-button active"><b>⌁</b><span>On air</span></button>
+      <button class="nav-button active" id="onAirButton"><b>⌁</b><span>On air</span></button>
+      <button class="nav-button" id="lookupButton"><b>⌕</b><span>Lookup</span></button>
       <button class="nav-button" id="bestBetsButton"><b>★</b><span>Best bets</span></button>
       <button class="nav-button" id="aboutButton"><b>ⓘ</b><span>About</span></button>
     </div>
@@ -87,6 +135,7 @@
   <script src="app.js"></script>
   <script src="band-labels.js?v=2"></script>
   <script src="ham-ui.js?v=1"></script>
+  <script src="lookup.js?v=1"></script>
   <script>
     (() => {
       const descriptions = {
