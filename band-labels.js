@@ -1,5 +1,6 @@
 (() => {
   const NOMINAL_SW_BANDS = [120, 90, 75, 60, 49, 41, 31, 25, 22, 19, 16, 15, 13, 11];
+  let selectedMeterBand = 'all';
 
   function installStyles() {
     if (document.getElementById('signal-scout-antenna-styles')) return;
@@ -38,6 +39,13 @@
       .antenna-option.maybe { border-color: rgba(255,200,106,.5); }
       .antenna-option.off { opacity: .72; }
       .band-detail b { color: #8de5ff; }
+      .filters.has-band-filter {
+        grid-template-columns: minmax(0,1fr) 150px 140px;
+      }
+      #meterBandFilter[hidden] { display: none !important; }
+      @media (max-width: 520px) {
+        .filters.has-band-filter { grid-template-columns: 1fr; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -59,6 +67,12 @@
     const value = Number((valueNode?.textContent || '').replace(/,/g, '').trim());
     if (!Number.isFinite(value)) return null;
     return { value, unit };
+  }
+
+  function cardMeterBand(card) {
+    const frequency = cardFrequency(card);
+    if (!frequency || frequency.unit !== 'MHz') return null;
+    return nearestShortwaveBand(frequency.value * 1000);
   }
 
   function cardBandLabel(card) {
@@ -133,6 +147,9 @@
     const bandLabel = cardBandLabel(card);
     if (!bandLabel) return;
 
+    const meterBand = cardMeterBand(card);
+    if (meterBand) card.dataset.meterBand = String(meterBand);
+
     const tags = card.querySelector('.tags');
     if (tags && !tags.querySelector('[data-band-label]')) {
       const tag = document.createElement('span');
@@ -167,11 +184,77 @@
     }
   }
 
+  function isShortwaveSelected() {
+    return document.querySelector('.band-tabs .tab.active')?.dataset.band === 'SW';
+  }
+
+  function updateFilterVisibility() {
+    const select = document.getElementById('meterBandFilter');
+    const filters = document.querySelector('.filters');
+    if (!select || !filters) return;
+
+    const show = isShortwaveSelected();
+    select.hidden = !show;
+    filters.classList.toggle('has-band-filter', show);
+
+    if (!show) {
+      document.querySelectorAll('.signal-card').forEach((card) => {
+        card.hidden = false;
+      });
+    } else {
+      applyBandFilter();
+    }
+  }
+
+  function applyBandFilter() {
+    if (!isShortwaveSelected()) return;
+
+    let visible = 0;
+    document.querySelectorAll('.signal-card').forEach((card) => {
+      const matches = selectedMeterBand === 'all' || card.dataset.meterBand === selectedMeterBand;
+      card.hidden = !matches;
+      if (matches) visible += 1;
+    });
+
+    const count = document.getElementById('resultCount');
+    if (count) count.textContent = `${visible} signal${visible === 1 ? '' : 's'}`;
+  }
+
+  function installBandFilter() {
+    const filters = document.querySelector('.filters');
+    if (!filters || document.getElementById('meterBandFilter')) return;
+
+    const select = document.createElement('select');
+    select.id = 'meterBandFilter';
+    select.setAttribute('aria-label', 'Shortwave meter band');
+    select.innerHTML = `
+      <option value="all">All SW bands</option>
+      ${NOMINAL_SW_BANDS.map((band) => `<option value="${band}">${band}m band</option>`).join('')}
+    `;
+    select.addEventListener('change', () => {
+      selectedMeterBand = select.value;
+      applyBandFilter();
+    });
+
+    const languageFilter = document.getElementById('languageFilter');
+    if (languageFilter) filters.insertBefore(select, languageFilter);
+    else filters.appendChild(select);
+
+    document.querySelector('.band-tabs')?.addEventListener('click', () => {
+      window.setTimeout(updateFilterVisibility, 0);
+    });
+
+    updateFilterVisibility();
+  }
+
   function decorateCards() {
     document.querySelectorAll('.signal-card').forEach(decorateCard);
+    applyBandFilter();
   }
 
   installStyles();
+  installBandFilter();
+
   const grid = document.getElementById('signalGrid');
   if (!grid) return;
 
