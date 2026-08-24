@@ -86,5 +86,55 @@
   <script src="app.js"></script>
   <script src="band-labels.js?v=2"></script>
   <script src="ham-ui.js?v=1"></script>
+  <script>
+    (() => {
+      const descriptions = {
+        'WBCQ': 'Independent U.S. shortwave station carrying brokered programs that can include talk, religion, political commentary, music, hobby radio shows, and other independently produced programming.',
+        'WRMI': 'International shortwave station carrying a wide mix of relays and independent programs, including news and culture, religious shows, music, DX and radio-hobby programs, and international services.',
+        'WWCR': 'U.S. shortwave broadcaster best known for Christian and religious programming, ministries, talk and commentary, along with some specialty and independently produced shows.',
+        'WEWN': 'EWTN’s international Catholic radio service, typically featuring religious teaching, prayer and devotional programming, church news, interviews, and faith-focused features.',
+        'Radio Exterior de España': 'Spain’s international public-radio service, typically carrying news, current affairs, Spanish culture, sports, interviews, music, and features about Spain.',
+        'Radio Romania International': 'Romania’s international public broadcaster, with news, current affairs, Romanian culture and history, travel, music, sports, and programs for international listeners.',
+        'RNZ Pacific': 'New Zealand’s Pacific-facing public service, with regional news, current affairs, weather and cyclone information, Pacific issues, interviews, music, and cultural programming.',
+        'Solomon Islands Broadcasting': 'The Solomon Islands public broadcaster, typically carrying local and national news, community and government information, music, culture, talk, and domestic service programming.',
+        'China Radio International': 'China’s state international broadcaster, generally carrying international and Chinese news, current affairs, culture, interviews, features, and programs aimed at overseas audiences.',
+        'BBC World Service': 'The BBC’s international service, focused on global news, breaking events, current affairs, documentaries, interviews, analysis, science, culture, and feature programs.',
+        'KARN': 'Central Arkansas sports radio, generally carrying sports talk, live games or play-by-play, national sports programming, and local sports coverage.',
+        'KJBN': 'Local religious and community-oriented AM programming, typically including Christian teaching, preaching, church programs, music, and community content.',
+        'KAAY': 'Historic Arkansas AM station now focused largely on Christian talk and teaching, with ministries, religious discussion, preaching, and faith-based programming.',
+        'KFOG': 'Local AM programming serving the Little Rock area. Exact programming can vary, so this entry is best treated as a local-station listening target rather than a fixed format promise.',
+        'KTUV': 'Spanish-language AM service for central Arkansas, generally carrying Spanish-language talk, community programming, music, and other programming aimed at local Hispanic listeners.'
+      };
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .station-about{margin-top:12px;padding:12px 13px;border:1px solid rgba(95,208,255,.18);border-radius:13px;background:rgba(19,48,78,.42);color:#bfd0e2;font-size:12px;line-height:1.5}
+        .station-about-title{color:#f3f8fd;font-size:12px;font-weight:850;margin-bottom:3px}
+        .station-about-note{display:block;margin-top:5px;color:#7f95ad;font-size:10px;font-weight:650}
+      `;
+      document.head.appendChild(style);
+
+      function decorate() {
+        document.querySelectorAll('.signal-card').forEach((card) => {
+          if (card.querySelector('[data-station-about]')) return;
+          const stationName = card.querySelector('.station-name')?.textContent?.trim();
+          const description = descriptions[stationName];
+          if (!description) return;
+          const box = document.createElement('div');
+          box.className = 'station-about';
+          box.dataset.stationAbout = 'true';
+          box.innerHTML = `<div class="station-about-title">Typical programming</div>${description}<span class="station-about-note">Station-level guide; the exact program on this frequency can vary.</span>`;
+          const why = card.querySelector('.why');
+          if (why) card.insertBefore(box, why);
+          else card.appendChild(box);
+        });
+      }
+
+      const grid = document.getElementById('signalGrid');
+      if (!grid) return;
+      new MutationObserver(decorate).observe(grid, { childList: true, subtree: true });
+      decorate();
+    })();
+  </script>
 </body>
 </html>
