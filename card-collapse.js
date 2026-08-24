@@ -37,21 +37,14 @@
     else if (stationName) stationName.insertAdjacentElement('afterend', line);
   }
 
-  function receptionMeterClass(score) {
-    if (score >= 80) return 'meter-excellent';
-    if (score >= 62) return 'meter-good';
-    if (score >= 42) return 'meter-possible';
-    return 'meter-long';
-  }
-
   function decorateReceptionMeter(card) {
     const meter = card.querySelector('.score-meter');
     const scoreText = card.querySelector('.score small')?.textContent || '';
     const score = Number(scoreText.split('/')[0]);
     if (!meter || !Number.isFinite(score)) return;
 
-    meter.classList.remove('meter-excellent', 'meter-good', 'meter-possible', 'meter-long');
-    meter.classList.add(receptionMeterClass(score));
+    const clampedScore = Math.max(0, Math.min(100, score));
+    meter.style.setProperty('--score-position', `${clampedScore}%`);
     meter.setAttribute('role', 'meter');
     meter.setAttribute('aria-valuemin', '0');
     meter.setAttribute('aria-valuemax', '100');
@@ -109,22 +102,58 @@
     }
 
     .score-meter {
-      background: repeating-linear-gradient(90deg, #14262c 0 5px, transparent 5px 7px) !important;
-      border-color: #254047 !important;
+      --score-position: 50%;
+      position: relative !important;
+      width: 96px !important;
+      height: 12px !important;
+      overflow: visible !important;
+      margin-top: 10px !important;
+      margin-bottom: 7px !important;
+      border: 1px solid #31464b !important;
+      border-radius: 2px !important;
+      padding: 1px !important;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 5px, #05090c 5px 7px),
+        linear-gradient(90deg,
+          #f0444f 0%,
+          #f0444f 38%,
+          #f2dc3f 38%,
+          #f2dc3f 62%,
+          #55d52d 62%,
+          #55d52d 100%) !important;
+      box-shadow: inset 0 0 8px rgba(0,0,0,.38);
     }
 
     .score-meter i {
-      display: block;
-      height: 100%;
-      border-radius: 0 !important;
-      background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 7px) !important;
-      filter: drop-shadow(0 0 2px currentColor);
+      display: none !important;
     }
 
-    .score-meter.meter-excellent i { color: #61e786; }
-    .score-meter.meter-good i { color: #c7df5a; }
-    .score-meter.meter-possible i { color: #efbd5c; }
-    .score-meter.meter-long i { color: #ff7077; }
+    .score-meter::before,
+    .score-meter::after {
+      content: '';
+      position: absolute;
+      left: var(--score-position);
+      z-index: 2;
+      width: 0;
+      height: 0;
+      transform: translateX(-50%);
+      filter: drop-shadow(0 0 2px rgba(255,255,255,.25));
+      pointer-events: none;
+    }
+
+    .score-meter::before {
+      top: -8px;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 6px solid #d8e2e4;
+    }
+
+    .score-meter::after {
+      bottom: -8px;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 6px solid #d8e2e4;
+    }
 
     .card-toggle {
       width: 100%;
