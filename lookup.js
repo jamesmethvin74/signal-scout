@@ -1,5 +1,6 @@
 (() => {
   const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
+  const KIWISDR_DIRECTORY = 'https://kiwisdr.com/.public/';
   const RECEIVERS = [
     {
       name: 'Florida KiwiSDR',
@@ -7,14 +8,14 @@
       baseUrl: 'http://22315.proxy.kiwisdr.com'
     },
     {
-      name: 'Vermont KiwiSDR',
-      location: 'Shrewsbury, Vermont',
-      baseUrl: 'http://sdr.k1vl.com:8073'
+      name: 'North Carolina KiwiSDR',
+      location: 'Apex, North Carolina',
+      baseUrl: 'http://22904.proxy.kiwisdr.com'
     },
     {
-      name: 'Alberta KiwiSDR',
-      location: 'Lamont, Alberta',
-      baseUrl: 'http://kiwisdr.ve6slp.ca:8173'
+      name: 'Pennsylvania KiwiSDR',
+      location: 'Ridley Park, Pennsylvania',
+      baseUrl: 'http://22479.proxy.kiwisdr.com'
     }
   ];
 
@@ -29,12 +30,14 @@
   const lookupSummary = document.getElementById('lookupSummary');
   const lookupTimeLabel = document.getElementById('lookupTimeLabel');
   const receiverSelect = document.getElementById('lookupReceiver');
+  const locationButton = document.getElementById('locationButton');
+  const signalGrid = document.getElementById('signalGrid');
   const discoverElements = [
     document.querySelector('.time-picker'),
     document.querySelector('.toolbar'),
     document.querySelector('.notice'),
     document.querySelector('.results-header'),
-    document.getElementById('signalGrid'),
+    signalGrid,
     document.querySelector('.source-note')
   ].filter(Boolean);
 
@@ -43,6 +46,8 @@
   let lookupOffsetHours = 0;
   let lastFrequency = null;
   let discoveryBestOnly = bestBetsButton?.classList.contains('active') || false;
+
+  const isAndroid = /Android/i.test(navigator.userAgent || '');
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -151,23 +156,44 @@
     return score;
   }
 
-  function receiverUrl(frequencyKHz, mode) {
-    const receiver = RECEIVERS[Number(receiverSelect?.value || 0)] || RECEIVERS[0];
+  function currentReceiver() {
+    return RECEIVERS[Number(receiverSelect?.value || 0)] || RECEIVERS[0];
+  }
+
+  function rawReceiverUrl(frequencyKHz, mode = 'am', receiver = currentReceiver()) {
     const normalizedMode = String(mode || 'am').toLowerCase();
     return `${receiver.baseUrl}/?f=${frequencyKHz.toFixed(1)}${normalizedMode}z8`;
+  }
+
+  function androidIntentUrl(rawUrl) {
+    const withoutScheme = rawUrl.replace(/^http:\/\//i, '');
+    const fallback = encodeURIComponent(KIWISDR_DIRECTORY);
+    return `intent://${withoutScheme}#Intent;scheme=http;package=com.android.chrome;S.browser_fallback_url=${fallback};end`;
+  }
+
+  function liveReceiverUrl(frequencyKHz, mode = 'am', receiver = currentReceiver()) {
+    const rawUrl = rawReceiverUrl(frequencyKHz, mode, receiver);
+    return isAndroid ? androidIntentUrl(rawUrl) : rawUrl;
+  }
+
+  function liveAnchorAttributes(url) {
+    return isAndroid
+      ? `href="${escapeHtml(url)}"`
+      : `href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"`;
   }
 
   function renderCandidate(candidate, index, requestedFrequency, mode) {
     const { station, delta } = candidate;
     const exact = delta < 0.01;
     const stationFrequency = Number(station.frequency);
-    const liveUrl = receiverUrl(stationFrequency, mode);
+    const liveUrl = liveReceiverUrl(stationFrequency, mode);
     const target = station.target ? `<span class="lookup-tag">Target ${escapeHtml(station.target)}</span>` : '';
     const approximate = station.locationApproximate ? '≈' : '';
     const user = loadStoredLocation();
     const distance = user && Number.isFinite(station.lat) && Number.isFinite(station.lon) && (station.lat !== 0 || station.lon !== 0)
       ? `${approximate}${Math.round(milesBetween(user.lat, user.lon, station.lat, station.lon)).toLocaleString()} mi from you`
       : '';
+    const receiver = currentReceiver();
 
     return `
       <article class="lookup-result ${index === 0 ? 'lookup-result-primary' : ''}">
@@ -187,12 +213,12 @@
           ${target}
         </div>
         <div class="lookup-actions">
-          <a class="listen-live-button" href="${escapeHtml(liveUrl)}" target="_blank" rel="noopener noreferrer">
+          <a class="listen-live-button" ${liveAnchorAttributes(liveUrl)}>
             <span class="live-dot" aria-hidden="true"></span>
             Listen live
           </a>
-          <span class="lookup-live-note">Live RF on a public KiwiSDR · opens tuned to ${escapeHtml(formatLookupFrequency(stationFrequency))}</span>
-          <a class="lookup-directory-link" href="https://kiwisdr.com/.public/" target="_blank" rel="noopener noreferrer">Choose another SDR</a>
+          <span class="lookup-live-note">Live RF · ${escapeHtml(receiver.location)} · tuned to ${escapeHtml(formatLookupFrequency(stationFrequency))}${isAndroid ? ' · opens in Chrome' : ''}</span>
+          <a class="lookup-directory-link" href="${KIWISDR_DIRECTORY}" target="_blank" rel="noopener noreferrer">Receiver directory</a>
         </div>
       </article>`;
   }
@@ -264,6 +290,117 @@
     ).join('');
   }
 
+  function frequencyFromCard(card) {
+    const freqEl = card.querySelector('.frequency');
+    if (!freqEl) return null;
+    const unit = freqEl.querySelector('span')?.textContent?.trim().toLowerCase() || '';
+    const clone = freqEl.cloneNode(true);
+    clone.querySelector('span')?.remove();
+    const value = Number(clone.textContent.replace(/,/g, '').trim());
+    if (!Number.isFinite(value) || value <= 0) return null;
+    if (unit.includes('mhz')) return value * 1000;
+    if (unit.includes('khz')) return value;
+    return value < 100 ? value * 1000 : value;
+  }
+
+  function openLookupForFrequency(frequencyKHz) {
+    frequencyInput.value = Number.isInteger(frequencyKHz) ? String(frequencyKHz) : frequencyKHz.toFixed(1);
+    lastFrequency = frequencyKHz;
+    showLookup();
+    runLookup();
+    lookupView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function decorateFrontPageCard(card) {
+    if (!card.classList.contains('signal-card') || card.querySelector('[data-card-live-row]')) return;
+    const frequencyKHz = frequencyFromCard(card);
+    if (!Number.isFinite(frequencyKHz) || frequencyKHz < 100 || frequencyKHz > 30000) return;
+
+    const stationName = card.querySelector('.station-name')?.textContent?.trim() || 'this signal';
+    const receiver = RECEIVERS[0];
+    const liveUrl = liveReceiverUrl(frequencyKHz, 'am', receiver);
+    const row = document.createElement('div');
+    row.className = 'card-live-row';
+    row.dataset.cardLiveRow = 'true';
+
+    const live = document.createElement('a');
+    live.className = 'listen-live-button card-listen-live';
+    live.href = liveUrl;
+    if (!isAndroid) {
+      live.target = '_blank';
+      live.rel = 'noopener noreferrer';
+    }
+    live.setAttribute('aria-label', `Listen live to ${stationName} near ${formatLookupFrequency(frequencyKHz)}`);
+    live.innerHTML = '<span class="live-dot" aria-hidden="true"></span><span>Listen live</span>';
+
+    const options = document.createElement('button');
+    options.type = 'button';
+    options.className = 'card-receiver-options';
+    options.textContent = 'Receiver options';
+    options.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openLookupForFrequency(frequencyKHz);
+    });
+
+    row.append(live, options);
+    const toggle = card.querySelector('[data-card-toggle]');
+    if (toggle) card.insertBefore(row, toggle);
+    else card.appendChild(row);
+  }
+
+  function decorateFrontPageCards() {
+    document.querySelectorAll('.signal-card').forEach(decorateFrontPageCard);
+  }
+
+  function stabilizeBackgroundLocationRefresh() {
+    if (!locationButton) return;
+    if (locationButton.textContent.trim() !== 'Refreshing…') return;
+    if (!loadStoredLocation()) return;
+    locationButton.textContent = '✓ Located';
+  }
+
+  const style = document.createElement('style');
+  style.id = 'signal-scout-live-actions-styles';
+  style.textContent = `
+    .card-live-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 11px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(37,212,230,.1);
+    }
+    .card-listen-live {
+      min-height: 36px;
+      padding: 8px 11px;
+      flex: 0 0 auto;
+    }
+    .card-receiver-options {
+      min-height: 36px;
+      border: 1px solid #1d3940;
+      border-radius: 5px;
+      padding: 8px 10px;
+      color: #8fa4aa;
+      background: rgba(5,13,16,.78);
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .card-receiver-options:hover {
+      border-color: #2b5962;
+      color: var(--accent-soft);
+    }
+    @media (max-width: 430px) {
+      .card-live-row { align-items: stretch; }
+      .card-listen-live,
+      .card-receiver-options { flex: 1 1 0; justify-content: center; }
+    }
+  `;
+  document.head.appendChild(style);
+
   lookupButton.addEventListener('click', showLookup);
   onAirButton?.addEventListener('click', () => {
     if (discoveryBestOnly && bestBetsButton) bestBetsButton.click();
@@ -296,9 +433,22 @@
 
   populateReceivers();
   updateTimeLabel();
+  decorateFrontPageCards();
+  stabilizeBackgroundLocationRefresh();
+
+  if (signalGrid) {
+    new MutationObserver(() => window.requestAnimationFrame(decorateFrontPageCards))
+      .observe(signalGrid, { childList: true, subtree: true });
+  }
+
+  if (locationButton) {
+    new MutationObserver(stabilizeBackgroundLocationRefresh)
+      .observe(locationButton, { childList: true, subtree: true, characterData: true });
+  }
 
   if (window.SIGNAL_SCOUT_DATA_READY?.then) {
     window.SIGNAL_SCOUT_DATA_READY.then(() => {
+      decorateFrontPageCards();
       if (lastFrequency != null) runLookup();
     }).catch(() => {});
   }
