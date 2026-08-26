@@ -1,4 +1,4 @@
-import baseWorker from './worker.js';
+import baseWorker from './worker-base.js';
 
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
