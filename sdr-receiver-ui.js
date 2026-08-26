@@ -32,7 +32,7 @@
   document.head.appendChild(style);
 
   const health = document.createElement('script');
-  health.src = 'sdr-health.js?v=1';
+  health.src = 'sdr-health.js?v=2';
   health.async = false;
   document.body.appendChild(health);
 
