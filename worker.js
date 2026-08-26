@@ -45,11 +45,12 @@ let directoryMemoryAt = 0;
 function jsonResponse(value, init = {}) {
   const headers = new Headers(init.headers || {});
   headers.set('content-type', 'application/json; charset=utf-8');
-  headers.set('cache-control', 'public, max-age=120');
+  headers.set('cache-control', 'private, max-age=0, no-store');
   return new Response(JSON.stringify(value), { ...init, headers });
 }
 
 function finiteNumber(value) {
+  if (value == null || String(value).trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -144,12 +145,13 @@ function parseReceiverBook(html) {
     for (const child of children) {
       if (byHost.size >= MAX_DIRECTORY_RECEIVERS) break;
       const typeText = [child?.type, child?.version, child?.software].filter(Boolean).join(' ');
-      if (typeText && !/kiwi/i.test(typeText)) continue;
+      if (typeText && /(?:openwebrx|websdr)/i.test(typeText) && !/kiwi/i.test(typeText)) continue;
       const normalized = normalizedReceiverUrl(child?.url || site?.url);
       if (!normalized) continue;
 
-      const name = String(child?.label || siteLabel || normalized.upstreamHost).replace(/<[^>]+>/g, '').trim();
-      const location = siteLabel || name;
+      const cleanSiteLabel = siteLabel.replace(/<[^>]+>/g, '').trim();
+      const name = String(child?.label || cleanSiteLabel || normalized.upstreamHost).replace(/<[^>]+>/g, '').trim().slice(0, 180);
+      const location = (cleanSiteLabel || name).slice(0, 180);
       const coverage = coverageFromText(`${name} ${location}`);
       const receiver = {
         id: normalized.host,
@@ -276,7 +278,7 @@ function rankReceivers(receivers, params) {
   const { frequencyKHz, userLat, userLon, txLat, txLon } = params;
   const hasUser = Number.isFinite(userLat) && Number.isFinite(userLon);
   const hasTx = Number.isFinite(txLat) && Number.isFinite(txLon);
-  const localBand = frequencyKHz < 3000;
+  const localBand = frequencyKHz < 2000;
   const directDistance = hasUser && hasTx ? milesBetween(userLat, userLon, txLat, txLon) : null;
 
   const eligible = receivers
