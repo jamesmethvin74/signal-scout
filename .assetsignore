@@ -3,6 +3,7 @@
 README.md
 wrangler.jsonc
 worker.js
+worker-base.js
 worker-v2.js
 .assetsignore
 .nojekyll
