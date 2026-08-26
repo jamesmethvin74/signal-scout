@@ -1,48 +1,18 @@
 import baseWorker from './worker-v2.js';
 
-const SDR_ORIGIN_BRIDGE = `
-<script>
-(() => {
-  if (window.__signalScoutWebSocketOriginBridgeInstalled) return;
-  const PreviousWebSocket = window.WebSocket;
-  if (!PreviousWebSocket) return;
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js']);
 
-  function normalizeSignalScoutSocketUrl(rawUrl) {
-    try {
-      const url = new URL(String(rawUrl), window.location.href);
-      if (url.host !== window.location.host || url.pathname !== '/api/sdr/ws') return rawUrl;
-      if (url.protocol === 'wss:') url.protocol = 'https:';
-      else if (url.protocol === 'ws:') url.protocol = 'http:';
-      return url.toString();
-    } catch {
-      return rawUrl;
-    }
-  }
+function noStoreHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set('cache-control', 'no-store, max-age=0');
+  return headers;
+}
 
-  function SignalScoutOriginSafeWebSocket(url, protocols) {
-    const normalizedUrl = normalizeSignalScoutSocketUrl(url);
-    return protocols === undefined
-      ? new PreviousWebSocket(normalizedUrl)
-      : new PreviousWebSocket(normalizedUrl, protocols);
-  }
-
-  SignalScoutOriginSafeWebSocket.prototype = PreviousWebSocket.prototype;
-  Object.defineProperties(SignalScoutOriginSafeWebSocket, {
-    CONNECTING: { value: PreviousWebSocket.CONNECTING ?? 0 },
-    OPEN: { value: PreviousWebSocket.OPEN ?? 1 },
-    CLOSING: { value: PreviousWebSocket.CLOSING ?? 2 },
-    CLOSED: { value: PreviousWebSocket.CLOSED ?? 3 }
-  });
-
-  window.WebSocket = SignalScoutOriginSafeWebSocket;
-  window.__signalScoutWebSocketOriginBridgeInstalled = true;
-})();
-</script>`;
-
-class SignalScoutHtmlInjector {
-  element(element) {
-    element.append(SDR_ORIGIN_BRIDGE, { html: true });
-  }
+function patchSdrOriginChecks(source) {
+  return source.replaceAll(
+    'url.origin !== window.location.origin',
+    'url.host !== window.location.host'
+  );
 }
 
 export default {
@@ -51,19 +21,42 @@ export default {
     if (request.method !== 'GET') return response;
 
     const url = new URL(request.url);
-    if (url.pathname !== '/' && url.pathname !== '/index.html') return response;
-    if (!String(response.headers.get('content-type') || '').includes('text/html')) return response;
+    const contentType = String(response.headers.get('content-type') || '');
 
-    const transformed = new HTMLRewriter()
-      .on('body', new SignalScoutHtmlInjector())
-      .transform(response);
+    // Serve corrected SDR runtime code directly. WebSocket URLs use ws:/wss:
+    // while the page uses http:/https:, so comparing URL.origin rejects a
+    // same-host SDR socket even though it belongs to Signal Scout. Compare the
+    // host + endpoint path instead and keep the original WebSocket URL intact.
+    if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
+      const source = await response.text();
+      const patched = patchSdrOriginChecks(source);
+      const headers = noStoreHeaders(response);
+      headers.set('content-type', 'application/javascript; charset=utf-8');
+      headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
+      return new Response(patched, {
+        status: response.status,
+        statusText: response.statusText,
+        headers
+      });
+    }
 
-    const headers = new Headers(transformed.headers);
-    headers.set('cache-control', 'no-store, max-age=0');
-    return new Response(transformed.body, {
-      status: transformed.status,
-      statusText: transformed.statusText,
-      headers
-    });
+    // Force browsers to request the corrected runtime asset URLs after this
+    // deployment rather than reusing the earlier broken v5/v2 copies.
+    if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
+      let html = await response.text();
+      html = html
+        .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=6')
+        .replace('sdr-health.js?v=2', 'sdr-health.js?v=3');
+      const headers = noStoreHeaders(response);
+      headers.set('content-type', 'text/html; charset=utf-8');
+      headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
+      return new Response(html, {
+        status: response.status,
+        statusText: response.statusText,
+        headers
+      });
+    }
+
+    return response;
   }
 };
