@@ -1,6 +1,9 @@
 (() => {
   const BaseWebSocket = window.WebSocket;
-  const RF_START_TIMEOUT_MS = 8000;
+  const RF_START_TIMEOUT_MS = 10000;
+  const WF_BINS = 1024;
+  const COMPACT_WF_BYTES = 4 + WF_BINS;
+  const EXTENDED_WF_HEADER_BYTES = 16;
 
   function waterfallUrl(rawUrl) {
     try {
@@ -13,45 +16,51 @@
     }
   }
 
-  function separateWaterfallSession(url) {
-    const original = Number(url.searchParams.get('ts'));
-    if (!Number.isFinite(original)) return url.toString();
-
-    // Kiwi's paired SND/W/F reference client uses a different WebSocket
-    // timestamp for each stream. Reusing the SND timestamp can prevent the
-    // waterfall channel from establishing even while audio is already live.
-    let next = (Math.trunc(original) + 1) >>> 0;
-    if (next === 0) next = 1;
-    url.searchParams.set('ts', String(next));
-    return url.toString();
+  function isWaterfallBuffer(buffer) {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 4) return false;
+    const bytes = new Uint8Array(buffer, 0, 3);
+    return bytes[0] === 87 && bytes[1] === 47 && bytes[2] === 70; // W/F
   }
 
-  function isWaterfallFrame(data) {
-    if (data instanceof ArrayBuffer && data.byteLength >= 3) {
-      const bytes = new Uint8Array(data, 0, 3);
-      return bytes[0] === 87 && bytes[1] === 47 && bytes[2] === 70; // W/F
-    }
-    return typeof data === 'string' && data.startsWith('W/F');
+  function normalizedWaterfallBuffer(buffer) {
+    if (!isWaterfallBuffer(buffer) || buffer.byteLength !== COMPACT_WF_BYTES) return null;
+
+    // Current KiwiSDR releases commonly send compact waterfall rows as:
+    //   4-byte "W/F" + sequence header, followed by 1024 RF bins.
+    // Signal Scout's original renderer understands the older observed
+    // 16-byte extended header. Normalize compact rows into that shape here so
+    // both current compact and older extended frames reach the same renderer.
+    const source = new Uint8Array(buffer);
+    const normalized = new Uint8Array(EXTENDED_WF_HEADER_BYTES + WF_BINS);
+    normalized.set(source.subarray(0, 4), 0);
+    normalized.set(source.subarray(4, 4 + WF_BINS), EXTENDED_WF_HEADER_BYTES);
+    return normalized.buffer;
   }
 
   function WaterfallCompatibleWebSocket(url, protocols) {
     const parsed = waterfallUrl(url);
-    const actualUrl = parsed ? separateWaterfallSession(parsed) : url;
     const socket = protocols === undefined
-      ? new BaseWebSocket(actualUrl)
-      : new BaseWebSocket(actualUrl, protocols);
+      ? new BaseWebSocket(url)
+      : new BaseWebSocket(url, protocols);
 
     if (!parsed) return socket;
 
-    // Kiwi's public waterfall clients authenticate with an empty password.
-    // The audio path's '#' form is tolerated by many receivers, but it is not
-    // the reference W/F handshake and some receivers never start waterfall data.
+    // Keep Kiwi's normal public auth/session behavior. Add the current client
+    // marker and dB-row request when the RF helper identifies itself.
     const nativeSend = socket.send.bind(socket);
-    socket.send = (message) => nativeSend(
-      typeof message === 'string' && message === 'SET auth t=kiwi p=#'
-        ? 'SET auth t=kiwi p='
-        : message
-    );
+    let setupExtrasSent = false;
+    socket.send = (message) => {
+      if (typeof message === 'string' && message.startsWith('SET ident_user=')) {
+        nativeSend('SET ident_user=SignalScout');
+        if (!setupExtrasSent) {
+          setupExtrasSent = true;
+          nativeSend('SERVER DE CLIENT SignalScout W/F');
+          nativeSend('SET send_dB=1');
+        }
+        return;
+      }
+      nativeSend(message);
+    };
 
     let gotWaterfall = false;
     let timer = null;
@@ -59,16 +68,40 @@
       if (timer != null) window.clearTimeout(timer);
       timer = null;
     };
+
+    const noteWaterfall = () => {
+      if (gotWaterfall) return;
+      gotWaterfall = true;
+      clearTimer();
+    };
+
+    const dispatchNormalized = (buffer) => {
+      if (!isWaterfallBuffer(buffer)) return;
+      noteWaterfall();
+      const normalized = normalizedWaterfallBuffer(buffer);
+      if (!normalized) return;
+      try {
+        socket.dispatchEvent(new MessageEvent('message', { data: normalized }));
+      } catch {
+        // The original event still reaches the renderer. Older extended frames
+        // need no normalization; compact rows will simply time out visibly.
+      }
+    };
+
     socket.addEventListener('open', () => {
       timer = window.setTimeout(() => {
         if (gotWaterfall || socket.readyState !== BaseWebSocket.OPEN) return;
         try { socket.close(4000, 'Signal Scout RF waterfall timeout'); } catch {}
       }, RF_START_TIMEOUT_MS);
     });
+
     socket.addEventListener('message', (event) => {
-      if (!gotWaterfall && isWaterfallFrame(event.data)) {
-        gotWaterfall = true;
-        clearTimer();
+      if (event.data instanceof ArrayBuffer) {
+        dispatchNormalized(event.data);
+      } else if (event.data instanceof Blob) {
+        event.data.arrayBuffer().then(dispatchNormalized).catch(() => {});
+      } else if (typeof event.data === 'string' && event.data.startsWith('W/F')) {
+        noteWaterfall();
       }
     });
     socket.addEventListener('close', clearTimer);
