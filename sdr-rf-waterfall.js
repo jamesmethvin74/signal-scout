@@ -134,6 +134,14 @@
     message.classList.toggle('is-error', isError);
   }
 
+  function audioIsLive() {
+    return String(document.querySelector('[data-sdr-status]')?.textContent || '').trim().toLowerCase() === 'live rf';
+  }
+
+  function setRfAvailabilityMessage(text, isError = false) {
+    if (audioIsLive()) setPlayerMessage(text, isError);
+  }
+
   function drawIdleRf(label = 'WAITING FOR RF SPECTRUM') {
     const canvas = ensureRfCanvas();
     if (!canvas) return;
@@ -307,7 +315,7 @@
     if (label) label.textContent = `Live RF spectrum / waterfall · ${state.spanKHz.toFixed(1)} kHz span`;
     state.hasRfFrame = true;
     state.rfUnavailable = false;
-    setPlayerMessage('Actual receiver audio · RF spectrum and waterfall are live from this receiver.');
+    setRfAvailabilityMessage('Actual receiver audio · RF spectrum and waterfall are live from this receiver.');
   }
 
   function sendWf(message) {
@@ -350,7 +358,7 @@
       if (/(?:^|\s)too_busy=1(?:\s|$)/.test(text)) {
         state.rfUnavailable = true;
         drawIdleRf('RF WATERFALL BUSY');
-        setPlayerMessage('Actual receiver audio is live. This receiver has no waterfall slot available right now.');
+        setRfAvailabilityMessage('Actual receiver audio is live. This receiver has no waterfall slot available right now.');
         return;
       }
       if (/(?:^|\s)down=1(?:\s|$)/.test(text)) {
@@ -358,7 +366,7 @@
         drawIdleRf('RF WATERFALL OFFLINE');
         return;
       }
-      if (/(?:^|\s)wf_setup=/.test(text)) configureWaterfall();
+      if (/(?:^|\s)wf_setup(?:=\S*)?(?:\s|$)/.test(text)) configureWaterfall();
       return;
     }
 
@@ -422,6 +430,7 @@
     socket.onopen = () => {
       if (generation !== state.generation) return;
       try { socket.send('SET auth t=kiwi p=#'); } catch {}
+      configureWaterfall();
       state.keepaliveTimer = window.setInterval(() => {
         if (socket.readyState === BaseWebSocket.OPEN) {
           try { socket.send('SET keepalive'); } catch {}
@@ -436,14 +445,14 @@
       state.rfUnavailable = true;
       state.hasRfFrame = false;
       drawIdleRf('RF SPECTRUM UNAVAILABLE');
-      setPlayerMessage('Actual receiver audio is live. RF spectrum is unavailable from this receiver.', true);
+      setRfAvailabilityMessage('Actual receiver audio is live. RF spectrum is unavailable from this receiver.', true);
     };
     socket.onclose = () => {
       if (generation !== state.generation) return;
       state.rfUnavailable = true;
       state.hasRfFrame = false;
       drawIdleRf('RF SPECTRUM DISCONNECTED');
-      setPlayerMessage('Actual receiver audio is live. The RF spectrum stream disconnected.', true);
+      setRfAvailabilityMessage('Actual receiver audio is live. The RF spectrum stream disconnected.', true);
     };
   }
 
