@@ -3,6 +3,10 @@
     return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
+  function setTextIfChanged(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
   function frequencyFromCard(card) {
     const freqEl = card?.querySelector('.frequency');
     if (!freqEl) return null;
@@ -52,9 +56,7 @@
     if (!smartButton) return;
 
     const openPlayer = document.querySelector('#sdrPlayer:not([hidden])');
-    if (openPlayer) {
-      openPlayer.querySelector('[data-sdr-close]')?.click();
-    }
+    if (openPlayer) openPlayer.querySelector('[data-sdr-close]')?.click();
 
     smartButton.click();
   }
@@ -73,52 +75,63 @@
     openReceiverOptions(card);
   }, true);
 
+  let polishing = false;
+
   function polishChooser() {
+    if (polishing) return;
     const chooser = document.querySelector('.sdr-chooser');
     const list = chooser?.querySelector('[data-sdr-chooser-list]');
     if (!list) return;
 
-    const subtitle = chooser.querySelector('[data-sdr-chooser-subtitle]');
-    if (subtitle && !subtitle.dataset.purposeExplained) {
-      subtitle.dataset.purposeExplained = 'true';
-      const rankedText = subtitle.textContent.replace(/\s*★.*$/, '').trim();
-      subtitle.textContent = `${rankedText} ★ marks the best match for what you may hear at your location.`;
-    }
-
-    const seen = new Set();
-    [...list.querySelectorAll('.sdr-choice')].forEach((choice) => {
-      const name = normalizeText(choice.querySelector('.sdr-choice-name')?.textContent);
-      const location = normalizeText(choice.querySelector('.sdr-choice-location')?.textContent);
-      const distance = normalizeText(choice.querySelector('.sdr-choice-distance')?.textContent);
-      const key = `${name}|${location}|${distance}`;
-
-      if (seen.has(key)) {
-        choice.remove();
-        return;
+    polishing = true;
+    try {
+      const subtitle = chooser.querySelector('[data-sdr-chooser-subtitle]');
+      if (subtitle && !subtitle.dataset.purposeExplained) {
+        subtitle.dataset.purposeExplained = 'true';
+        const rankedText = subtitle.textContent.replace(/\s*★.*$/, '').trim();
+        setTextIfChanged(subtitle, `${rankedText} ★ marks the best match for what you may hear at your location.`);
       }
-      seen.add(key);
 
-      const recommended = choice.querySelector('.sdr-choice-badge.is-recommended');
-      const roleBadges = [...choice.querySelectorAll('.sdr-choice-badge:not(.is-recommended)')]
-        .map((badge) => normalizeText(badge.textContent));
-      const reason = choice.querySelector('.sdr-choice-reason');
+      const seen = new Set();
+      [...list.querySelectorAll('.sdr-choice')].forEach((choice) => {
+        const name = normalizeText(choice.querySelector('.sdr-choice-name')?.textContent);
+        const location = normalizeText(choice.querySelector('.sdr-choice-location')?.textContent);
+        const distance = normalizeText(choice.querySelector('.sdr-choice-distance')?.textContent);
+        const key = `${name}|${location}|${distance}`;
 
-      if (recommended) {
-        recommended.textContent = '★ Best match for you';
-        if (reason && roleBadges.includes('near you')) {
-          reason.textContent = 'Best receiver for comparing with what your radio is likely to hear at your location. It is nearby and still follows a useful HF path.';
-        } else if (reason) {
-          reason.textContent = 'Best overall receiver for comparing against your location, considering distance, path, frequency, and current day/night conditions.';
+        if (seen.has(key)) {
+          choice.remove();
+          return;
         }
-      }
+        seen.add(key);
 
-      if (reason && roleBadges.includes('station check')) {
-        reason.textContent = 'Best used to check whether the transmitter appears active. It is not necessarily the best receiver for matching what you should hear at your location.';
-      }
-    });
+        const recommended = choice.querySelector('.sdr-choice-badge.is-recommended');
+        const roleBadges = [...choice.querySelectorAll('.sdr-choice-badge:not(.is-recommended)')]
+          .map((badge) => normalizeText(badge.textContent));
+        const reason = choice.querySelector('.sdr-choice-reason');
+
+        if (recommended) {
+          setTextIfChanged(recommended, '★ Best match for you');
+          if (reason && roleBadges.includes('near you')) {
+            setTextIfChanged(reason, 'Best receiver for comparing with what your radio is likely to hear at your location. It is nearby and still follows a useful HF path.');
+          } else if (reason) {
+            setTextIfChanged(reason, 'Best overall receiver for comparing against your location, considering distance, path, frequency, and current day/night conditions.');
+          }
+        }
+
+        if (reason && roleBadges.includes('station check')) {
+          setTextIfChanged(reason, 'Best used to check whether the transmitter appears active. It is not necessarily the best receiver for matching what you should hear at your location.');
+        }
+      });
+    } finally {
+      polishing = false;
+    }
   }
 
-  const observer = new MutationObserver(polishChooser);
-  observer.observe(document.body, { childList: true, subtree: true });
-  polishChooser();
+  const chooser = document.querySelector('.sdr-chooser');
+  if (chooser) {
+    const observer = new MutationObserver(polishChooser);
+    observer.observe(chooser, { childList: true, subtree: true, characterData: true });
+    polishChooser();
+  }
 })();
