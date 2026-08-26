@@ -474,3 +474,5 @@ export default {
     return env.ASSETS.fetch(request);
   }
 };
+
+// Deployment marker: force Cloudflare to publish the RF v2 frontend bundle.
