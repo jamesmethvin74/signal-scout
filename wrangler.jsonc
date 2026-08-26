@@ -5,6 +5,12 @@
   "assets": {
     "directory": "./",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/sdr/*"]
+    "run_worker_first": [
+      "/api/sdr/*",
+      "/",
+      "/index.html",
+      "/sdr-rf-v2.js",
+      "/sdr-health.js"
+    ]
   }
 }
