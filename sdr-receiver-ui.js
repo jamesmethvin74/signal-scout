@@ -31,8 +31,13 @@
   `;
   document.head.appendChild(style);
 
+  const health = document.createElement('script');
+  health.src = 'sdr-health.js?v=1';
+  health.async = false;
+  document.body.appendChild(health);
+
   const optionsFix = document.createElement('script');
   optionsFix.src = 'sdr-options-fix.js?v=2';
-  optionsFix.defer = true;
+  optionsFix.async = false;
   document.body.appendChild(optionsFix);
 })();
