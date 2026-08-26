@@ -437,7 +437,7 @@ async function proxySdrWebSocket(request, ctx) {
   const receiverId = url.searchParams.get('receiver') || '';
   const stream = url.searchParams.get('stream') || 'SND';
   const timestamp = url.searchParams.get('ts') || '';
-  if (!receiverId || receiverId.length > 180 || stream !== 'SND' || !/^\d{1,10}$/.test(timestamp)) {
+  if (!receiverId || receiverId.length > 180 || !['SND', 'W/F'].includes(stream) || !/^\d{1,10}$/.test(timestamp)) {
     return new Response('Invalid SDR request', { status: 400 });
   }
 
