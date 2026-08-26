@@ -1,5 +1,6 @@
 (() => {
   const BaseWebSocket = window.WebSocket;
+  const RF_START_TIMEOUT_MS = 8000;
 
   function waterfallUrl(rawUrl) {
     try {
@@ -25,6 +26,14 @@
     return url.toString();
   }
 
+  function isWaterfallFrame(data) {
+    if (data instanceof ArrayBuffer && data.byteLength >= 3) {
+      const bytes = new Uint8Array(data, 0, 3);
+      return bytes[0] === 87 && bytes[1] === 47 && bytes[2] === 70; // W/F
+    }
+    return typeof data === 'string' && data.startsWith('W/F');
+  }
+
   function WaterfallCompatibleWebSocket(url, protocols) {
     const parsed = waterfallUrl(url);
     const actualUrl = parsed ? separateWaterfallSession(parsed) : url;
@@ -43,6 +52,27 @@
         ? 'SET auth t=kiwi p='
         : message
     );
+
+    let gotWaterfall = false;
+    let timer = null;
+    const clearTimer = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = null;
+    };
+    socket.addEventListener('open', () => {
+      timer = window.setTimeout(() => {
+        if (gotWaterfall || socket.readyState !== BaseWebSocket.OPEN) return;
+        try { socket.close(4000, 'Signal Scout RF waterfall timeout'); } catch {}
+      }, RF_START_TIMEOUT_MS);
+    });
+    socket.addEventListener('message', (event) => {
+      if (!gotWaterfall && isWaterfallFrame(event.data)) {
+        gotWaterfall = true;
+        clearTimer();
+      }
+    });
+    socket.addEventListener('close', clearTimer);
+    socket.addEventListener('error', clearTimer);
     return socket;
   }
 
