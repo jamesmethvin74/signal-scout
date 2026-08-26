@@ -198,3 +198,20 @@
   new MutationObserver(() => window.requestAnimationFrame(decorateCards)).observe(grid, { childList: true, subtree: true });
   decorateCards();
 })();
+
+(() => {
+  if (!document.querySelector('link[data-arctic-picker]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'arctic-picker.css?v=1';
+    link.dataset.arcticPicker = 'true';
+    document.head.appendChild(link);
+  }
+
+  if (!document.querySelector('script[data-arctic-picker]')) {
+    const script = document.createElement('script');
+    script.src = 'arctic-picker.js?v=1';
+    script.dataset.arcticPicker = 'true';
+    document.body.appendChild(script);
+  }
+})();
