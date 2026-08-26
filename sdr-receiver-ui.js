@@ -30,4 +30,9 @@
     }
   `;
   document.head.appendChild(style);
+
+  const optionsFix = document.createElement('script');
+  optionsFix.src = 'sdr-options-fix.js?v=1';
+  optionsFix.defer = true;
+  document.body.appendChild(optionsFix);
 })();
