@@ -476,3 +476,4 @@ export default {
 };
 
 // Deployment marker: force Cloudflare to publish the RF v2 frontend bundle.
+// Deployment marker 2: publish hard SDR cooldown skipping and RF standby UI.
