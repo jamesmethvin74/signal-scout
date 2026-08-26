@@ -1,8 +1,39 @@
 (() => {
-  const RECEIVERS = [
-    { id: 'florida', name: 'Florida KiwiSDR', location: 'Palm Harbor, Florida' },
-    { id: 'north-carolina', name: 'North Carolina KiwiSDR', location: 'Apex, North Carolina' },
-    { id: 'pennsylvania', name: 'Pennsylvania KiwiSDR', location: 'Ridley Park, Pennsylvania' }
+  const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
+  const LEGACY_RECEIVERS = [
+    {
+      id: 'florida',
+      name: 'Florida KiwiSDR',
+      location: 'Palm Harbor, Florida',
+      distanceMiles: null,
+      minKHz: 10,
+      maxKHz: 30000,
+      role: 'ALTERNATE',
+      reason: 'Fallback public receiver while the live directory is unavailable.',
+      recommended: true
+    },
+    {
+      id: 'north-carolina',
+      name: 'North Carolina KiwiSDR',
+      location: 'Apex, North Carolina',
+      distanceMiles: null,
+      minKHz: 10,
+      maxKHz: 30000,
+      role: 'ALTERNATE',
+      reason: 'Fallback public receiver while the live directory is unavailable.',
+      recommended: false
+    },
+    {
+      id: 'pennsylvania',
+      name: 'Pennsylvania KiwiSDR',
+      location: 'Ridley Park, Pennsylvania',
+      distanceMiles: null,
+      minKHz: 10,
+      maxKHz: 30000,
+      role: 'ALTERNATE',
+      reason: 'Fallback public receiver while the live directory is unavailable.',
+      recommended: false
+    }
   ];
 
   const PASSBANDS = {
@@ -14,6 +45,8 @@
 
   const sdr = {
     panel: null,
+    chooser: null,
+    lookupReceiverButton: null,
     socket: null,
     audioContext: null,
     analyser: null,
@@ -23,7 +56,9 @@
     frequency: null,
     station: '',
     mode: 'am',
+    receivers: LEGACY_RECEIVERS.map((receiver) => ({ ...receiver })),
     receiverIndex: 0,
+    manualReceiverId: null,
     connected: false,
     configured: false,
     gotAudio: false,
@@ -33,7 +68,13 @@
     animationFrame: null,
     lastRssi: null,
     fallbackTried: new Set(),
-    decoder: new TextDecoder()
+    decoder: new TextDecoder(),
+    recommendationSequence: 0,
+    recommendationFrequency: null,
+    recommendationStation: '',
+    directorySource: 'fallback',
+    directoryWarning: null,
+    lookupRecommendationTimer: null
   };
 
   function escapeHtml(value) {
@@ -50,10 +91,42 @@
     return `${khz.toLocaleString(undefined, { maximumFractionDigits: decimals })} kHz`;
   }
 
-  function selectedLookupReceiverIndex() {
-    const select = document.getElementById('lookupReceiver');
-    const index = Number(select?.value || 0);
-    return Number.isInteger(index) && RECEIVERS[index] ? index : 0;
+  function formatDistance(distanceMiles) {
+    if (!Number.isFinite(distanceMiles)) return '';
+    return `${Math.round(distanceMiles).toLocaleString()} mi from you`;
+  }
+
+  function formatCoverage(receiver) {
+    const min = Number(receiver?.minKHz);
+    const max = Number(receiver?.maxKHz);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'KiwiSDR';
+    const minText = min >= 1000 ? `${(min / 1000).toFixed(min % 1000 ? 1 : 0)} MHz` : `${Math.round(min)} kHz`;
+    const maxText = max >= 1000 ? `${(max / 1000).toFixed(max % 1000 ? 1 : 0)} MHz` : `${Math.round(max)} kHz`;
+    return `${minText}–${maxText}`;
+  }
+
+  function loadStoredLocation() {
+    try {
+      const payload = JSON.parse(window.localStorage?.getItem(LOCATION_STORAGE_KEY) || 'null');
+      const lat = Number(payload?.lat);
+      const lon = Number(payload?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return { lat, lon };
+    } catch {
+      return null;
+    }
+  }
+
+  function parseFrequencyValue(raw) {
+    const normalized = String(raw || '').trim().toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+    if (!normalized) return null;
+    const mhzExplicit = normalized.endsWith('mhz') || normalized.endsWith('m');
+    const khzExplicit = normalized.endsWith('khz') || normalized.endsWith('k');
+    const numeric = Number(normalized.replace(/mhz|khz|m|k/g, ''));
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (mhzExplicit) return numeric * 1000;
+    if (khzExplicit) return numeric;
+    return numeric < 100 ? numeric * 1000 : numeric;
   }
 
   function frequencyFromContainer(container) {
@@ -82,10 +155,23 @@
 
   function modeFromContainer(container) {
     if (container?.classList.contains('lookup-result')) {
-      const mode = document.getElementById('lookupMode')?.value || 'am';
+      const quickMode = container.querySelector('[data-ham-quick-mode]')?.dataset.hamQuickMode;
+      const mode = quickMode || document.getElementById('lookupMode')?.value || 'am';
       return PASSBANDS[mode] ? mode : 'am';
     }
     return 'am';
+  }
+
+  function stationCoordinates(frequency, stationName) {
+    const stations = window.SIGNAL_SCOUT_STATIONS || [];
+    const normalizedName = String(stationName || '').trim().toLowerCase();
+    const candidates = stations.filter((station) => Math.abs(Number(station.frequency) - Number(frequency)) < 0.11);
+    const exactName = candidates.find((station) => String(station.name || '').trim().toLowerCase() === normalizedName);
+    const station = exactName || candidates[0];
+    const lat = Number(station?.lat);
+    const lon = Number(station?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) return null;
+    return { lat, lon };
   }
 
   function injectStyles() {
@@ -110,19 +196,60 @@
       .sdr-spectrum-label { position:absolute; left:8px; top:6px; z-index:2; color:#688087; font-family:var(--mono); font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; pointer-events:none; }
       .sdr-spectrum { display:block; width:100%; height:150px; }
       .sdr-readout { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; color:#71878d; font-family:var(--mono); font-size:9px; }
-      .sdr-readout strong { color:#b8c8cb; font-weight:700; }
+      .sdr-readout span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .sdr-readout strong { color:#b8c8cb; font-weight:700; white-space:nowrap; }
       .sdr-controls { display:grid; grid-template-columns:120px minmax(0,1fr) 92px; gap:8px; align-items:end; margin-top:10px; }
       .sdr-control label { display:block; margin-bottom:4px; color:#71868c; font-family:var(--mono); font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
       .sdr-control select { width:100%; min-height:38px; border:1px solid #1b3a41; border-radius:5px; padding:7px 28px 7px 9px; color:#d7e4e6; background:#050d10; font-size:10px; }
+      .sdr-receiver-button { width:100%; min-height:38px; display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid #1b3a41; border-radius:5px; padding:7px 9px; color:#d7e4e6; background:#050d10; text-align:left; }
+      .sdr-receiver-button:hover { border-color:#2f6973; }
+      .sdr-receiver-button-main { min-width:0; }
+      .sdr-receiver-button-main strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#dce9eb; font-family:var(--mono); font-size:9px; }
+      .sdr-receiver-button-main span { display:block; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#6f8b91; font-family:var(--mono); font-size:8px; }
+      .sdr-receiver-button-arrow { color:var(--accent); font-family:var(--mono); font-size:12px; }
       .sdr-volume { display:flex; align-items:center; gap:7px; min-height:38px; padding:0 9px; border:1px solid #1b3a41; border-radius:5px; background:#050d10; }
       .sdr-volume span { color:#70858b; font-size:12px; }
       .sdr-volume input { width:100%; accent-color:var(--accent); }
       .sdr-toggle { min-height:38px; border:1px solid rgba(37,212,230,.58); border-radius:5px; color:var(--accent-soft); background:rgba(37,212,230,.07); font-family:var(--mono); font-size:9px; font-weight:900; letter-spacing:.07em; text-transform:uppercase; }
       .sdr-message { margin-top:8px; min-height:15px; color:#8ca0a5; font-size:10px; line-height:1.4; }
       .sdr-message.is-error { color:#efbd5c; }
+      .sdr-context-note { margin-top:6px; padding-top:6px; border-top:1px solid rgba(37,212,230,.08); color:#61777d; font-family:var(--mono); font-size:8px; line-height:1.45; }
       .sdr-player.is-minimized .sdr-player-body { display:none; }
-      body.sdr-player-open .app-shell { padding-bottom:440px !important; }
+      body.sdr-player-open .app-shell { padding-bottom:455px !important; }
       body.sdr-player-open.sdr-player-minimized .app-shell { padding-bottom:150px !important; }
+
+      .sdr-chooser { position:fixed; inset:0; z-index:80; display:flex; align-items:flex-end; justify-content:center; padding:12px; background:rgba(0,4,6,.72); backdrop-filter:blur(5px); }
+      .sdr-chooser[hidden] { display:none !important; }
+      .sdr-chooser-dialog { width:min(720px,100%); max-height:min(78vh,760px); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(37,212,230,.55); border-radius:13px; background:#050b0e; box-shadow:0 24px 80px rgba(0,0,0,.72),0 0 34px rgba(37,212,230,.08); }
+      .sdr-chooser-head { display:flex; align-items:flex-start; gap:12px; padding:13px 14px; border-bottom:1px solid rgba(37,212,230,.14); background:linear-gradient(180deg,#0b181d,#071014); }
+      .sdr-chooser-head-text { flex:1; min-width:0; }
+      .sdr-chooser-kicker { color:var(--accent); font-family:var(--mono); font-size:8px; font-weight:900; letter-spacing:.11em; text-transform:uppercase; }
+      .sdr-chooser-head h3 { margin:3px 0 0; color:#edf6f7; font-size:16px; }
+      .sdr-chooser-head p { margin:4px 0 0; color:#70868c; font-size:10px; line-height:1.4; }
+      .sdr-chooser-list { overflow:auto; padding:8px; overscroll-behavior:contain; }
+      .sdr-choice { width:100%; display:block; margin:0 0 7px; border:1px solid #15363d; border-radius:8px; padding:11px; color:inherit; background:#071014; text-align:left; }
+      .sdr-choice:last-child { margin-bottom:0; }
+      .sdr-choice:hover { border-color:#2b6570; background:#09181d; }
+      .sdr-choice.is-selected { border-color:rgba(37,212,230,.72); box-shadow:inset 0 0 0 1px rgba(37,212,230,.10); background:rgba(37,212,230,.055); }
+      .sdr-choice-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+      .sdr-choice-name { min-width:0; color:#e5eff0; font-size:12px; font-weight:850; line-height:1.3; }
+      .sdr-choice-distance { flex:0 0 auto; color:#8aa0a5; font-family:var(--mono); font-size:8px; white-space:nowrap; }
+      .sdr-choice-location { margin-top:2px; color:#8ca1a6; font-size:10px; }
+      .sdr-choice-badges { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+      .sdr-choice-badge { display:inline-flex; align-items:center; min-height:20px; border:1px solid #1d4149; border-radius:3px; padding:3px 6px; color:#80a1a7; background:#061014; font-family:var(--mono); font-size:7px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+      .sdr-choice-badge.is-recommended { border-color:rgba(97,231,134,.48); color:#8cf0a6; background:rgba(97,231,134,.06); }
+      .sdr-choice-reason { margin-top:7px; color:#a5b7bb; font-size:10px; line-height:1.45; }
+      .sdr-choice-meta { margin-top:6px; color:#5f777d; font-family:var(--mono); font-size:8px; }
+      .sdr-chooser-foot { padding:9px 12px 11px; border-top:1px solid rgba(37,212,230,.10); color:#647b80; font-size:9px; line-height:1.45; }
+      .sdr-chooser-foot.is-warning { color:#d0a954; }
+
+      #lookupReceiver[hidden] { display:none !important; }
+      .lookup-receiver-smart { width:100%; min-height:46px; display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid #1c4650; border-radius:7px; padding:9px 11px; color:#dbe8ea; background:#071216; text-align:left; }
+      .lookup-receiver-smart:hover { border-color:#2e6d78; }
+      .lookup-receiver-smart strong { display:block; color:#e3eff0; font-size:10px; }
+      .lookup-receiver-smart span { display:block; margin-top:3px; color:#759097; font-family:var(--mono); font-size:8px; }
+      .lookup-receiver-smart b { flex:0 0 auto; color:var(--accent); font-family:var(--mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; }
+
       @media (max-width:560px) {
         .sdr-player { bottom:calc(65px + env(safe-area-inset-bottom)); width:calc(100% - 10px); }
         .sdr-player-head { padding:9px 10px; }
@@ -131,7 +258,12 @@
         .sdr-controls { grid-template-columns:92px minmax(0,1fr); }
         .sdr-controls .sdr-play-control { grid-column:1 / -1; }
         .sdr-toggle { width:100%; }
-        body.sdr-player-open .app-shell { padding-bottom:430px !important; }
+        body.sdr-player-open .app-shell { padding-bottom:445px !important; }
+        .sdr-chooser { padding:5px; }
+        .sdr-chooser-dialog { max-height:82vh; border-radius:12px 12px 7px 7px; }
+        .sdr-chooser-head { padding:12px; }
+        .sdr-chooser-list { padding:6px; }
+        .sdr-choice { padding:10px; }
       }
     `;
     document.head.appendChild(style);
@@ -175,10 +307,11 @@
             </select>
           </div>
           <div class="sdr-control">
-            <label for="sdrReceiver">Receiver</label>
-            <select id="sdrReceiver" data-sdr-receiver-select>
-              ${RECEIVERS.map((receiver, index) => `<option value="${index}">${escapeHtml(receiver.name)} · ${escapeHtml(receiver.location)}</option>`).join('')}
-            </select>
+            <label>Receiver</label>
+            <button class="sdr-receiver-button" type="button" data-sdr-receiver-button aria-haspopup="dialog">
+              <span class="sdr-receiver-button-main"><strong data-sdr-receiver-button-name>Automatic</strong><span data-sdr-receiver-button-meta>Signal Scout chooses the best match</span></span>
+              <span class="sdr-receiver-button-arrow">⌄</span>
+            </button>
           </div>
           <div class="sdr-control sdr-play-control">
             <label>&nbsp;</label>
@@ -190,6 +323,7 @@
           <div class="sdr-volume"><span>◖</span><input data-sdr-volume type="range" min="0" max="1" step="0.01" value="0.75" aria-label="Volume" /><span>◗</span></div>
         </div>
         <div class="sdr-message" data-sdr-message>Tap Listen Live on any signal to start.</div>
+        <div class="sdr-context-note">Remote SDR reception may differ from reception at your location. Signal Scout's reception score still describes your location, not this remote receiver.</div>
       </div>`;
     document.body.appendChild(panel);
     sdr.panel = panel;
@@ -220,23 +354,172 @@
       updatePlayerReadout();
       if (sdr.socket?.readyState === WebSocket.OPEN && sdr.configured) sendTuning();
     });
-    panel.querySelector('[data-sdr-receiver-select]').addEventListener('change', (event) => {
-      sdr.receiverIndex = Number(event.target.value) || 0;
-      const lookupReceiver = document.getElementById('lookupReceiver');
-      if (lookupReceiver) lookupReceiver.value = String(sdr.receiverIndex);
-      if (Number.isFinite(sdr.frequency)) {
-        sdr.manualStop = false;
-        sdr.fallbackTried.clear();
-        connectSdr(sdr.receiverIndex);
-      }
-    });
+    panel.querySelector('[data-sdr-receiver-button]').addEventListener('click', () => openReceiverChooser());
 
     drawIdleSpectrum('READY');
     return panel;
   }
 
+  function createReceiverChooser() {
+    if (sdr.chooser) return sdr.chooser;
+    injectStyles();
+    const chooser = document.createElement('div');
+    chooser.className = 'sdr-chooser';
+    chooser.hidden = true;
+    chooser.innerHTML = `
+      <div class="sdr-chooser-dialog" role="dialog" aria-modal="true" aria-labelledby="sdrChooserTitle">
+        <div class="sdr-chooser-head">
+          <div class="sdr-chooser-head-text">
+            <div class="sdr-chooser-kicker">Receiver intelligence</div>
+            <h3 id="sdrChooserTitle">Choose listening receiver</h3>
+            <p data-sdr-chooser-subtitle>Signal Scout ranks public receivers for this frequency and path.</p>
+          </div>
+          <button class="sdr-icon-button" type="button" data-sdr-chooser-close aria-label="Close receiver chooser">×</button>
+        </div>
+        <div class="sdr-chooser-list" data-sdr-chooser-list></div>
+        <div class="sdr-chooser-foot" data-sdr-chooser-foot>Public SDRs are independently operated and can fill up or go offline without warning.</div>
+      </div>`;
+    chooser.addEventListener('click', (event) => {
+      if (event.target === chooser) closeReceiverChooser();
+      const choice = event.target.closest('[data-sdr-choice-index]');
+      if (!choice) return;
+      chooseReceiver(Number(choice.dataset.sdrChoiceIndex));
+    });
+    chooser.querySelector('[data-sdr-chooser-close]').addEventListener('click', closeReceiverChooser);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !chooser.hidden) closeReceiverChooser();
+    });
+    document.body.appendChild(chooser);
+    sdr.chooser = chooser;
+    return chooser;
+  }
+
   function playerEl(selector) {
     return createPlayerShell().querySelector(selector);
+  }
+
+  function currentReceiver() {
+    return sdr.receivers[sdr.receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];
+  }
+
+  function renderReceiverButton() {
+    const receiver = currentReceiver();
+    const panel = createPlayerShell();
+    panel.querySelector('[data-sdr-receiver-button-name]').textContent = receiver?.name || 'Automatic';
+    const distance = formatDistance(receiver?.distanceMiles);
+    panel.querySelector('[data-sdr-receiver-button-meta]').textContent = [
+      receiver?.recommended ? '★ Recommended' : receiver?.role,
+      distance || receiver?.location
+    ].filter(Boolean).join(' · ');
+    renderLookupReceiverButton();
+  }
+
+  function renderLookupReceiverButton() {
+    const button = sdr.lookupReceiverButton;
+    if (!button) return;
+    const receiver = currentReceiver();
+    const frequency = parseFrequencyValue(document.getElementById('lookupFrequency')?.value);
+    const recommendationMatches = Number.isFinite(frequency)
+      && Number.isFinite(sdr.recommendationFrequency)
+      && Math.abs(frequency - sdr.recommendationFrequency) < 5.2;
+
+    const strong = button.querySelector('strong');
+    const meta = button.querySelector('span');
+    const badge = button.querySelector('b');
+    if (!recommendationMatches) {
+      strong.textContent = 'Automatic receiver selection';
+      meta.textContent = 'Signal Scout will rank public SDRs for this frequency';
+      badge.textContent = 'SMART';
+      return;
+    }
+    strong.textContent = `${receiver?.name || 'Recommended receiver'}${Number.isFinite(receiver?.distanceMiles) ? ` · ${Math.round(receiver.distanceMiles).toLocaleString()} mi` : ''}`;
+    meta.textContent = receiver?.reason || receiver?.location || 'Best available public receiver';
+    badge.textContent = receiver?.recommended ? '★ BEST' : (receiver?.role || 'SELECTED');
+  }
+
+  function renderReceiverChooser() {
+    const chooser = createReceiverChooser();
+    const frequencyText = Number.isFinite(sdr.recommendationFrequency) ? formatFrequency(sdr.recommendationFrequency) : 'this frequency';
+    chooser.querySelector('[data-sdr-chooser-subtitle]').textContent = `Ranked for ${frequencyText}${sdr.recommendationStation ? ` · ${sdr.recommendationStation}` : ''}.`;
+    const list = chooser.querySelector('[data-sdr-chooser-list]');
+    list.innerHTML = sdr.receivers.map((receiver, index) => {
+      const distance = formatDistance(receiver.distanceMiles);
+      const badges = [
+        receiver.recommended ? '<span class="sdr-choice-badge is-recommended">★ Recommended</span>' : '',
+        receiver.role && receiver.role !== 'ALTERNATE' ? `<span class="sdr-choice-badge">${escapeHtml(receiver.role)}</span>` : ''
+      ].filter(Boolean).join('');
+      return `
+        <button type="button" class="sdr-choice ${index === sdr.receiverIndex ? 'is-selected' : ''}" data-sdr-choice-index="${index}">
+          <div class="sdr-choice-top">
+            <div class="sdr-choice-name">${escapeHtml(receiver.name || 'Public KiwiSDR')}</div>
+            <div class="sdr-choice-distance">${escapeHtml(distance)}</div>
+          </div>
+          <div class="sdr-choice-location">${escapeHtml(receiver.location || 'Location not listed')}</div>
+          ${badges ? `<div class="sdr-choice-badges">${badges}</div>` : ''}
+          <div class="sdr-choice-reason">${escapeHtml(receiver.reason || 'Public receiver covering this frequency.')}</div>
+          <div class="sdr-choice-meta">${escapeHtml(formatCoverage(receiver))} · PUBLIC KIWI</div>
+        </button>`;
+    }).join('');
+    const foot = chooser.querySelector('[data-sdr-chooser-foot]');
+    foot.classList.toggle('is-warning', Boolean(sdr.directoryWarning));
+    foot.textContent = sdr.directoryWarning
+      ? `Live receiver directory unavailable; showing fallback receivers. ${sdr.directoryWarning}`
+      : 'Public SDRs are independently operated and can fill up or go offline without warning. Remote reception is not a measurement of reception at your location.';
+  }
+
+  function openReceiverChooser() {
+    renderReceiverChooser();
+    const chooser = createReceiverChooser();
+    chooser.hidden = false;
+    const selected = chooser.querySelector('.sdr-choice.is-selected');
+    window.setTimeout(() => selected?.scrollIntoView({ block: 'nearest' }), 0);
+  }
+
+  function closeReceiverChooser() {
+    if (sdr.chooser) sdr.chooser.hidden = true;
+  }
+
+  function chooseReceiver(index) {
+    if (!sdr.receivers[index]) return;
+    sdr.receiverIndex = index;
+    sdr.manualReceiverId = sdr.receivers[index].id;
+    closeReceiverChooser();
+    renderReceiverButton();
+    updatePlayerReadout();
+    rewriteLookupLiveNotes();
+    if (!sdr.panel?.hidden && Number.isFinite(sdr.frequency)) {
+      sdr.manualStop = false;
+      sdr.fallbackTried.clear();
+      connectSdr(index);
+    }
+  }
+
+  function installLookupReceiverControl() {
+    const select = document.getElementById('lookupReceiver');
+    if (!select || sdr.lookupReceiverButton) return;
+    select.hidden = true;
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lookup-receiver-smart';
+    button.id = 'lookupReceiverButton';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.innerHTML = '<span><strong>Automatic receiver selection</strong><span>Signal Scout will rank public SDRs for this frequency</span></span><b>SMART</b>';
+    select.insertAdjacentElement('afterend', button);
+    const label = select.closest('.lookup-receiver-row')?.querySelector('label');
+    if (label) label.htmlFor = button.id;
+    button.addEventListener('click', async () => {
+      if (!sdr.panel?.hidden && Number.isFinite(sdr.frequency)) {
+        openReceiverChooser();
+        return;
+      }
+      await refreshLookupRecommendations({ force: true });
+      openReceiverChooser();
+    });
+    sdr.lookupReceiverButton = button;
+    renderLookupReceiverButton();
   }
 
   function setMessage(message, isError = false) {
@@ -253,15 +536,16 @@
 
   function updatePlayerReadout() {
     const panel = createPlayerShell();
-    const receiver = RECEIVERS[sdr.receiverIndex] || RECEIVERS[0];
+    const receiver = currentReceiver();
     panel.querySelector('[data-sdr-station]').textContent = sdr.station || 'Live receiver';
     panel.querySelector('[data-sdr-frequency]').textContent = Number.isFinite(sdr.frequency)
       ? `${formatFrequency(sdr.frequency)} · ${sdr.mode.toUpperCase()}`
       : '-- kHz';
-    panel.querySelector('[data-sdr-receiver]').textContent = `Receiver: ${receiver.location}`;
+    const distance = formatDistance(receiver?.distanceMiles);
+    panel.querySelector('[data-sdr-receiver]').textContent = `Receiver: ${receiver?.location || receiver?.name || '--'}${distance ? ` · ${distance}` : ''}`;
     panel.querySelector('[data-sdr-mode]').value = sdr.mode;
-    panel.querySelector('[data-sdr-receiver-select]').value = String(sdr.receiverIndex);
     panel.querySelector('[data-sdr-toggle]').textContent = sdr.socket || sdr.connected ? 'Stop' : 'Play';
+    renderReceiverButton();
   }
 
   function rssiToS(rssi) {
@@ -363,8 +647,8 @@
       if (audioRate && sdr.audioContext) {
         sendSocket(`SET AR OK in=${Number(audioRate)} out=${Math.round(sdr.audioContext.sampleRate)}`);
       }
-      if (/(?:^|\s)too_busy=1(?:\s|$)/.test(text)) failCurrentReceiver('Receiver is full. Trying another receiver…');
-      if (/(?:^|\s)down=1(?:\s|$)/.test(text)) failCurrentReceiver('Receiver is offline. Trying another receiver…');
+      if (/(?:^|\s)too_busy=1(?:\s|$)/.test(text)) failCurrentReceiver('Receiver is full. Trying the next ranked receiver…');
+      if (/(?:^|\s)down=1(?:\s|$)/.test(text)) failCurrentReceiver('Receiver is offline. Trying the next ranked receiver…');
       return;
     }
 
@@ -396,7 +680,7 @@
   }
 
   function websocketUrl(receiverIndex) {
-    const receiver = RECEIVERS[receiverIndex] || RECEIVERS[0];
+    const receiver = sdr.receivers[receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;
     return `${scheme}//${window.location.host}/api/sdr/ws?receiver=${encodeURIComponent(receiver.id)}&stream=SND&ts=${timestamp}`;
@@ -426,8 +710,8 @@
   }
 
   function nextFallbackReceiver() {
-    for (let offset = 1; offset <= RECEIVERS.length; offset += 1) {
-      const index = (sdr.receiverIndex + offset) % RECEIVERS.length;
+    for (let offset = 1; offset <= sdr.receivers.length; offset += 1) {
+      const index = (sdr.receiverIndex + offset) % sdr.receivers.length;
       if (!sdr.fallbackTried.has(index)) return index;
     }
     return null;
@@ -440,7 +724,7 @@
     const next = nextFallbackReceiver();
     if (next == null) {
       setStatus('Unavailable', false);
-      setMessage('None of the selected public receivers answered. Tap Retry or choose a different receiver.', true);
+      setMessage('The ranked public receivers did not answer. Tap Retry or choose another receiver.', true);
       playerEl('[data-sdr-toggle]').textContent = 'Retry';
       drawIdleSpectrum('NO RECEIVER');
       return;
@@ -453,11 +737,12 @@
     if (!Number.isFinite(sdr.frequency)) return;
     disconnectSocket();
     sdr.manualStop = false;
-    sdr.receiverIndex = RECEIVERS[receiverIndex] ? receiverIndex : 0;
+    sdr.receiverIndex = sdr.receivers[receiverIndex] ? receiverIndex : 0;
     sdr.fallbackTried.add(sdr.receiverIndex);
     updatePlayerReadout();
+    const receiver = currentReceiver();
     setStatus('Connecting', false);
-    setMessage(`Connecting to ${RECEIVERS[sdr.receiverIndex].location}…`);
+    setMessage(`Connecting to ${receiver?.location || receiver?.name || 'public receiver'}…`);
     drawIdleSpectrum('CONNECTING');
 
     try {
@@ -473,7 +758,7 @@
       socket = new WebSocket(websocketUrl(sdr.receiverIndex));
       socket.binaryType = 'arraybuffer';
     } catch {
-      failCurrentReceiver('Could not open the receiver stream. Trying another receiver…');
+      failCurrentReceiver('Could not open the receiver stream. Trying the next ranked receiver…');
       return;
     }
     sdr.socket = socket;
@@ -488,10 +773,10 @@
       else if (typeof event.data === 'string') parseKiwiMessage(new TextEncoder().encode(event.data));
     };
     socket.onerror = () => {
-      if (!sdr.gotAudio) failCurrentReceiver('Receiver connection failed. Trying another receiver…');
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver connection failed. Trying the next ranked receiver…');
     };
     socket.onclose = () => {
-      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying another receiver…');
+      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');
       else if (!sdr.manualStop && sdr.gotAudio) {
         disconnectSocket();
         setStatus('Disconnected', false);
@@ -500,7 +785,7 @@
       }
     };
     sdr.connectTimer = window.setTimeout(() => {
-      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying another receiver…');
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');
     }, 9000);
   }
 
@@ -531,16 +816,87 @@
   }
 
   function closePlayer() {
+    closeReceiverChooser();
     stopSdr({ keepPanel: false });
   }
 
-  function startPlayer({ frequency, station, mode = 'am', receiverIndex = selectedLookupReceiverIndex() }) {
-    if (!Number.isFinite(frequency) || frequency < 100 || frequency > 30000) return;
+  function recommendationUrl(frequency, container) {
+    const url = new URL('/api/sdr/receivers', window.location.origin);
+    url.searchParams.set('frequency', Number(frequency).toFixed(1));
+    const user = loadStoredLocation();
+    if (user) {
+      url.searchParams.set('lat', user.lat.toFixed(5));
+      url.searchParams.set('lon', user.lon.toFixed(5));
+    }
+    const stationName = stationFromContainer(container);
+    const tx = stationCoordinates(frequency, stationName);
+    if (tx) {
+      url.searchParams.set('txLat', tx.lat.toFixed(5));
+      url.searchParams.set('txLon', tx.lon.toFixed(5));
+    }
+    return url;
+  }
+
+  async function refreshReceiverRecommendations({ frequency, container = null, force = false } = {}) {
+    if (!Number.isFinite(frequency) || frequency < 10 || frequency > 30000) return false;
+    const stationName = stationFromContainer(container);
+    if (!force
+      && Number.isFinite(sdr.recommendationFrequency)
+      && Math.abs(sdr.recommendationFrequency - frequency) < 0.11
+      && sdr.recommendationStation === stationName
+      && sdr.receivers.length) return true;
+
+    const sequence = ++sdr.recommendationSequence;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 6500);
+    try {
+      const response = await fetch(recommendationUrl(frequency, container), {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`Receiver directory HTTP ${response.status}`);
+      const payload = await response.json();
+      if (sequence !== sdr.recommendationSequence) return false;
+      if (!Array.isArray(payload?.receivers) || !payload.receivers.length) throw new Error('No public receiver covers this frequency');
+
+      sdr.receivers = payload.receivers;
+      sdr.directorySource = payload.source || 'directory';
+      sdr.directoryWarning = payload.warning || null;
+      sdr.recommendationFrequency = frequency;
+      sdr.recommendationStation = stationName;
+      const manualIndex = sdr.manualReceiverId
+        ? sdr.receivers.findIndex((receiver) => receiver.id === sdr.manualReceiverId)
+        : -1;
+      const recommendedIndex = sdr.receivers.findIndex((receiver) => receiver.recommended);
+      sdr.receiverIndex = manualIndex >= 0 ? manualIndex : (recommendedIndex >= 0 ? recommendedIndex : 0);
+      renderReceiverButton();
+      rewriteLookupLiveNotes();
+      return true;
+    } catch (error) {
+      if (sequence !== sdr.recommendationSequence) return false;
+      sdr.receivers = LEGACY_RECEIVERS.map((receiver) => ({ ...receiver }));
+      sdr.directorySource = 'fallback';
+      sdr.directoryWarning = error?.name === 'AbortError' ? 'Receiver directory timed out.' : (error?.message || 'Receiver directory unavailable.');
+      sdr.recommendationFrequency = frequency;
+      sdr.recommendationStation = stationName;
+      const manualIndex = sdr.manualReceiverId
+        ? sdr.receivers.findIndex((receiver) => receiver.id === sdr.manualReceiverId)
+        : -1;
+      sdr.receiverIndex = manualIndex >= 0 ? manualIndex : 0;
+      renderReceiverButton();
+      rewriteLookupLiveNotes();
+      return false;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  async function startPlayer({ frequency, station, mode = 'am', container = null }) {
+    if (!Number.isFinite(frequency) || frequency < 10 || frequency > 30000) return;
     const panel = createPlayerShell();
     sdr.frequency = frequency;
     sdr.station = station || 'Live signal';
     sdr.mode = PASSBANDS[mode] ? mode : 'am';
-    sdr.receiverIndex = RECEIVERS[receiverIndex] ? receiverIndex : 0;
     sdr.manualStop = false;
     sdr.fallbackTried.clear();
     panel.hidden = false;
@@ -548,6 +904,22 @@
     document.body.classList.add('sdr-player-open');
     document.body.classList.remove('sdr-player-minimized');
     panel.querySelector('[data-sdr-minimize]').textContent = '⌄';
+    setStatus('Finding SDR', false);
+    setMessage('Finding the most useful public receiver for this frequency and path…');
+    drawIdleSpectrum('RANKING RECEIVERS');
+
+    // Create/resume Web Audio while still inside the user's click gesture. The
+    // directory lookup can then finish without Android/iOS blocking playback.
+    try {
+      await ensureAudioContext();
+    } catch (error) {
+      setStatus('Audio blocked', false);
+      setMessage(error.message || 'Could not start audio.', true);
+      return;
+    }
+
+    await refreshReceiverRecommendations({ frequency, container, force: true });
+    if (sdr.manualStop || sdr.panel?.hidden || sdr.frequency !== frequency) return;
     updatePlayerReadout();
     connectSdr(sdr.receiverIndex);
   }
@@ -648,6 +1020,48 @@
     draw();
   }
 
+  function rewriteLookupLiveNotes() {
+    const results = document.getElementById('lookupResults');
+    if (!results) return;
+    const receiver = currentReceiver();
+    const inputFrequency = parseFrequencyValue(document.getElementById('lookupFrequency')?.value);
+    const matches = Number.isFinite(inputFrequency)
+      && Number.isFinite(sdr.recommendationFrequency)
+      && Math.abs(inputFrequency - sdr.recommendationFrequency) < 5.2;
+    results.querySelectorAll('.lookup-live-note').forEach((note) => {
+      if (!matches) {
+        const text = 'Live RF · Signal Scout will choose a receiver · remote reception may differ from your location';
+        if (note.textContent !== text) note.textContent = text;
+        return;
+      }
+      const distance = formatDistance(receiver?.distanceMiles);
+      const text = `Live RF · ${receiver?.location || receiver?.name || 'public receiver'}${distance ? ` · ${distance}` : ''} · remote reception may differ from your location`;
+      if (note.textContent !== text) note.textContent = text;
+    });
+  }
+
+  function primaryLookupContainer() {
+    return document.querySelector('#lookupResults .lookup-result-primary, #lookupResults .lookup-result');
+  }
+
+  async function refreshLookupRecommendations({ force = false } = {}) {
+    if (!sdr.panel?.hidden && Number.isFinite(sdr.frequency)) return true;
+    const primary = primaryLookupContainer();
+    const frequency = frequencyFromContainer(primary)
+      || parseFrequencyValue(document.getElementById('lookupFrequency')?.value);
+    if (!Number.isFinite(frequency) || frequency < 10 || frequency > 30000) {
+      renderLookupReceiverButton();
+      return false;
+    }
+    return refreshReceiverRecommendations({ frequency, container: primary, force });
+  }
+
+  function scheduleLookupRecommendation() {
+    if (!sdr.panel?.hidden && Number.isFinite(sdr.frequency)) return;
+    window.clearTimeout(sdr.lookupRecommendationTimer);
+    sdr.lookupRecommendationTimer = window.setTimeout(() => refreshLookupRecommendations().catch(() => {}), 220);
+  }
+
   function handleListenLiveClick(event) {
     const link = event.target.closest('.listen-live-button');
     if (!link) return;
@@ -660,10 +1074,24 @@
       frequency,
       station: stationFromContainer(container),
       mode: modeFromContainer(container),
-      receiverIndex: selectedLookupReceiverIndex()
+      container
     });
   }
 
   createPlayerShell();
+  createReceiverChooser();
+  installLookupReceiverControl();
+  rewriteLookupLiveNotes();
   document.addEventListener('click', handleListenLiveClick, true);
+
+  const lookupResults = document.getElementById('lookupResults');
+  if (lookupResults) {
+    new MutationObserver(() => {
+      rewriteLookupLiveNotes();
+      scheduleLookupRecommendation();
+    }).observe(lookupResults, { childList: true, subtree: true });
+  }
+  document.getElementById('lookupFrequency')?.addEventListener('input', () => {
+    renderLookupReceiverButton();
+  });
 })();
