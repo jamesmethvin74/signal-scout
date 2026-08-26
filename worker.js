@@ -60,3 +60,5 @@ export default {
     return response;
   }
 };
+
+// Deployment marker: route the SDR runtime assets through the Worker so the origin fix is actually served.
