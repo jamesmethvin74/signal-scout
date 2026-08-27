@@ -41,12 +41,13 @@ export default {
     }
 
     // Force browsers to request the corrected runtime asset URLs after this
-    // deployment rather than reusing the earlier broken v5/v2 copies.
+    // deployment rather than reusing earlier broken or superseded copies.
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
         .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=6')
-        .replace('sdr-health.js?v=2', 'sdr-health.js?v=3');
+        .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
+        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v2.js?v=1');
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
@@ -63,3 +64,4 @@ export default {
 
 // Deployment marker: route the SDR runtime assets through the Worker so the origin fix is actually served.
 // Deployment marker: publish interactive spectrum drag/tap tuning controls.
+// Deployment marker: publish moving active-frequency cursor without re-centering the RF view on every tune.
