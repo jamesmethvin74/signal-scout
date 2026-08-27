@@ -1,23 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">FreqBeacon</title>
-  <desc id="desc">Radio beacon tower with radiating signal waves</desc>
-  <defs>
-    <linearGradient id="mast" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#d9f1ff"/>
-      <stop offset="1" stop-color="#69bdf4"/>
-    </linearGradient>
-    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
-      <feGaussianBlur stdDeviation="2.4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M23.5 18.5a12 12 0 0 1 17 0" stroke="#72c9f7" stroke-width="2.2"/>
-    <path d="M17 12a21.2 21.2 0 0 1 30 0" stroke="#5ebbf1" stroke-width="2" opacity=".9"/>
-    <path d="M11 6a29.7 29.7 0 0 1 42 0" stroke="#4aaee9" stroke-width="1.8" opacity=".72"/>
-    <path d="M26.5 22.3 17 58h30l-9.5-35.7" stroke="url(#mast)" stroke-width="3"/>
-    <path d="M22 42h20M19.5 51h25M32 26v32" stroke="#8dd5fb" stroke-width="1.7" opacity=".86"/>
-  </g>
-  <circle cx="32" cy="20" r="4.2" fill="#cbedff" stroke="#76d6ff" stroke-width="1.4" filter="url(#glow)"/>
-  <circle cx="32" cy="20" r="1.8" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">FREQBEACON Beacon Tower</title>
+<desc id="desc">A luminous communications tower centered inside concentric radio-frequency rings on an Arctic Slate field.</desc>
+<defs>
+  <radialGradient id="bg" cx="50%" cy="41%" r="72%">
+    <stop offset="0" stop-color="#163451"/>
+    <stop offset=".46" stop-color="#0b1d2e"/>
+    <stop offset="1" stop-color="#07111f"/>
+  </radialGradient>
+  <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ecfbff"/>
+    <stop offset=".42" stop-color="#8be8ff"/>
+    <stop offset="1" stop-color="#35b9f0"/>
+  </linearGradient>
+  <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#78f0ff"/>
+    <stop offset=".52" stop-color="#36c8f4"/>
+    <stop offset="1" stop-color="#3b8fff"/>
+  </linearGradient>
+  <filter id="cyanGlow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="10" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.12 0 0 0 0 0.78 0 0 0 0 1 0 0 0 1 0"/>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur stdDeviation="5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="512" height="512" rx="0" fill="url(#bg)"/>
+<circle cx="256" cy="234" r="184" fill="none" stroke="#163f5f" stroke-width="2" opacity=".32"/>
+<circle cx="256" cy="234" r="151" fill="none" stroke="#1b5279" stroke-width="2" opacity=".28"/>
+<g fill="none" stroke="url(#ring)" stroke-linecap="round" filter="url(#softGlow)">
+  <path d="M151 178a146 146 0 0 1 210 0" stroke-width="9" opacity=".92"/>
+  <path d="M115 142a197 197 0 0 1 282 0" stroke-width="7" opacity=".66"/>
+  <path d="M80 106a246 246 0 0 1 352 0" stroke-width="5" opacity=".42"/>
+</g>
+<g opacity=".38" fill="none" stroke="#3ad5ff" stroke-linecap="round">
+  <path d="M88 372c28-20 45 20 72 0s44-20 71 0 45 20 72 0 44-20 72 0 44 20 72 0" stroke-width="4"/>
+  <path d="M113 394c23-14 38 14 61 0s38-14 61 0 38 14 61 0 38-14 61 0 38 14 61 0" stroke-width="2.5" opacity=".65"/>
+</g>
+<g filter="url(#cyanGlow)">
+  <circle cx="256" cy="165" r="15" fill="#d9fbff"/>
+  <circle cx="256" cy="165" r="7" fill="#ffffff"/>
+  <circle cx="256" cy="165" r="25" fill="none" stroke="#58dcff" stroke-width="3" opacity=".75"/>
+</g>
+<g fill="none" stroke="url(#tower)" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)">
+  <path d="M256 177 183 397M256 177l73 220" stroke-width="12"/>
+  <path d="M205 333h102M215 300h82M225 267h62M236 234h40M246 201h20" stroke-width="7"/>
+  <path d="m196 365 120-98M213 316l90 73M220 287l70 58M230 256l50 41M240 223l30 25" stroke-width="5" opacity=".9"/>
+  <path d="M166 397h180" stroke-width="12"/>
+</g>
+<g fill="#91eaff"><circle cx="183" cy="397" r="6"/><circle cx="329" cy="397" r="6"/></g>
 </svg>
