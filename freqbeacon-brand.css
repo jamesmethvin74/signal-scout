@@ -1,0 +1,69 @@
+.brand {
+  gap: 12px;
+}
+
+.signal-logo {
+  width: 44px !important;
+  height: 44px !important;
+  flex: 0 0 44px !important;
+  border-radius: 10px !important;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(114, 201, 247, .18), transparent 52%),
+    rgba(9, 22, 34, .72) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 200, 255, .22),
+    0 0 22px rgba(55, 174, 235, .09) !important;
+  filter: none !important;
+  position: relative;
+}
+
+.signal-logo::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: center / contain no-repeat url("freqbeacon-logo.svg");
+  filter: drop-shadow(0 0 6px rgba(75, 190, 245, .32));
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 20px !important;
+  font-weight: 820 !important;
+  letter-spacing: .095em !important;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #f4f8fb 0%, #d7ebf8 44%, #7ec8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  text-shadow: none !important;
+}
+
+.brand p {
+  margin-top: 3px !important;
+  color: #79c9f7 !important;
+  font-size: 10.5px !important;
+  font-weight: 600;
+  letter-spacing: .09em !important;
+}
+
+@media (max-width: 430px) {
+  .signal-logo {
+    width: 42px !important;
+    height: 42px !important;
+    flex-basis: 42px !important;
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand h1 {
+    font-size: 18px !important;
+    letter-spacing: .075em !important;
+  }
+
+  .brand p {
+    font-size: 9.5px !important;
+    letter-spacing: .065em !important;
+  }
+}
