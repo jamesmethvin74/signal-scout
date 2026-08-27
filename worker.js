@@ -47,7 +47,8 @@ export default {
       html = html
         .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=6')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
-        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=1');
+        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=1')
+        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
@@ -66,3 +67,4 @@ export default {
 // Deployment marker: publish interactive spectrum drag/tap tuning controls.
 // Deployment marker: publish moving active-frequency cursor without re-centering the RF view on every tune.
 // Deployment marker: fix recursive tuning-cursor MutationObserver freeze.
+// Deployment marker: keep amateur SDR choices geographically relevant and fail over when W/F is unavailable.
