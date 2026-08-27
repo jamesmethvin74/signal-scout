@@ -62,3 +62,4 @@ export default {
 };
 
 // Deployment marker: route the SDR runtime assets through the Worker so the origin fix is actually served.
+// Deployment marker: publish interactive spectrum drag/tap tuning controls.
