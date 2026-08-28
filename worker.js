@@ -83,8 +83,8 @@ function applyFreqBeaconBrand(html) {
     .replace('<h1>FreqBeacon</h1>', '<h1>FREQBEACON</h1>')
     .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>')
     .replace(/freqbeacon-brand\.css\?v=\d+/g, 'freqbeacon-brand.css?v=5')
-    .replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=12')
-    .replace(/href="manifest\.json(?:\?v=\d+)?"/g, 'href="manifest.json?v=6"');
+    .replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=13')
+    .replace(/href="\/?(?:manifest\.json|freqbeacon\.webmanifest|manifest\.webmanifest)(?:\?v=\d+)?"/g, 'href="/manifest.webmanifest?v=1"');
 
   if (!branded.includes('freqbeacon-brand.css')) {
     branded = branded.replace(
@@ -95,8 +95,8 @@ function applyFreqBeaconBrand(html) {
 
   if (!branded.includes('freqbeacon-startup-v3.avif')) {
     branded = branded.replace(
-      '<link rel="manifest" href="manifest.json?v=6" />',
-      '<link rel="manifest" href="manifest.json?v=6" />\n  <link rel="preload" href="freqbeacon-startup-v3.avif" as="image" type="image/avif" fetchpriority="high" />'
+      '<link rel="manifest" href="/manifest.webmanifest?v=1" />',
+      '<link rel="manifest" href="/manifest.webmanifest?v=1" />\n  <link rel="preload" href="freqbeacon-startup-v3.avif" as="image" type="image/avif" fetchpriority="high" />'
     );
   }
 
@@ -112,7 +112,7 @@ function applyFreqBeaconBrand(html) {
   if (!branded.includes('freqbeacon-brand.js')) {
     branded = branded.replace(
       '<script src="stations.js"></script>',
-      '<script src="freqbeacon-brand.js?v=12"></script>\n  <script src="stations.js"></script>'
+      '<script src="freqbeacon-brand.js?v=13"></script>\n  <script src="stations.js"></script>'
     );
   }
 
@@ -165,7 +165,7 @@ export default {
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
-      headers.set('x-freqbeacon-brand', 'v12');
+      headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v2');
       return new Response(html, {
         status: response.status,
@@ -194,3 +194,4 @@ export default {
 // Deployment marker: make FREQBEACON installable and harden moving-device location acquisition.
 // Deployment marker: shorten startup, add PNG PWA fallbacks, and remove service-worker request interception.
 // Deployment marker: lazy-load program-guide network work so Chrome reaches network idle and installability can settle.
+// Deployment marker: converge every PWA manifest and service-worker path on one canonical identity.
