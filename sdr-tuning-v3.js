@@ -42,6 +42,10 @@
     return PASSBANDS[value] ? value : 'am';
   }
 
+  function isSsbMode(mode = currentMode()) {
+    return mode === 'usb' || mode === 'lsb';
+  }
+
   function parseFrequency(text) {
     const match = String(text || '').match(/([0-9][0-9,.]*)\s*kHz/i);
     if (!match) return null;
@@ -58,7 +62,7 @@
     const match = label.match(/([0-9]+(?:\.[0-9]+)?)\s*kHz\s+span/i);
     const parsed = match ? Number(match[1]) : NaN;
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    return ['usb', 'lsb'].includes(currentMode()) ? 14.6484375 : 29.296875;
+    return isSsbMode() ? 14.6484375 : 29.296875;
   }
 
   function spectrumIsLive() {
@@ -66,7 +70,7 @@
   }
 
   function snapFrequency(kHz) {
-    const step = ['usb', 'lsb'].includes(currentMode()) ? 0.1 : 1;
+    const step = isSsbMode() ? 0.1 : 1;
     return clamp(Math.round(Number(kHz) / step) * step, MIN_KHZ, MAX_KHZ);
   }
 
@@ -75,6 +79,38 @@
     return Number.isInteger(rounded)
       ? rounded.toLocaleString()
       : rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+
+  function tuneButtonConfig(mode = currentMode()) {
+    if (isSsbMode(mode)) {
+      return [
+        { step: -1, label: '−1', aria: 'Tune down 1 kilohertz' },
+        { step: -0.1, label: '−0.1', aria: 'Tune down 100 hertz' },
+        { step: 0.1, label: '+0.1', aria: 'Tune up 100 hertz' },
+        { step: 1, label: '+1', aria: 'Tune up 1 kilohertz' }
+      ];
+    }
+
+    return [
+      { step: -5, label: '−5', aria: 'Tune down 5 kilohertz' },
+      { step: -1, label: '−1', aria: 'Tune down 1 kilohertz' },
+      { step: 1, label: '+1', aria: 'Tune up 1 kilohertz' },
+      { step: 5, label: '+5', aria: 'Tune up 5 kilohertz' }
+    ];
+  }
+
+  function refreshTuneButtons() {
+    const strip = document.querySelector('[data-sdr-tune-strip]');
+    if (!strip) return;
+    const buttons = [...strip.querySelectorAll('[data-sdr-tune-step]')];
+    const config = tuneButtonConfig();
+    buttons.forEach((button, index) => {
+      const item = config[index];
+      if (!item) return;
+      button.dataset.sdrTuneStep = String(item.step);
+      if (button.textContent !== item.label) button.textContent = item.label;
+      button.setAttribute('aria-label', item.aria);
+    });
   }
 
   function ensureViewCenter() {
@@ -293,6 +329,7 @@
       wrap.insertAdjacentElement('afterend', strip);
     }
 
+    refreshTuneButtons();
     state.uiReady = true;
     state.observer?.disconnect();
     state.observer = null;
@@ -337,6 +374,7 @@
 
   document.addEventListener('change', (event) => {
     if (!event.target?.matches?.('[data-sdr-mode]') || event.target.dataset.sdrTuneInternal === '1') return;
+    refreshTuneButtons();
     if (!Number.isFinite(state.manualKHz)) return;
     window.setTimeout(() => commitTune({ forceRecenter: true }), 0);
   });
