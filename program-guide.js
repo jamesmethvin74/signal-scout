@@ -1,9 +1,22 @@
 (() => {
-  const SUPPORTED = /^(?:WRMI|WBCQ)$/i;
+  const EXACT_GUIDES = /^(?:WRMI|WBCQ)$/i;
   const cache = new Map();
   const pending = new WeakSet();
   const grid = document.getElementById('signalGrid');
   const lookupResults = document.getElementById('lookupResults');
+
+  const SERVICE_NAMES = new Map([
+    ['BBC WORLD SERVICE', 'BBC World Service'],
+    ['RADIO ROMANIA INTERNATIONAL', 'Radio Romania International'],
+    ['RNZ PACIFIC', 'RNZ Pacific'],
+    ['RADIO EXTERIOR DE ESPAÑA', 'Radio Exterior de España'],
+    ['CHINA RADIO INTERNATIONAL', 'China Radio International'],
+    ['WEWN', 'EWTN / WEWN'],
+    ['WWCR', 'WWCR'],
+    ['SOLOMON ISLANDS BROADCASTING', 'Solomon Islands Broadcasting / SIBC'],
+    ['WRMI', 'WRMI'],
+    ['WBCQ', 'WBCQ']
+  ]);
 
   function esc(value) {
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -31,6 +44,30 @@
       || '';
   }
 
+  function tagsFrom(container) {
+    return [...container.querySelectorAll('.tags .tag, .lookup-tags .lookup-tag')]
+      .map((tag) => tag.textContent.trim())
+      .filter(Boolean);
+  }
+
+  function languageFrom(container) {
+    const tags = tagsFrom(container);
+    const likely = tags.find((tag) => /English|Spanish|French|German|Portuguese|Arabic|Chinese|Japanese|Korean|Russian|Romanian|Italian|Dutch|Polish|Hindi|Urdu|Persian|Turkish|Swahili|Hausa|Afrikaans|Amharic|Thai|Vietnamese|Indonesian|Malay|Tagalog|Ukrainian|Bulgarian|Serbian|Croatian|Greek|Hebrew|Danish|Norwegian|Swedish|Finnish/i.test(tag));
+    return likely || '';
+  }
+
+  function serviceIdentity(container, station) {
+    const clean = String(station || '').trim();
+    const upper = clean.toUpperCase();
+    const base = SERVICE_NAMES.get(upper) || clean || 'Broadcast service';
+    const language = languageFrom(container);
+    const languageSuffix = language && !/unknown/i.test(language) ? ` · ${language}` : '';
+    return {
+      title: `${base}${languageSuffix}`,
+      note: 'The transmission/service is identified from the active HFCC/EiBi schedule. An exact show title is not yet available from a broadcaster program guide.'
+    };
+  }
+
   function targetDate(container) {
     const selector = container.classList.contains('lookup-result') ? '[data-lookup-offset].active' : '.time-picker [data-offset].active';
     const button = document.querySelector(selector);
@@ -50,7 +87,7 @@
   }
 
   function render(slot, data) {
-    slot.classList.remove('is-loading','is-verified','is-warning');
+    slot.classList.remove('is-loading','is-verified','is-warning','is-service');
     if (data.status === 'verified') {
       slot.classList.add('is-verified');
       slot.innerHTML = `
@@ -59,6 +96,14 @@
         <div class="program-guide-window">${esc(data.window || '')}</div>
         ${data.next ? `<div class="program-guide-next"><b>Up next:</b> ${esc(data.next.program)}${data.next.window ? ` · ${esc(data.next.window)}` : ''}</div>` : ''}
         ${sourceLink(data)}`;
+      return;
+    }
+    if (data.status === 'service') {
+      slot.classList.add('is-service');
+      slot.innerHTML = `
+        <div class="program-guide-kicker"><span class="program-service-dot"></span>ON NOW · SERVICE IDENTIFIED</div>
+        <div class="program-guide-title">${esc(data.program || 'Broadcast service')}</div>
+        <div class="program-guide-note">${esc(data.message || 'Exact show title is not yet available.')}</div>`;
       return;
     }
     slot.classList.add('is-warning');
@@ -79,26 +124,41 @@
       ${sourceLink(data)}`;
   }
 
+  function isBroadcastCard(container) {
+    if (container.matches('[data-ham-card], .ham-quick-target')) return false;
+    if (container.classList.contains('lookup-result')) return true;
+    const frequency = container.querySelector('.frequency');
+    const unit = frequency?.querySelector('span')?.textContent?.trim().toLowerCase() || '';
+    return unit.includes('mhz');
+  }
+
+  function renameSchedule(container) {
+    const scheduleDetail = [...container.querySelectorAll('.details .detail')].find((detail) => String(detail.childNodes?.[0]?.textContent || '').trim() === 'Schedule');
+    if (!scheduleDetail) return;
+    scheduleDetail.childNodes[0].textContent = 'Transmission';
+    scheduleDetail.classList.add('collapse-summary-detail');
+  }
+
   async function decorate(container) {
-    if (pending.has(container) || container.querySelector('[data-program-guide]')) return;
-    if (container.matches('[data-ham-card], .ham-quick-target')) return;
+    if (pending.has(container) || container.querySelector('[data-program-guide]') || !isBroadcastCard(container)) return;
     const station = stationFrom(container);
     const frequency = frequencyFrom(container);
-    if (!SUPPORTED.test(station) || !Number.isFinite(frequency)) return;
+    if (!station || !Number.isFinite(frequency)) return;
     pending.add(container);
-
-    const scheduleDetail = [...container.querySelectorAll('.details .detail')].find((detail) => String(detail.childNodes?.[0]?.textContent || '').trim() === 'Schedule');
-    if (scheduleDetail) {
-      scheduleDetail.childNodes[0].textContent = 'Transmission';
-      scheduleDetail.classList.add('collapse-summary-detail');
-    }
+    renameSchedule(container);
 
     const slot = document.createElement('section');
     slot.className = 'program-guide-card is-loading';
     slot.dataset.programGuide = 'true';
-    slot.innerHTML = '<div class="program-guide-kicker">ON NOW</div><div class="program-guide-title">Checking official program guide…</div>';
+    slot.innerHTML = '<div class="program-guide-kicker">ON NOW</div><div class="program-guide-title">Identifying current service…</div>';
     const details = container.querySelector('.details, .lookup-tags');
     if (details) details.insertAdjacentElement('afterend', slot); else container.appendChild(slot);
+
+    if (!EXACT_GUIDES.test(station)) {
+      const service = serviceIdentity(container, station);
+      render(slot, { status:'service', program:service.title, message:service.note });
+      return;
+    }
 
     const at = targetDate(container);
     const bucket = Math.floor(at.getTime() / 300000);
@@ -113,8 +173,22 @@
         });
       cache.set(key, promise);
     }
-    try { render(slot, await promise); }
-    catch { render(slot, { status:'unavailable', message:'Program guide lookup is temporarily unavailable.' }); }
+    try {
+      const result = await promise;
+      if (result.status === 'unverified' || result.status === 'unavailable') {
+        const service = serviceIdentity(container, station);
+        render(slot, {
+          status:'service',
+          program:service.title,
+          message: result.message ? `${result.message} ${service.note}` : service.note
+        });
+      } else {
+        render(slot, result);
+      }
+    } catch {
+      const service = serviceIdentity(container, station);
+      render(slot, { status:'service', program:service.title, message:`Program guide lookup is temporarily unavailable. ${service.note}` });
+    }
   }
 
   function decorateAll(root = document) {
@@ -125,10 +199,14 @@
   style.textContent = `
     .program-guide-card{margin-top:12px;padding:12px 13px;border:1px solid rgba(37,212,230,.22);border-radius:7px;background:linear-gradient(135deg,rgba(37,212,230,.055),rgba(4,11,14,.78));}
     .program-guide-card.is-verified{border-color:rgba(97,231,134,.42);background:linear-gradient(135deg,rgba(97,231,134,.065),rgba(4,11,14,.82));}
+    .program-guide-card.is-service{border-color:rgba(37,212,230,.36);background:linear-gradient(135deg,rgba(37,212,230,.075),rgba(4,11,14,.82));}
     .program-guide-card.is-warning{border-color:rgba(239,189,92,.32);}
     .program-guide-kicker{display:flex;align-items:center;gap:7px;color:#7f98a0;font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;}
     .program-guide-card.is-verified .program-guide-kicker{color:var(--green);}
-    .program-live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px rgba(97,231,134,.65);}
+    .program-guide-card.is-service .program-guide-kicker{color:var(--accent);}
+    .program-live-dot,.program-service-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+    .program-live-dot{background:var(--green);box-shadow:0 0 10px rgba(97,231,134,.65);}
+    .program-service-dot{background:var(--accent);box-shadow:0 0 9px rgba(37,212,230,.45);}
     .program-guide-title{margin-top:5px;color:#eef6f7;font-size:15px;font-weight:900;line-height:1.2;}
     .program-guide-window{margin-top:3px;color:#a9bdc2;font-family:var(--mono);font-size:10px;}
     .program-guide-next,.program-guide-note{margin-top:7px;color:#8fa3a9;font-size:10px;line-height:1.45;}
