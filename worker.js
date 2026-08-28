@@ -1,4 +1,5 @@
 import baseWorker from './worker-v2.js';
+import { programGuideResponse } from './program-guide-worker.js';
 
 const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js']);
 
@@ -50,18 +51,24 @@ function applyFreqBeaconBrand(html) {
   return branded;
 }
 
+function applyProgramGuideRuntime(html) {
+  if (html.includes('program-guide.js')) return html;
+  return html.replace(
+    '</body>',
+    '  <script src="program-guide.js?v=1"></script>\n</body>'
+  );
+}
+
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/program-guide') return programGuideResponse(request);
+
     const response = await baseWorker.fetch(request, env, ctx);
     if (request.method !== 'GET') return response;
 
-    const url = new URL(request.url);
     const contentType = String(response.headers.get('content-type') || '');
 
-    // Serve corrected SDR runtime code directly. WebSocket URLs use ws:/wss:
-    // while the page uses http:/https:, so comparing URL.origin rejects a
-    // same-host SDR socket even though it belongs to FreqBeacon. Compare the
-    // host + endpoint path instead and keep the original WebSocket URL intact.
     if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
       const source = await response.text();
       const patched = patchSdrOriginChecks(source);
@@ -76,8 +83,6 @@ export default {
       });
     }
 
-    // Force browsers to request corrected runtime assets and the FreqBeacon
-    // brand layer instead of reusing superseded cached copies.
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
@@ -86,10 +91,12 @@ export default {
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=1')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
       html = applyFreqBeaconBrand(html);
+      html = applyProgramGuideRuntime(html);
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
+      headers.set('x-freqbeacon-program-guide', 'v1');
       return new Response(html, {
         status: response.status,
         statusText: response.statusText,
@@ -107,3 +114,4 @@ export default {
 // Deployment marker: fix recursive tuning-cursor MutationObserver freeze.
 // Deployment marker: keep amateur SDR choices geographically relevant and fail over when W/F is unavailable.
 // Deployment marker: launch FREQBEACON branding — Explore the airwaves.
+// Deployment marker: add verified ON NOW / UP NEXT program identification.
