@@ -223,28 +223,49 @@
     return smoothed;
   }
 
-  function spectrumDisplayProfile(dbValues) {
+  function localSpectrumFloor(dbValues) {
     const useful = dbValues
       .filter((value) => Number.isFinite(value) && value > -200 && value < 5)
       .sort((a, b) => a - b);
-    if (!useful.length) return { noiseDb: -120, peakDeltaDb: 24 };
-    const noiseDb = percentile(useful, 0.32) ?? -120;
-    const peakDb = percentile(useful, 0.997) ?? (noiseDb + 24);
+    const anchorDb = percentile(useful, 0.18) ?? -120;
+    const clipped = dbValues.map((value) => clamp(value, anchorDb - 8, anchorDb + 4.5));
+    const radius = 24;
+    const floor = new Array(clipped.length);
+    let start = 0;
+    let end = -1;
+    let sum = 0;
+
+    for (let i = 0; i < clipped.length; i += 1) {
+      const wantedStart = Math.max(0, i - radius);
+      const wantedEnd = Math.min(clipped.length - 1, i + radius);
+      while (end < wantedEnd) sum += clipped[++end];
+      while (start < wantedStart) sum -= clipped[start++];
+      floor[i] = sum / Math.max(1, end - start + 1);
+    }
+    return floor;
+  }
+
+  function spectrumDisplayProfile(dbValues, floorValues) {
+    const prominence = dbValues
+      .map((value, index) => value - floorValues[index])
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+    if (!prominence.length) return { peakProminenceDb: 18 };
     return {
-      noiseDb,
-      peakDeltaDb: clamp(peakDb - noiseDb, 14, 55)
+      peakProminenceDb: clamp(percentile(prominence, 0.997) ?? 18, 9, 42)
     };
   }
 
-  function spectrumNormalized(valueDb, noiseDb, peakDeltaDb) {
-    const delta = valueDb - noiseDb;
-    const compressedDelta = delta <= 3
-      ? delta * 0.30
-      : 0.90 + (delta - 3) * 1.35;
-    const compressedPeak = peakDeltaDb <= 3
-      ? peakDeltaDb * 0.30
-      : 0.90 + (peakDeltaDb - 3) * 1.35;
-    return clamp(0.12 + (compressedDelta / Math.max(6, compressedPeak)) * 0.82, 0.045, 0.97);
+  function spectrumNormalized(valueDb, floorDb, peakProminenceDb) {
+    const prominence = Math.max(0, valueDb - floorDb);
+    const deadbandDb = 2.8;
+    if (prominence <= deadbandDb) {
+      return clamp(0.072 + prominence * 0.009, 0.052, 0.10);
+    }
+    const usablePeak = Math.max(6, peakProminenceDb - deadbandDb);
+    const scaled = clamp((prominence - deadbandDb) / usablePeak, 0, 1.35);
+    const shaped = Math.pow(scaled, 0.72);
+    return clamp(0.10 + shaped * 0.84, 0.052, 0.97);
   }
 
   function rfColor(normalized) {
@@ -273,7 +294,8 @@
     const db = Array.from(bins, (sample) => clamp(sample - 255, -200, 0));
     updateDisplayRange(db);
     const spectrumDb = smoothSpectrumDb(db);
-    const spectrumProfile = spectrumDisplayProfile(spectrumDb);
+    const floorDb = localSpectrumFloor(spectrumDb);
+    const spectrumProfile = spectrumDisplayProfile(spectrumDb, floorDb);
 
     const { width, height, dpr } = canvasSize(canvas);
     const ctx = canvas.getContext('2d');
@@ -322,8 +344,8 @@
       const x = (i / Math.max(1, bins.length - 1)) * width;
       const normalized = spectrumNormalized(
         spectrumDb[i],
-        spectrumProfile.noiseDb,
-        spectrumProfile.peakDeltaDb
+        floorDb[i],
+        spectrumProfile.peakProminenceDb
       );
       const y = spectrumH - 9 * dpr - normalized * (spectrumH - 20 * dpr);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);

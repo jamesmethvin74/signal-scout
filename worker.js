@@ -108,7 +108,7 @@ export default {
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
-        .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=6')
+        .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=7')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
@@ -139,3 +139,4 @@ export default {
 // Deployment marker: add verified ON NOW / UP NEXT program identification.
 // Deployment marker: preload startup art and hold splash only after the artwork has painted.
 // Deployment marker: publish mode-aware 100 Hz SSB fine-tuning controls.
+// Deployment marker: keep RF spectrum baseline tight in crowded bands and force the new renderer revision.
