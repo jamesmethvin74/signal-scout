@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v8.js",
+  "main": "worker-program-v9.js",
   "triggers": {
     "crons": ["17 */6 * * *"]
   },
