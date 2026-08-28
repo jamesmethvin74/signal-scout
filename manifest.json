@@ -13,13 +13,13 @@
       "src": "freqbeacon-icon-192.webp",
       "sizes": "192x192",
       "type": "image/webp",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "freqbeacon-icon-512.webp",
       "sizes": "512x512",
       "type": "image/webp",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "categories": ["utilities", "education", "lifestyle"]
