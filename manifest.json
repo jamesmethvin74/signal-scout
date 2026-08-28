@@ -10,13 +10,13 @@
   "theme_color": "#07111f",
   "icons": [
     {
-      "src": "freqbeacon-icon-192.webp",
+      "src": "freqbeacon-icon-v2-192.webp",
       "sizes": "192x192",
       "type": "image/webp",
       "purpose": "any"
     },
     {
-      "src": "freqbeacon-icon-512.webp",
+      "src": "freqbeacon-icon-v2-512.webp",
       "sizes": "512x512",
       "type": "image/webp",
       "purpose": "any"
