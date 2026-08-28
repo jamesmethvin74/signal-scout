@@ -208,6 +208,45 @@
     state.displayMaxDb = state.displayMaxDb * 0.82 + targetMax * 0.18;
   }
 
+  function smoothSpectrumDb(dbValues) {
+    const smoothed = new Array(dbValues.length);
+    for (let i = 0; i < dbValues.length; i += 1) {
+      const center = dbValues[i];
+      const left1 = dbValues[Math.max(0, i - 1)];
+      const left2 = dbValues[Math.max(0, i - 2)];
+      const right1 = dbValues[Math.min(dbValues.length - 1, i + 1)];
+      const right2 = dbValues[Math.min(dbValues.length - 1, i + 2)];
+      const weighted = (left2 + left1 * 2 + center * 4 + right1 * 2 + right2) / 10;
+      const narrowPeak = center - Math.max(left1, right1) >= 4;
+      smoothed[i] = narrowPeak ? Math.max(weighted, center - 0.75) : weighted;
+    }
+    return smoothed;
+  }
+
+  function spectrumDisplayProfile(dbValues) {
+    const useful = dbValues
+      .filter((value) => Number.isFinite(value) && value > -200 && value < 5)
+      .sort((a, b) => a - b);
+    if (!useful.length) return { noiseDb: -120, peakDeltaDb: 24 };
+    const noiseDb = percentile(useful, 0.32) ?? -120;
+    const peakDb = percentile(useful, 0.997) ?? (noiseDb + 24);
+    return {
+      noiseDb,
+      peakDeltaDb: clamp(peakDb - noiseDb, 14, 55)
+    };
+  }
+
+  function spectrumNormalized(valueDb, noiseDb, peakDeltaDb) {
+    const delta = valueDb - noiseDb;
+    const compressedDelta = delta <= 3
+      ? delta * 0.30
+      : 0.90 + (delta - 3) * 1.35;
+    const compressedPeak = peakDeltaDb <= 3
+      ? peakDeltaDb * 0.30
+      : 0.90 + (peakDeltaDb - 3) * 1.35;
+    return clamp(0.12 + (compressedDelta / Math.max(6, compressedPeak)) * 0.82, 0.045, 0.97);
+  }
+
   function rfColor(normalized) {
     const t = clamp(normalized, 0, 1);
     const stops = [
@@ -233,6 +272,8 @@
     const bins = rawBins.subarray(0, state.fftBins);
     const db = Array.from(bins, (sample) => clamp(sample - 255, -200, 0));
     updateDisplayRange(db);
+    const spectrumDb = smoothSpectrumDb(db);
+    const spectrumProfile = spectrumDisplayProfile(spectrumDb);
 
     const { width, height, dpr } = canvasSize(canvas);
     const ctx = canvas.getContext('2d');
@@ -279,7 +320,11 @@
     ctx.beginPath();
     for (let i = 0; i < bins.length; i += 1) {
       const x = (i / Math.max(1, bins.length - 1)) * width;
-      const normalized = clamp((db[i] - minDb) / dbSpan, 0, 1);
+      const normalized = spectrumNormalized(
+        spectrumDb[i],
+        spectrumProfile.noiseDb,
+        spectrumProfile.peakDeltaDb
+      );
       const y = spectrumH - 9 * dpr - normalized * (spectrumH - 20 * dpr);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
