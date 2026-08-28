@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v5.js",
+  "main": "worker-program-v6.js",
   "assets": {
     "directory": "./",
     "binding": "ASSETS",
