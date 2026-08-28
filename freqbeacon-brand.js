@@ -16,13 +16,15 @@
     const splash = document.querySelector('.freqbeacon-splash');
     if (!splash) return;
 
-    splash.replaceChildren();
-    const art = document.createElement('img');
-    art.className = 'freqbeacon-splash__art';
-    art.src = 'freqbeacon-startup.webp';
-    art.alt = '';
-    art.setAttribute('aria-hidden', 'true');
-    splash.appendChild(art);
+    let art = splash.querySelector('.freqbeacon-splash__art');
+    if (!art) {
+      art = document.createElement('img');
+      art.className = 'freqbeacon-splash__art';
+      art.src = '/freqbeacon-startup.webp?v=1';
+      art.alt = '';
+      art.setAttribute('aria-hidden', 'true');
+      splash.prepend(art);
+    }
 
     let removed = false;
     const removeSplash = () => {
