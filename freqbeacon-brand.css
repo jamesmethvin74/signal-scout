@@ -53,7 +53,7 @@
   visibility: visible;
   pointer-events: auto;
   background: #07111f !important;
-  transition: opacity 450ms ease;
+  transition: opacity 300ms ease;
 }
 
 .freqbeacon-splash.is-leaving {
