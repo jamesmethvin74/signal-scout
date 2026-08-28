@@ -1,6 +1,9 @@
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_CACHE_TTL_SECONDS = 15 * 60;
+const DIRECTORY_STALE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
+const DIRECTORY_FAILURE_RETRY_MS = 60 * 1000;
+const DIRECTORY_FETCH_TIMEOUT_MS = 4500;
 const MAX_DIRECTORY_RECEIVERS = 1400;
 
 const LEGACY_RECEIVERS = [
@@ -41,11 +44,12 @@ const LEGACY_RECEIVERS = [
 
 let directoryMemory = null;
 let directoryMemoryAt = 0;
+let directoryMemoryStale = false;
 
 function jsonResponse(value, init = {}) {
   const headers = new Headers(init.headers || {});
   headers.set('content-type', 'application/json; charset=utf-8');
-  headers.set('cache-control', 'private, max-age=0, no-store');
+  if (!headers.has('cache-control')) headers.set('cache-control', 'private, max-age=0, no-store');
   return new Response(JSON.stringify(value), { ...init, headers });
 }
 
@@ -196,32 +200,48 @@ function mergeLegacy(receivers) {
   return result;
 }
 
+function validDirectoryData(data) {
+  return Array.isArray(data?.receivers) && data.receivers.length > LEGACY_RECEIVERS.length;
+}
+
+async function readDirectoryCache(cache, key) {
+  const cached = await cache.match(key);
+  if (!cached) return null;
+  try {
+    const data = await cached.json();
+    return validDirectoryData(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchReceiverDirectory(request, ctx) {
   const now = Date.now();
-  if (directoryMemory && now - directoryMemoryAt < DIRECTORY_MEMORY_TTL_MS) return directoryMemory;
+  const memoryTtl = directoryMemoryStale ? DIRECTORY_FAILURE_RETRY_MS : DIRECTORY_MEMORY_TTL_MS;
+  if (directoryMemory && now - directoryMemoryAt < memoryTtl) return directoryMemory;
 
   const cache = caches.default;
-  const cacheKey = new Request(new URL('/__cache/sdr-directory-v3', request.url).toString(), { method: 'GET' });
-  const cached = await cache.match(cacheKey);
-  if (cached) {
-    try {
-      const data = await cached.json();
-      if (Array.isArray(data?.receivers) && data.receivers.length) {
-        directoryMemory = data;
-        directoryMemoryAt = now;
-        return data;
-      }
-    } catch {
-      // Ignore corrupt cache and refresh below.
-    }
+  const freshCacheKey = new Request(new URL('/__cache/sdr-directory-v4-fresh', request.url).toString(), { method: 'GET' });
+  const staleCacheKey = new Request(new URL('/__cache/sdr-directory-v4-last-good', request.url).toString(), { method: 'GET' });
+
+  const freshData = await readDirectoryCache(cache, freshCacheKey);
+  if (freshData) {
+    directoryMemory = freshData;
+    directoryMemoryAt = now;
+    directoryMemoryStale = false;
+    return freshData;
   }
 
+  const staleData = await readDirectoryCache(cache, staleCacheKey);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DIRECTORY_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(DIRECTORY_URL, {
       headers: {
         Accept: 'text/html,application/xhtml+xml',
         'User-Agent': 'SignalScout/1.0 (+public SDR receiver discovery)'
       },
+      signal: controller.signal,
       cf: { cacheTtl: DIRECTORY_CACHE_TTL_SECONDS, cacheEverything: true }
     });
     if (!response.ok) throw new Error(`Directory HTTP ${response.status}`);
@@ -234,21 +254,46 @@ async function fetchReceiverDirectory(request, ctx) {
     };
     directoryMemory = data;
     directoryMemoryAt = now;
-    const toCache = jsonResponse(data, {
+    directoryMemoryStale = false;
+
+    const freshResponse = jsonResponse(data, {
       headers: { 'cache-control': `public, max-age=${DIRECTORY_CACHE_TTL_SECONDS}` }
     });
-    ctx?.waitUntil(cache.put(cacheKey, toCache.clone()));
+    const staleResponse = jsonResponse(data, {
+      headers: { 'cache-control': `public, max-age=${DIRECTORY_STALE_TTL_SECONDS}` }
+    });
+    ctx?.waitUntil(Promise.all([
+      cache.put(freshCacheKey, freshResponse.clone()),
+      cache.put(staleCacheKey, staleResponse.clone())
+    ]));
     return data;
   } catch (error) {
+    if (staleData) {
+      const stale = {
+        ...staleData,
+        source: 'receiverbook-stale',
+        warning: null
+      };
+      directoryMemory = stale;
+      directoryMemoryAt = now;
+      directoryMemoryStale = true;
+      return stale;
+    }
+
     const fallback = {
       receivers: mergeLegacy([]),
       source: 'fallback',
-      warning: error?.message || 'Public receiver directory unavailable',
+      warning: error?.name === 'AbortError'
+        ? 'Receiver directory timed out.'
+        : (error?.message || 'Public receiver directory unavailable'),
       fetchedAt: new Date().toISOString()
     };
     directoryMemory = fallback;
     directoryMemoryAt = now;
+    directoryMemoryStale = true;
     return fallback;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -477,3 +522,4 @@ export default {
 
 // Deployment marker: force Cloudflare to publish the RF v2 frontend bundle.
 // Deployment marker 2: publish hard SDR cooldown skipping and RF standby UI.
+// Deployment marker 3: preserve last-known-good SDR directory through ReceiverBook outages.
