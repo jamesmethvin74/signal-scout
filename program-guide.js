@@ -2,6 +2,7 @@
   const EXACT_GUIDES = /^(?:WRMI|WBCQ|RNZ Pacific|Radio New Zealand International|RNZI|Radio Exterior de España|Radio Exterior de Espana|Radio Romania International)$/i;
   const cache = new Map();
   const pending = new WeakSet();
+  const queued = new WeakSet();
   const grid = document.getElementById('signalGrid');
   const lookupResults = document.getElementById('lookupResults');
 
@@ -152,6 +153,21 @@
     scheduleDetail.classList.add('collapse-summary-detail');
   }
 
+  async function fetchGuide(params) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(`/api/program-guide?${params}`, {
+        headers:{ Accept:'application/json' },
+        signal:controller.signal
+      });
+      if (!response.ok) throw new Error(`Program guide HTTP ${response.status}`);
+      return await response.json();
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
   async function decorate(container) {
     if (pending.has(container) || container.querySelector('[data-program-guide]') || !isBroadcastCard(container)) return;
     const station = stationFrom(container);
@@ -186,11 +202,7 @@
         tz:timeZone(),
         language
       });
-      promise = fetch(`/api/program-guide?${params}`, { headers:{ Accept:'application/json' } })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`Program guide HTTP ${response.status}`);
-          return response.json();
-        });
+      promise = fetchGuide(params);
       cache.set(key, promise);
     }
     try {
@@ -211,8 +223,30 @@
     }
   }
 
+  const guideObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries, observer) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          queued.delete(entry.target);
+          decorate(entry.target);
+        }
+      }, { rootMargin:'700px 0px' })
+    : null;
+
+  function queueDecorate(container) {
+    if (pending.has(container) || container.querySelector('[data-program-guide]')) return;
+    if (container.classList.contains('lookup-result') || !guideObserver) {
+      decorate(container);
+      return;
+    }
+    if (queued.has(container)) return;
+    queued.add(container);
+    guideObserver.observe(container);
+  }
+
   function decorateAll(root = document) {
-    root.querySelectorAll('.signal-card, .lookup-result').forEach((container) => decorate(container));
+    root.querySelectorAll('.signal-card, .lookup-result').forEach((container) => queueDecorate(container));
   }
 
   const style = document.createElement('style');
