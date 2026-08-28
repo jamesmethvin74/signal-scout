@@ -1,15 +1,21 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v6.js",
+  "main": "worker-program-v7.js",
+  "triggers": {
+    "crons": ["17 */6 * * *"]
+  },
   "assets": {
     "directory": "./",
     "binding": "ASSETS",
     "run_worker_first": [
       "/api/sdr/*",
       "/api/program-guide",
+      "/api/program-guide/*",
+      "/api/ham-activity",
       "/",
       "/index.html",
+      "/full-data.js",
       "/sdr-rf-v2.js",
       "/sdr-health.js"
     ]
