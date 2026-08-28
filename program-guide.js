@@ -1,5 +1,5 @@
 (() => {
-  const EXACT_GUIDES = /^(?:WRMI|WBCQ)$/i;
+  const EXACT_GUIDES = /^(?:WRMI|WBCQ|RNZ Pacific|Radio New Zealand International|RNZI|Radio Exterior de España|Radio Exterior de Espana|Radio Romania International)$/i;
   const cache = new Map();
   const pending = new WeakSet();
   const grid = document.getElementById('signalGrid');
@@ -9,7 +9,10 @@
     ['BBC WORLD SERVICE', 'BBC World Service'],
     ['RADIO ROMANIA INTERNATIONAL', 'Radio Romania International'],
     ['RNZ PACIFIC', 'RNZ Pacific'],
+    ['RADIO NEW ZEALAND INTERNATIONAL', 'RNZ Pacific'],
+    ['RNZI', 'RNZ Pacific'],
     ['RADIO EXTERIOR DE ESPAÑA', 'Radio Exterior de España'],
+    ['RADIO EXTERIOR DE ESPANA', 'Radio Exterior de España'],
     ['CHINA RADIO INTERNATIONAL', 'China Radio International'],
     ['WEWN', 'EWTN / WEWN'],
     ['WWCR', 'WWCR'],
@@ -64,7 +67,7 @@
     const languageSuffix = language && !/unknown/i.test(language) ? ` · ${language}` : '';
     return {
       title: `${base}${languageSuffix}`,
-      note: 'The transmission/service is identified from the active HFCC/EiBi schedule. An exact show title is not yet available from a broadcaster program guide.'
+      note: 'Exact show title is not available from an integrated broadcaster guide yet.'
     };
   }
 
@@ -87,7 +90,7 @@
   }
 
   function render(slot, data) {
-    slot.classList.remove('is-loading','is-verified','is-warning','is-service');
+    slot.classList.remove('is-loading','is-verified','is-broadcast','is-warning','is-service');
     if (data.status === 'verified') {
       slot.classList.add('is-verified');
       slot.innerHTML = `
@@ -95,6 +98,16 @@
         <div class="program-guide-title">${esc(data.program)}</div>
         <div class="program-guide-window">${esc(data.window || '')}</div>
         ${data.next ? `<div class="program-guide-next"><b>Up next:</b> ${esc(data.next.program)}${data.next.window ? ` · ${esc(data.next.window)}` : ''}</div>` : ''}
+        ${sourceLink(data)}`;
+      return;
+    }
+    if (data.status === 'broadcast') {
+      slot.classList.add('is-broadcast');
+      slot.innerHTML = `
+        <div class="program-guide-kicker"><span class="program-broadcast-dot"></span>ON NOW · VERIFIED BROADCAST</div>
+        <div class="program-guide-title">${esc(data.program)}</div>
+        <div class="program-guide-window">${esc(data.window || '')}</div>
+        <div class="program-guide-note">The broadcaster verifies this language/service block; individual segments inside it may vary.</div>
         ${sourceLink(data)}`;
       return;
     }
@@ -150,7 +163,7 @@
     const slot = document.createElement('section');
     slot.className = 'program-guide-card is-loading';
     slot.dataset.programGuide = 'true';
-    slot.innerHTML = '<div class="program-guide-kicker">ON NOW</div><div class="program-guide-title">Identifying current service…</div>';
+    slot.innerHTML = '<div class="program-guide-kicker">ON NOW</div><div class="program-guide-title">Identifying current program…</div>';
     const details = container.querySelector('.details, .lookup-tags');
     if (details) details.insertAdjacentElement('afterend', slot); else container.appendChild(slot);
 
@@ -161,11 +174,18 @@
     }
 
     const at = targetDate(container);
-    const bucket = Math.floor(at.getTime() / 300000);
-    const key = `${station}|${Math.round(frequency)}|${bucket}`;
+    const language = languageFrom(container);
+    const bucket = Math.floor(at.getTime() / 60000);
+    const key = `${station}|${Math.round(frequency)}|${language}|${bucket}`;
     let promise = cache.get(key);
     if (!promise) {
-      const params = new URLSearchParams({ station, frequency:String(frequency), at:at.toISOString(), tz:timeZone() });
+      const params = new URLSearchParams({
+        station,
+        frequency:String(frequency),
+        at:at.toISOString(),
+        tz:timeZone(),
+        language
+      });
       promise = fetch(`/api/program-guide?${params}`, { headers:{ Accept:'application/json' } })
         .then(async (response) => {
           if (!response.ok) throw new Error(`Program guide HTTP ${response.status}`);
@@ -175,19 +195,19 @@
     }
     try {
       const result = await promise;
-      if (result.status === 'unverified' || result.status === 'unavailable') {
+      if (result.status === 'unverified' || result.status === 'unavailable' || result.status === 'unsupported') {
         const service = serviceIdentity(container, station);
         render(slot, {
           status:'service',
           program:service.title,
-          message: result.message ? `${result.message} ${service.note}` : service.note
+          message:result.message || service.note
         });
       } else {
         render(slot, result);
       }
     } catch {
       const service = serviceIdentity(container, station);
-      render(slot, { status:'service', program:service.title, message:`Program guide lookup is temporarily unavailable. ${service.note}` });
+      render(slot, { status:'service', program:service.title, message:'Program guide lookup is temporarily unavailable.' });
     }
   }
 
@@ -199,14 +219,17 @@
   style.textContent = `
     .program-guide-card{margin-top:12px;padding:12px 13px;border:1px solid rgba(37,212,230,.22);border-radius:7px;background:linear-gradient(135deg,rgba(37,212,230,.055),rgba(4,11,14,.78));}
     .program-guide-card.is-verified{border-color:rgba(97,231,134,.42);background:linear-gradient(135deg,rgba(97,231,134,.065),rgba(4,11,14,.82));}
-    .program-guide-card.is-service{border-color:rgba(37,212,230,.36);background:linear-gradient(135deg,rgba(37,212,230,.075),rgba(4,11,14,.82));}
+    .program-guide-card.is-broadcast{border-color:rgba(88,196,255,.40);background:linear-gradient(135deg,rgba(88,196,255,.065),rgba(4,11,14,.82));}
+    .program-guide-card.is-service{border-color:rgba(37,212,230,.28);background:linear-gradient(135deg,rgba(37,212,230,.045),rgba(4,11,14,.82));}
     .program-guide-card.is-warning{border-color:rgba(239,189,92,.32);}
     .program-guide-kicker{display:flex;align-items:center;gap:7px;color:#7f98a0;font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;}
     .program-guide-card.is-verified .program-guide-kicker{color:var(--green);}
-    .program-guide-card.is-service .program-guide-kicker{color:var(--accent);}
-    .program-live-dot,.program-service-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+    .program-guide-card.is-broadcast .program-guide-kicker{color:#7bcfff;}
+    .program-guide-card.is-service .program-guide-kicker{color:#86aeb8;}
+    .program-live-dot,.program-service-dot,.program-broadcast-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
     .program-live-dot{background:var(--green);box-shadow:0 0 10px rgba(97,231,134,.65);}
-    .program-service-dot{background:var(--accent);box-shadow:0 0 9px rgba(37,212,230,.45);}
+    .program-broadcast-dot{background:#7bcfff;box-shadow:0 0 9px rgba(123,207,255,.48);}
+    .program-service-dot{background:#7a9aa2;}
     .program-guide-title{margin-top:5px;color:#eef6f7;font-size:15px;font-weight:900;line-height:1.2;}
     .program-guide-window{margin-top:3px;color:#a9bdc2;font-family:var(--mono);font-size:10px;}
     .program-guide-next,.program-guide-note{margin-top:7px;color:#8fa3a9;font-size:10px;line-height:1.45;}
