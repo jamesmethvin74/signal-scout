@@ -28,12 +28,8 @@ function applyFreqBeaconBrand(html) {
     .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>')
     .replace('freqbeacon-brand.css?v=1', 'freqbeacon-brand.css?v=3')
     .replace('freqbeacon-brand.css?v=2', 'freqbeacon-brand.css?v=3')
-    .replace('freqbeacon-brand.js?v=1', 'freqbeacon-brand.js?v=7')
-    .replace('freqbeacon-brand.js?v=3', 'freqbeacon-brand.js?v=7')
-    .replace('freqbeacon-brand.js?v=4', 'freqbeacon-brand.js?v=7')
-    .replace('freqbeacon-brand.js?v=5', 'freqbeacon-brand.js?v=7')
-    .replace('freqbeacon-brand.js?v=6', 'freqbeacon-brand.js?v=7')
-    .replace('href="manifest.json"', 'href="manifest.json?v=2"');
+    .replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=8')
+    .replace(/href="manifest\.json(?:\?v=\d+)?"/g, 'href="manifest.json?v=3"');
 
   if (!branded.includes('freqbeacon-brand.css')) {
     branded = branded.replace(
@@ -42,31 +38,24 @@ function applyFreqBeaconBrand(html) {
     );
   }
 
-  if (!branded.includes('freqbeacon-startup.webp?v=7" as="image"')) {
+  if (!branded.includes('freqbeacon-startup-v2.webp')) {
     branded = branded.replace(
-      '<link rel="manifest" href="manifest.json?v=2" />',
-      '<link rel="manifest" href="manifest.json?v=2" />\n  <link rel="preload" href="freqbeacon-startup.webp?v=7" as="image" type="image/webp" fetchpriority="high" />'
-    );
-  }
-
-  if (!branded.includes('freqbeacon-logo.svg')) {
-    branded = branded.replace(
-      '<link rel="manifest" href="manifest.json?v=2" />',
-      '<link rel="manifest" href="manifest.json?v=2" />\n  <link rel="icon" type="image/svg+xml" href="freqbeacon-logo.svg" />'
+      '<link rel="manifest" href="manifest.json?v=3" />',
+      '<link rel="manifest" href="manifest.json?v=3" />\n  <link rel="preload" href="freqbeacon-startup-v2.webp" as="image" type="image/webp" fetchpriority="high" />'
     );
   }
 
   if (!branded.includes('class="freqbeacon-splash__art"')) {
     branded = branded.replace(
       '<div class="freqbeacon-splash" aria-hidden="true">',
-      '<div class="freqbeacon-splash" aria-hidden="true" style="position:fixed;inset:0;z-index:99999;display:block;overflow:hidden;background:#07111f center/contain no-repeat url(\'freqbeacon-startup.webp?v=7\');opacity:1;visibility:visible">\n    <img class="freqbeacon-splash__art" src="freqbeacon-startup.webp?v=7" alt="" aria-hidden="true" fetchpriority="high" loading="eager" decoding="sync" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;object-fit:contain;object-position:center;background:transparent" />'
+      '<div class="freqbeacon-splash" aria-hidden="true">\n    <img class="freqbeacon-splash__art" src="freqbeacon-startup-v2.webp" alt="" aria-hidden="true" fetchpriority="high" loading="eager" decoding="sync" />'
     );
   }
 
   if (!branded.includes('freqbeacon-brand.js')) {
     branded = branded.replace(
       '<script src="stations.js"></script>',
-      '<script src="freqbeacon-brand.js?v=7"></script>\n  <script src="stations.js"></script>'
+      '<script src="freqbeacon-brand.js?v=8"></script>\n  <script src="stations.js"></script>'
     );
   }
 
@@ -117,7 +106,7 @@ export default {
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
-      headers.set('x-freqbeacon-brand', 'v6');
+      headers.set('x-freqbeacon-brand', 'v8');
       headers.set('x-freqbeacon-program-guide', 'v1');
       return new Response(html, {
         status: response.status,
@@ -140,3 +129,4 @@ export default {
 // Deployment marker: preload startup art and hold splash only after the artwork has painted.
 // Deployment marker: publish mode-aware 100 Hz SSB fine-tuning controls.
 // Deployment marker: keep RF spectrum baseline tight in crowded bands and force the new renderer revision.
+// Deployment marker: publish clean transparent launch icons and corrected startup artwork.
