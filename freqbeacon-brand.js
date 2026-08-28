@@ -7,6 +7,7 @@
   const SPLASH_HOLD_MS = 1250;
   const SPLASH_FADE_MS = 300;
   const SPLASH_MAX_WAIT_MS = 4000;
+  const PWA_SW_PATH = '/freqbeacon-sw.js';
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
@@ -16,12 +17,34 @@
 
   function installPwaServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/sw.js?v=3', {
-      scope: '/',
-      updateViaCache: 'none'
-    }).catch(() => {
-      // The web app remains usable if service-worker registration is unavailable.
-    });
+
+    (async () => {
+      try {
+        const existing = await navigator.serviceWorker.getRegistration('/');
+        if (existing) {
+          const currentUrl = existing.active?.scriptURL
+            || existing.waiting?.scriptURL
+            || existing.installing?.scriptURL
+            || '';
+          let currentPath = '';
+          try {
+            currentPath = currentUrl ? new URL(currentUrl, window.location.href).pathname : '';
+          } catch {
+            currentPath = '';
+          }
+          if (currentPath && currentPath !== PWA_SW_PATH) {
+            await existing.unregister();
+          }
+        }
+
+        await navigator.serviceWorker.register(PWA_SW_PATH, {
+          scope: '/',
+          updateViaCache: 'none'
+        });
+      } catch {
+        // FREQBEACON remains usable if service-worker registration is unavailable.
+      }
+    })();
 
     window.addEventListener('beforeinstallprompt', (event) => {
       window.__freqbeaconInstallPrompt = event;
