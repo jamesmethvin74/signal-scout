@@ -25,12 +25,15 @@ function applyFreqBeaconBrand(html) {
     )
     .replace('<title>FreqBeacon — What can I hear?</title>', '<title>FREQBEACON — Explore the airwaves.</title>')
     .replace('<h1>FreqBeacon</h1>', '<h1>FREQBEACON</h1>')
-    .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>');
+    .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>')
+    .replace('freqbeacon-brand.css?v=1', 'freqbeacon-brand.css?v=3')
+    .replace('freqbeacon-brand.css?v=2', 'freqbeacon-brand.css?v=3')
+    .replace('freqbeacon-brand.js?v=1', 'freqbeacon-brand.js?v=3');
 
   if (!branded.includes('freqbeacon-brand.css')) {
     branded = branded.replace(
       '<link rel="stylesheet" href="arctic-slate-controls.css?v=1" />',
-      '<link rel="stylesheet" href="arctic-slate-controls.css?v=1" />\n  <link rel="stylesheet" href="freqbeacon-brand.css?v=1" />'
+      '<link rel="stylesheet" href="arctic-slate-controls.css?v=1" />\n  <link rel="stylesheet" href="freqbeacon-brand.css?v=3" />'
     );
   }
 
@@ -44,7 +47,7 @@ function applyFreqBeaconBrand(html) {
   if (!branded.includes('freqbeacon-brand.js')) {
     branded = branded.replace(
       '<script src="stations.js"></script>',
-      '<script src="freqbeacon-brand.js?v=1"></script>\n  <script src="stations.js"></script>'
+      '<script src="freqbeacon-brand.js?v=3"></script>\n  <script src="stations.js"></script>'
     );
   }
 
@@ -95,7 +98,7 @@ export default {
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
-      headers.set('x-freqbeacon-brand', 'v1');
+      headers.set('x-freqbeacon-brand', 'v2');
       headers.set('x-freqbeacon-program-guide', 'v1');
       return new Response(html, {
         status: response.status,
@@ -115,3 +118,4 @@ export default {
 // Deployment marker: keep amateur SDR choices geographically relevant and fail over when W/F is unavailable.
 // Deployment marker: launch FREQBEACON branding — Explore the airwaves.
 // Deployment marker: add verified ON NOW / UP NEXT program identification.
+// Deployment marker: bust cached branding runtime so approved startup artwork loads.
