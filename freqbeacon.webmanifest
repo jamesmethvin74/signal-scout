@@ -1,0 +1,33 @@
+{
+  "id": "/freqbeacon-pwa-v1",
+  "name": "FREQBEACON",
+  "short_name": "FREQBEACON",
+  "description": "Explore the airwaves with location-aware radio discovery and live SDR tools.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/freqbeacon-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/freqbeacon-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/freqbeacon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
