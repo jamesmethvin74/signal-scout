@@ -83,7 +83,7 @@ function applyFreqBeaconBrand(html) {
     .replace('<h1>FreqBeacon</h1>', '<h1>FREQBEACON</h1>')
     .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>')
     .replace(/freqbeacon-brand\.css\?v=\d+/g, 'freqbeacon-brand.css?v=5')
-    .replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=11')
+    .replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=12')
     .replace(/href="manifest\.json(?:\?v=\d+)?"/g, 'href="manifest.json?v=6"');
 
   if (!branded.includes('freqbeacon-brand.css')) {
@@ -112,7 +112,7 @@ function applyFreqBeaconBrand(html) {
   if (!branded.includes('freqbeacon-brand.js')) {
     branded = branded.replace(
       '<script src="stations.js"></script>',
-      '<script src="freqbeacon-brand.js?v=11"></script>\n  <script src="stations.js"></script>'
+      '<script src="freqbeacon-brand.js?v=12"></script>\n  <script src="stations.js"></script>'
     );
   }
 
@@ -123,7 +123,7 @@ function applyProgramGuideRuntime(html) {
   if (html.includes('program-guide.js')) return html;
   return html.replace(
     '</body>',
-    '  <script src="program-guide.js?v=1"></script>\n</body>'
+    '  <script src="program-guide.js?v=2"></script>\n</body>'
   );
 }
 
@@ -165,8 +165,8 @@ export default {
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
-      headers.set('x-freqbeacon-brand', 'v11');
-      headers.set('x-freqbeacon-program-guide', 'v1');
+      headers.set('x-freqbeacon-brand', 'v12');
+      headers.set('x-freqbeacon-program-guide', 'v2');
       return new Response(html, {
         status: response.status,
         statusText: response.statusText,
@@ -193,3 +193,4 @@ export default {
 // Deployment marker: publish approved FREQBEACON launcher and startup artwork.
 // Deployment marker: make FREQBEACON installable and harden moving-device location acquisition.
 // Deployment marker: shorten startup, add PNG PWA fallbacks, and remove service-worker request interception.
+// Deployment marker: lazy-load program-guide network work so Chrome reaches network idle and installability can settle.
