@@ -2,6 +2,12 @@
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
   "main": "worker-program-v16.js",
+  "routes": [
+    {
+      "pattern": "freqbeacon.methvindigitalworks.com",
+      "custom_domain": true
+    }
+  ],
   "triggers": {
     "crons": ["17 */6 * * *"]
   },
