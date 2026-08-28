@@ -3,11 +3,38 @@
   const NEW_NAME = 'FreqBeacon';
   const DISPLAY_NAME = 'FREQBEACON';
   const TAGLINE = 'Explore the airwaves.';
+  const SPLASH_HOLD_MS = 3000;
+  const SPLASH_FADE_MS = 450;
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
       ? value.replaceAll(OLD_NAME, NEW_NAME)
       : value;
+  }
+
+  function installApprovedSplash() {
+    const splash = document.querySelector('.freqbeacon-splash');
+    if (!splash) return;
+
+    splash.replaceChildren();
+    const art = document.createElement('img');
+    art.className = 'freqbeacon-splash__art';
+    art.src = 'freqbeacon-startup.jpg';
+    art.alt = '';
+    art.setAttribute('aria-hidden', 'true');
+    splash.appendChild(art);
+
+    let removed = false;
+    const removeSplash = () => {
+      if (removed) return;
+      removed = true;
+      splash.remove();
+    };
+
+    window.setTimeout(() => {
+      splash.classList.add('is-leaving');
+      window.setTimeout(removeSplash, SPLASH_FADE_MS + 75);
+    }, SPLASH_HOLD_MS);
   }
 
   function brandNode(root) {
@@ -64,18 +91,16 @@
     const mark = document.querySelector('.signal-logo');
     if (mark) {
       mark.setAttribute('role', 'img');
-      mark.setAttribute('aria-label', 'FreqBeacon radio beacon logo');
+      mark.setAttribute('aria-label', 'FreqBeacon Beacon Tower logo');
       mark.removeAttribute('aria-hidden');
     }
 
     brandNode(document.body);
   }
 
+  installApprovedSplash();
   applyPrimaryBrand();
 
-  // Several controls (especially the SDR player) are created only after the
-  // listener interacts with the app. Brand only newly-added DOM. Replacement
-  // is one-way, so this observer cannot trigger a self-repeating mutation loop.
   const observer = new MutationObserver((records) => {
     for (const record of records) {
       for (const node of record.addedNodes) brandNode(node);
