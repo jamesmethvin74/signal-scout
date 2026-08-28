@@ -110,7 +110,7 @@ export default {
       html = html
         .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=6')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
-        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=1')
+        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
       html = applyFreqBeaconBrand(html);
       html = applyProgramGuideRuntime(html);
@@ -138,3 +138,4 @@ export default {
 // Deployment marker: launch FREQBEACON branding — Explore the airwaves.
 // Deployment marker: add verified ON NOW / UP NEXT program identification.
 // Deployment marker: preload startup art and hold splash only after the artwork has painted.
+// Deployment marker: publish mode-aware 100 Hz SSB fine-tuning controls.
