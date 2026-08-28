@@ -5,6 +5,7 @@
   const TAGLINE = 'Explore the airwaves.';
   const SPLASH_HOLD_MS = 3000;
   const SPLASH_FADE_MS = 450;
+  const SPLASH_MAX_WAIT_MS = 8000;
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
@@ -20,12 +21,16 @@
     if (!art) {
       art = document.createElement('img');
       art.className = 'freqbeacon-splash__art';
-      art.src = '/freqbeacon-startup.webp?v=1';
+      art.src = 'freqbeacon-startup.webp?v=7';
       art.alt = '';
+      art.loading = 'eager';
+      art.decoding = 'sync';
+      art.fetchPriority = 'high';
       art.setAttribute('aria-hidden', 'true');
       splash.prepend(art);
     }
 
+    let leaving = false;
     let removed = false;
     const removeSplash = () => {
       if (removed) return;
@@ -33,10 +38,25 @@
       splash.remove();
     };
 
-    window.setTimeout(() => {
-      splash.classList.add('is-leaving');
-      window.setTimeout(removeSplash, SPLASH_FADE_MS + 75);
-    }, SPLASH_HOLD_MS);
+    const beginHold = () => {
+      if (leaving) return;
+      leaving = true;
+      window.setTimeout(() => {
+        splash.classList.add('is-leaving');
+        window.setTimeout(removeSplash, SPLASH_FADE_MS + 75);
+      }, SPLASH_HOLD_MS);
+    };
+
+    if (art.complete && art.naturalWidth > 0) {
+      beginHold();
+    } else {
+      art.addEventListener('load', beginHold, { once: true });
+      art.addEventListener('error', () => {
+        splash.style.backgroundImage = "url('freqbeacon-startup.webp?v=7')";
+        beginHold();
+      }, { once: true });
+      window.setTimeout(beginHold, SPLASH_MAX_WAIT_MS);
+    }
   }
 
   function brandNode(root) {
