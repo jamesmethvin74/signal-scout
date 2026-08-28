@@ -3,7 +3,7 @@
   const NEW_NAME = 'FreqBeacon';
   const DISPLAY_NAME = 'FREQBEACON';
   const TAGLINE = 'Explore the airwaves.';
-  const STARTUP_SRC = 'freqbeacon-startup-v2.webp';
+  const STARTUP_SRC = 'freqbeacon-startup-v3.svg';
   const SPLASH_HOLD_MS = 3000;
   const SPLASH_FADE_MS = 450;
   const SPLASH_MAX_WAIT_MS = 8000;
@@ -89,7 +89,7 @@
         if (!el.hasAttribute(attr)) continue;
         const current = el.getAttribute(attr);
         const next = replaceString(current);
-        if (next !== current) el.setAttribute(attr, next);
+        if (next !== current) root.setAttribute(attr, next);
       }
     });
   }
@@ -110,7 +110,7 @@
 
     const mark = document.querySelector('.signal-logo');
     if (mark) {
-      mark.style.backgroundImage = "url('freqbeacon-icon-v2-192.webp')";
+      mark.style.backgroundImage = "url('freqbeacon-icon-v3-192.webp')";
       mark.setAttribute('role', 'img');
       mark.setAttribute('aria-label', 'FreqBeacon Beacon Tower logo');
       mark.removeAttribute('aria-hidden');
