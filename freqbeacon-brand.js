@@ -3,6 +3,7 @@
   const NEW_NAME = 'FreqBeacon';
   const DISPLAY_NAME = 'FREQBEACON';
   const TAGLINE = 'Explore the airwaves.';
+  const STARTUP_SRC = 'freqbeacon-startup-v2.webp';
   const SPLASH_HOLD_MS = 3000;
   const SPLASH_FADE_MS = 450;
   const SPLASH_MAX_WAIT_MS = 8000;
@@ -21,14 +22,14 @@
     if (!art) {
       art = document.createElement('img');
       art.className = 'freqbeacon-splash__art';
-      art.src = 'freqbeacon-startup.webp?v=7';
       art.alt = '';
       art.loading = 'eager';
       art.decoding = 'sync';
       art.fetchPriority = 'high';
       art.setAttribute('aria-hidden', 'true');
-      splash.prepend(art);
+      splash.replaceChildren(art);
     }
+    art.src = STARTUP_SRC;
 
     let leaving = false;
     let removed = false;
@@ -51,10 +52,7 @@
       beginHold();
     } else {
       art.addEventListener('load', beginHold, { once: true });
-      art.addEventListener('error', () => {
-        splash.style.backgroundImage = "url('freqbeacon-startup.webp?v=7')";
-        beginHold();
-      }, { once: true });
+      art.addEventListener('error', beginHold, { once: true });
       window.setTimeout(beginHold, SPLASH_MAX_WAIT_MS);
     }
   }
@@ -112,6 +110,7 @@
 
     const mark = document.querySelector('.signal-logo');
     if (mark) {
+      mark.style.backgroundImage = "url('freqbeacon-icon-v2-192.webp')";
       mark.setAttribute('role', 'img');
       mark.setAttribute('aria-label', 'FreqBeacon Beacon Tower logo');
       mark.removeAttribute('aria-hidden');
