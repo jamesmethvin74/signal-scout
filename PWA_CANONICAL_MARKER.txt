@@ -1,1 +1,0 @@
-FREQBEACON PWA canonical install identity: manifest.webmanifest + freqbeacon-sw.js
