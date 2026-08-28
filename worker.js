@@ -2,6 +2,7 @@ import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
 const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js']);
+let startupArtDataUriCache = null;
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -16,7 +17,26 @@ function patchSdrOriginChecks(source) {
   );
 }
 
-function applyFreqBeaconBrand(html) {
+async function startupArtDataUri(request, env) {
+  if (startupArtDataUriCache) return startupArtDataUriCache;
+  try {
+    const assetUrl = new URL('/freqbeacon-startup.webp', request.url);
+    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET' }));
+    if (!assetResponse.ok) return '/freqbeacon-startup.webp?v=2';
+
+    const bytes = new Uint8Array(await assetResponse.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    startupArtDataUriCache = `data:image/webp;base64,${btoa(binary)}`;
+    return startupArtDataUriCache;
+  } catch {
+    return '/freqbeacon-startup.webp?v=2';
+  }
+}
+
+function applyFreqBeaconBrand(html, startupSrc) {
   let branded = html
     .replaceAll('Signal Scout', 'FreqBeacon')
     .replace(
@@ -28,20 +48,14 @@ function applyFreqBeaconBrand(html) {
     .replace('<p>What can I hear?</p>', '<p>Explore the airwaves.</p>')
     .replace('freqbeacon-brand.css?v=1', 'freqbeacon-brand.css?v=3')
     .replace('freqbeacon-brand.css?v=2', 'freqbeacon-brand.css?v=3')
-    .replace('freqbeacon-brand.js?v=1', 'freqbeacon-brand.js?v=4')
-    .replace('freqbeacon-brand.js?v=3', 'freqbeacon-brand.js?v=4');
+    .replace('freqbeacon-brand.js?v=1', 'freqbeacon-brand.js?v=5')
+    .replace('freqbeacon-brand.js?v=3', 'freqbeacon-brand.js?v=5')
+    .replace('freqbeacon-brand.js?v=4', 'freqbeacon-brand.js?v=5');
 
   if (!branded.includes('freqbeacon-brand.css')) {
     branded = branded.replace(
       '<link rel="stylesheet" href="arctic-slate-controls.css?v=1" />',
       '<link rel="stylesheet" href="arctic-slate-controls.css?v=1" />\n  <link rel="stylesheet" href="freqbeacon-brand.css?v=3" />'
-    );
-  }
-
-  if (!branded.includes('rel="preload" href="/freqbeacon-startup.webp?v=1"')) {
-    branded = branded.replace(
-      '<link rel="manifest" href="manifest.json" />',
-      '<link rel="manifest" href="manifest.json" />\n  <link rel="preload" href="/freqbeacon-startup.webp?v=1" as="image" type="image/webp" fetchpriority="high" />'
     );
   }
 
@@ -55,14 +69,14 @@ function applyFreqBeaconBrand(html) {
   if (!branded.includes('class="freqbeacon-splash__art"')) {
     branded = branded.replace(
       '<div class="freqbeacon-splash" aria-hidden="true">',
-      '<div class="freqbeacon-splash" aria-hidden="true">\n    <img class="freqbeacon-splash__art" src="/freqbeacon-startup.webp?v=1" alt="" aria-hidden="true" fetchpriority="high" decoding="sync" style="width:100%;height:100%;display:block;object-fit:contain;object-position:center;background:#07111f" />'
+      `<div class="freqbeacon-splash" aria-hidden="true" style="position:fixed;inset:0;z-index:99999;display:block;overflow:hidden;background:#07111f;opacity:1;visibility:visible">\n    <img class="freqbeacon-splash__art" src="${startupSrc}" alt="" aria-hidden="true" decoding="sync" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;object-fit:contain;object-position:center;background:#07111f" />`
     );
   }
 
   if (!branded.includes('freqbeacon-brand.js')) {
     branded = branded.replace(
       '<script src="stations.js"></script>',
-      '<script src="freqbeacon-brand.js?v=4"></script>\n  <script src="stations.js"></script>'
+      '<script src="freqbeacon-brand.js?v=5"></script>\n  <script src="stations.js"></script>'
     );
   }
 
@@ -108,12 +122,13 @@ export default {
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=1')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
-      html = applyFreqBeaconBrand(html);
+      const startupSrc = await startupArtDataUri(request, env);
+      html = applyFreqBeaconBrand(html, startupSrc);
       html = applyProgramGuideRuntime(html);
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
-      headers.set('x-freqbeacon-brand', 'v3');
+      headers.set('x-freqbeacon-brand', 'v4');
       headers.set('x-freqbeacon-program-guide', 'v1');
       return new Response(html, {
         status: response.status,
@@ -135,3 +150,4 @@ export default {
 // Deployment marker: add verified ON NOW / UP NEXT program identification.
 // Deployment marker: bust cached branding runtime so approved startup artwork loads.
 // Deployment marker: inject approved startup artwork directly into Worker-served HTML.
+// Deployment marker: inline approved startup artwork so Android PWA first paint cannot miss it.
