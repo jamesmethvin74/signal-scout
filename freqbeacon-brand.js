@@ -4,9 +4,9 @@
   const DISPLAY_NAME = 'FREQBEACON';
   const TAGLINE = 'Explore the airwaves.';
   const STARTUP_SRC = 'freqbeacon-startup-v3.avif';
-  const SPLASH_HOLD_MS = 3000;
-  const SPLASH_FADE_MS = 450;
-  const SPLASH_MAX_WAIT_MS = 8000;
+  const SPLASH_HOLD_MS = 1250;
+  const SPLASH_FADE_MS = 300;
+  const SPLASH_MAX_WAIT_MS = 4000;
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
@@ -16,12 +16,24 @@
 
   function installPwaServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('./sw.js', {
-      scope: './',
-      updateViaCache: 'none'
-    }).catch(() => {
-      // Installation support is optional at runtime; the web app remains usable.
-    });
+
+    const register = () => {
+      navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none'
+      }).catch(() => {
+        // Installation support is optional at runtime; the web app remains usable.
+      });
+    };
+
+    // Do not add a service-worker network request to the browser's initial
+    // document load. Chrome can install from the menu without a fetch handler,
+    // so registration can safely happen once the page itself is complete.
+    if (document.readyState === 'complete') {
+      window.setTimeout(register, 0);
+    } else {
+      window.addEventListener('load', register, { once: true });
+    }
   }
 
   function installLocationReliability() {
