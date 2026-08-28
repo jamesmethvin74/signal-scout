@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "FREQBEACON",
   "short_name": "FREQBEACON",
   "description": "Explore the airwaves with location-aware radio discovery, live remote SDR audio, spectrum, and waterfall.",
@@ -8,6 +9,7 @@
   "orientation": "portrait-primary",
   "background_color": "#07111f",
   "theme_color": "#07111f",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "freqbeacon-icon-v3-192.webp",

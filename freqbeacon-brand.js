@@ -14,6 +14,116 @@
       : value;
   }
 
+  function installPwaServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('./sw.js', {
+      scope: './',
+      updateViaCache: 'none'
+    }).catch(() => {
+      // Installation support is optional at runtime; the web app remains usable.
+    });
+  }
+
+  function installLocationReliability() {
+    const geo = navigator.geolocation;
+    if (!geo) return;
+
+    const marker = '__freqbeaconReliableGeolocationV1';
+    const proto = Object.getPrototypeOf(geo);
+    const target = proto && typeof proto.getCurrentPosition === 'function' ? proto : geo;
+    const original = target.getCurrentPosition;
+
+    if (typeof original === 'function' && !original[marker]) {
+      const wrapped = function getCurrentPositionReliable(success, error, options = {}) {
+        const requested = options && typeof options === 'object' ? options : {};
+        const requestedTimeout = Number(requested.timeout);
+        const requestedMaxAge = Number(requested.maximumAge);
+        let fallbackStarted = false;
+
+        const highAccuracyOptions = {
+          ...requested,
+          enableHighAccuracy: true,
+          timeout: Number.isFinite(requestedTimeout) && requestedTimeout > 0
+            ? Math.min(Math.max(requestedTimeout, 8000), 15000)
+            : 12000,
+          maximumAge: Number.isFinite(requestedMaxAge) && requestedMaxAge >= 0
+            ? Math.min(requestedMaxAge, 120000)
+            : 60000
+        };
+
+        const highAccuracyError = (geoError) => {
+          if (geoError?.code === 1 || fallbackStarted) {
+            error?.(geoError);
+            return;
+          }
+
+          fallbackStarted = true;
+          const fallbackOptions = {
+            ...requested,
+            enableHighAccuracy: false,
+            timeout: 7000,
+            maximumAge: Math.max(
+              Number.isFinite(requestedMaxAge) && requestedMaxAge >= 0 ? requestedMaxAge : 0,
+              15 * 60 * 1000
+            )
+          };
+          original.call(this, success, error, fallbackOptions);
+        };
+
+        return original.call(this, success, highAccuracyError, highAccuracyOptions);
+      };
+
+      try {
+        Object.defineProperty(wrapped, marker, { value: true });
+        Object.defineProperty(target, 'getCurrentPosition', {
+          configurable: true,
+          writable: true,
+          value: wrapped
+        });
+      } catch {
+        try {
+          target.getCurrentPosition = wrapped;
+        } catch {
+          // Leave the browser implementation untouched if it cannot be wrapped.
+        }
+      }
+    }
+
+    const originalFetch = window.fetch;
+    if (typeof originalFetch !== 'function' || originalFetch.__freqbeaconLocationLookupTimeoutV1) return;
+
+    const wrappedFetch = function freqbeaconFetch(input, init = undefined) {
+      let url;
+      try {
+        const href = typeof input === 'string' ? input : input?.url;
+        url = new URL(href, window.location.href);
+      } catch {
+        return originalFetch.call(this, input, init);
+      }
+
+      const isReverseGeocode = url.hostname === 'nominatim.openstreetmap.org' && url.pathname === '/reverse';
+      const isTimeZoneLookup = url.hostname === 'api.open-meteo.com'
+        && url.pathname === '/v1/forecast'
+        && url.searchParams.get('timezone') === 'auto';
+
+      if ((!isReverseGeocode && !isTimeZoneLookup) || init?.signal) {
+        return originalFetch.call(this, input, init);
+      }
+
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 4500);
+      return originalFetch.call(this, input, { ...(init || {}), signal: controller.signal })
+        .finally(() => window.clearTimeout(timer));
+    };
+
+    try {
+      Object.defineProperty(wrappedFetch, '__freqbeaconLocationLookupTimeoutV1', { value: true });
+      window.fetch = wrappedFetch;
+    } catch {
+      // The stock fetch remains available if the environment prevents wrapping.
+    }
+  }
+
   function installApprovedSplash() {
     const splash = document.querySelector('.freqbeacon-splash');
     if (!splash) return;
@@ -119,6 +229,8 @@
     brandNode(document.body);
   }
 
+  installPwaServiceWorker();
+  installLocationReliability();
   installApprovedSplash();
   applyPrimaryBrand();
 
