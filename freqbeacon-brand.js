@@ -19,7 +19,7 @@
     splash.replaceChildren();
     const art = document.createElement('img');
     art.className = 'freqbeacon-splash__art';
-    art.src = 'freqbeacon-startup.jpg';
+    art.src = 'freqbeacon-startup.webp';
     art.alt = '';
     art.setAttribute('aria-hidden', 'true');
     splash.appendChild(art);
