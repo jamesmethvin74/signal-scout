@@ -16,6 +16,62 @@ function patchSdrOriginChecks(source) {
   );
 }
 
+function patchRfSpectrumPersistence(source) {
+  if (!source.includes('function smoothSpectrumDb') || source.includes('function persistentSpectrumDb')) return source;
+
+  let patched = source.replace(
+    '    displayMaxDb: -55,\n',
+    '    displayMaxDb: -55,\n    spectrumHistory: [],\n    spectrumHistoryMeta: \'\',\n'
+  );
+
+  patched = patched.replace(
+    '  function smoothSpectrumDb(dbValues) {',
+    `  function persistentSpectrumDb(dbValues) {
+    const meta = dbValues.length + '|' + state.zoom + '|' + (Number.isFinite(state.centerKHz) ? state.centerKHz.toFixed(3) : '');
+    if (state.spectrumHistoryMeta !== meta) {
+      state.spectrumHistoryMeta = meta;
+      state.spectrumHistory = [];
+    }
+
+    state.spectrumHistory.push(Float32Array.from(dbValues));
+    if (state.spectrumHistory.length > 4) state.spectrumHistory.shift();
+
+    if (state.spectrumHistory.length < 2) {
+      const useful = dbValues
+        .filter((value) => Number.isFinite(value) && value > -200 && value < 5)
+        .sort((a, b) => a - b);
+      const anchorDb = percentile(useful, 0.18) ?? -120;
+      return dbValues.map((value) => Math.min(value, anchorDb + 2.4));
+    }
+
+    const filtered = new Array(dbValues.length);
+    const samples = new Array(state.spectrumHistory.length);
+    for (let i = 0; i < dbValues.length; i += 1) {
+      for (let frame = 0; frame < state.spectrumHistory.length; frame += 1) {
+        samples[frame] = state.spectrumHistory[frame][i];
+      }
+      samples.sort((a, b) => a - b);
+      filtered[i] = samples[Math.max(0, samples.length - 2)];
+    }
+    return filtered;
+  }
+
+  function smoothSpectrumDb(dbValues) {`
+  );
+
+  patched = patched.replace(
+    '    const spectrumDb = smoothSpectrumDb(db);\n',
+    '    const spectrumDb = persistentSpectrumDb(smoothSpectrumDb(db));\n'
+  );
+
+  patched = patched.replace(
+    '    state.requestedCompression = false;\n    if (ensureCanvas()) drawStage(reason);',
+    '    state.requestedCompression = false;\n    state.spectrumHistory = [];\n    state.spectrumHistoryMeta = \'\';\n    if (ensureCanvas()) drawStage(reason);'
+  );
+
+  return patched;
+}
+
 function applyFreqBeaconBrand(html) {
   let branded = html
     .replaceAll('Signal Scout', 'FreqBeacon')
@@ -82,11 +138,13 @@ export default {
 
     if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
       const source = await response.text();
-      const patched = patchSdrOriginChecks(source);
+      let patched = patchSdrOriginChecks(source);
+      if (url.pathname === '/sdr-rf-v2.js') patched = patchRfSpectrumPersistence(patched);
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
+      if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
       return new Response(patched, {
         status: response.status,
         statusText: response.statusText,
@@ -97,7 +155,7 @@ export default {
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
-        .replace('sdr-rf-v2.js?v=5', 'sdr-rf-v2.js?v=7')
+        .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=8')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
@@ -130,3 +188,4 @@ export default {
 // Deployment marker: publish mode-aware 100 Hz SSB fine-tuning controls.
 // Deployment marker: keep RF spectrum baseline tight in crowded bands and force the new renderer revision.
 // Deployment marker: publish clean transparent launch icons and corrected startup artwork.
+// Deployment marker: require repeat waterfall-bin energy before drawing tall RF spectrum peaks.
