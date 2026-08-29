@@ -9,7 +9,7 @@ function injectScheduledService(response) {
     // assets by Cloudflare rather than being wrapped by the Worker.
     html = html.replace(
       /<link\s+rel="manifest"\s+href="[^"]+"\s*\/?>/i,
-      '<link rel="manifest" href="/manifest.webmanifest?v=2" />'
+      '<link rel="manifest" href="/manifest.webmanifest?v=3" />'
     );
     html = html.replace(
       /<link\s+rel="icon"\s+type="image\/svg\+xml"\s+href="favicon\.svg"\s*\/?>/i,
@@ -38,8 +38,23 @@ function injectScheduledService(response) {
     headers.set('content-type','text/html; charset=utf-8');
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
-    headers.set('x-freqbeacon-pwa-manifest','static-v2');
+    headers.set('x-freqbeacon-pwa-manifest','static-v3');
     headers.set('x-freqbeacon-receiver-ui','runtime-trace-v1');
+    return new Response(html,{status:response.status,statusText:response.statusText,headers});
+  });
+}
+
+function injectDiagnosticsReturn(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!contentType.includes('text/html')) return response;
+  return response.text().then((html) => {
+    if (!html.includes('diagnostics-home.js')) {
+      html = html.replace('</body>', '  <script src="/diagnostics-home.js?v=1"></script>\n</body>');
+    }
+    const headers = new Headers(response.headers);
+    headers.set('content-type','text/html; charset=utf-8');
+    headers.set('cache-control','no-store, max-age=0');
+    headers.set('x-freqbeacon-diagnostics-return','v1');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
@@ -50,6 +65,9 @@ export default {
     const response = await baseWorker.fetch(request, env, ctx);
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return injectScheduledService(response);
+    }
+    if (request.method === 'GET' && (url.pathname === '/sdr-diagnostics.html' || url.pathname === '/sdr-runtime-trace.html')) {
+      return injectDiagnosticsReturn(response);
     }
     return response;
   },
