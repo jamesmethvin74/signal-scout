@@ -28,7 +28,7 @@ function injectScheduledService(response) {
     if (!html.includes('sdr-runtime-trace.js')) {
       html = html.replace(
         '</head>',
-        '  <script src="/sdr-runtime-trace.js?v=1"></script>\n</head>'
+        '  <script src="/sdr-runtime-trace.js?v=2"></script>\n</head>'
       );
     }
     if (!html.includes('program-guide-scheduled-service.js')) {
@@ -39,7 +39,7 @@ function injectScheduledService(response) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','runtime-trace-v1');
+    headers.set('x-freqbeacon-receiver-ui','runtime-trace-v2');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
