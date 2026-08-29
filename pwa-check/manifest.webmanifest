@@ -1,0 +1,15 @@
+{
+  "id": "/pwa-check/",
+  "name": "FREQBEACON PWA Check",
+  "short_name": "FREQCHECK",
+  "start_url": "/pwa-check/",
+  "scope": "/pwa-check/",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {"src":"/freqbeacon-icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"/freqbeacon-icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"/freqbeacon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ]
+}
