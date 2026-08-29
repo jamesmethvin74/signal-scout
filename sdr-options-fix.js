@@ -7,6 +7,15 @@
     if (element && element.textContent !== text) element.textContent = text;
   }
 
+  function setPlainTextNode(element, text) {
+    if (!element) return;
+    if (element.childNodes.length === 1 && element.firstChild?.nodeType === Node.TEXT_NODE) {
+      if (element.firstChild.nodeValue !== text) element.firstChild.nodeValue = text;
+      return;
+    }
+    setTextIfChanged(element, text);
+  }
+
   function frequencyFromCard(card) {
     const freqEl = card?.querySelector('.frequency');
     if (!freqEl) return null;
@@ -18,34 +27,31 @@
     return unit.includes('mhz') ? value * 1000 : value;
   }
 
-  function lookupResultFrequency(result) {
-    const text = result?.querySelector('.lookup-result-frequency')?.textContent || '';
-    const value = Number(text.replace(/[^0-9.]/g, ''));
-    return Number.isFinite(value) ? value : null;
-  }
-
-  function prepareLookupContext(card) {
+  function prepareReceiverContext(card) {
     const frequency = frequencyFromCard(card);
     if (!Number.isFinite(frequency)) return false;
 
     const input = document.getElementById('lookupFrequency');
-    const submit = document.getElementById('lookupSubmit');
-    if (!input || !submit) return false;
+    if (!input) return false;
 
+    // Receiver options used to call lookupSubmit.click(), which synchronously
+    // rendered the entire hidden Lookup results tree before opening the chooser.
+    // On Android that stacked Lookup rendering, Lookup observers, receiver
+    // ranking, and chooser rendering into one tap. Receiver selection only needs
+    // a frequency/station context, so provide that context without running Lookup.
     input.value = Number.isInteger(frequency) ? String(frequency) : frequency.toFixed(1);
-    submit.click();
+    input.dispatchEvent(new Event('input', { bubbles: false }));
 
-    const stationName = normalizeText(card.querySelector('.station-name')?.textContent);
-    const results = [...document.querySelectorAll('#lookupResults .lookup-result')];
-    const matching = results.find((result) => {
-      const name = normalizeText(result.querySelector('h3')?.textContent);
-      const resultFrequency = lookupResultFrequency(result);
-      return name === stationName && Number.isFinite(resultFrequency) && Math.abs(resultFrequency - frequency) < 0.11;
-    });
-
-    if (matching) {
-      results.forEach((result) => result.classList.remove('lookup-result-primary'));
-      matching.classList.add('lookup-result-primary');
+    // If Lookup was used earlier in this session, refresh the lightweight
+    // primary-result context in place so sdr-player.js does not rank the old
+    // frequency. Updating existing text nodes does not trigger the child-list
+    // observer used by the Lookup recommendation scheduler.
+    const primary = document.querySelector('#lookupResults .lookup-result-primary, #lookupResults .lookup-result');
+    if (primary) {
+      const frequencyText = `${Number.isInteger(frequency) ? frequency.toLocaleString() : frequency.toLocaleString(undefined, { maximumFractionDigits: 1 })} kHz`;
+      setPlainTextNode(primary.querySelector('.lookup-result-frequency'), frequencyText);
+      const stationName = card.querySelector('.station-name')?.textContent?.trim();
+      if (stationName) setPlainTextNode(primary.querySelector('h3'), stationName);
     }
     return true;
   }
@@ -106,25 +112,23 @@
   }
 
   function openReceiverOptions(card) {
-    if (!prepareLookupContext(card)) return;
+    if (!prepareReceiverContext(card)) return;
     const smartButton = document.getElementById('lookupReceiverButton');
     if (!smartButton) return;
 
     const openPlayer = document.querySelector('#sdrPlayer:not([hidden])');
     if (openPlayer) openPlayer.querySelector('[data-sdr-close]')?.click();
 
-    // Let the lookup DOM settle before starting receiver ranking. This avoids
-    // stacking lookup rendering, chooser rendering, and network callbacks in
-    // the same Android click turn.
+    // Open the existing smart chooser directly. No hidden Lookup submit, no
+    // smooth-scroll/navigation path, and no full Lookup-results DOM rebuild.
     window.requestAnimationFrame(() => {
       smartButton.click();
       scheduleChooserPolish();
     });
   }
 
-  // The original Receiver options button predates the smart receiver chooser and
-  // routes to Lookup. Intercept it before that legacy target handler runs and
-  // open the chooser for the card that was actually tapped.
+  // The original Receiver options button predates the smart receiver chooser
+  // and routes to Lookup. Intercept it before that legacy target handler runs.
   window.addEventListener('click', (event) => {
     const button = event.target.closest('.card-receiver-options');
     if (!button) return;
