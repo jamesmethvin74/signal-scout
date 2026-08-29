@@ -3,13 +3,13 @@ import { SDR_DIRECTORY_SEED_VERSION, rankSeedReceivers } from './sdr-directory-s
 
 const RECEIVER_RESPONSE_DEADLINE_MS = 2200;
 
-function jsonResponse(value, status = 200) {
+function jsonResponse(value, status = 200, marker = 'fast-fallback-v2') {
   return new Response(JSON.stringify(value), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'private, max-age=0, no-store',
-      'x-freqbeacon-sdr-directory': 'fast-fallback-v1'
+      'x-freqbeacon-sdr-directory': marker
     }
   });
 }
@@ -18,19 +18,31 @@ function deadline(ms) {
   return new Promise((resolve) => setTimeout(() => resolve(null), ms));
 }
 
-async function usableReceiverResponse(response) {
-  if (!response) return null;
+async function fullyBufferedUsableReceiverResponse(request, env, ctx) {
+  const response = await baseWorker.fetch(request, env, ctx);
+  if (!response || !response.ok) return null;
+
   const contentType = String(response.headers.get('content-type') || '');
-  if (!contentType.includes('application/json')) return response;
+  if (!contentType.includes('application/json')) return null;
 
-  try {
-    const payload = await response.clone().json();
-    if (Array.isArray(payload?.receivers) && payload.receivers.length > 3) return response;
-  } catch {
-    return response;
-  }
+  // IMPORTANT: the deadline must cover the BODY too, not just receipt of HTTP
+  // headers. Returning a Response whose JSON stream is still pending can leave
+  // Android waiting until the client-side 6.5s abort, which then triggers the
+  // three legacy receivers in sdr-player.js.
+  const payload = await response.json();
+  if (!Array.isArray(payload?.receivers) || payload.receivers.length <= 3) return null;
 
-  return null;
+  // Re-buffer the successful live payload into a complete local Response so the
+  // browser never receives a partially-open upstream body stream.
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/json; charset=utf-8');
+  headers.set('cache-control', 'private, max-age=0, no-store');
+  headers.set('x-freqbeacon-sdr-directory', 'live-buffered-v2');
+  return new Response(JSON.stringify(payload), {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 function rankedSeedResponse(request) {
@@ -50,7 +62,7 @@ function rankedSeedResponse(request) {
   return jsonResponse({
     receivers,
     source: 'bundled-seed-fast',
-    warning: `Live receiver discovery did not answer quickly enough; using FREQBEACON built-in catalog ${SDR_DIRECTORY_SEED_VERSION}.`,
+    warning: `Live receiver discovery did not finish within ${RECEIVER_RESPONSE_DEADLINE_MS} ms; using FREQBEACON built-in catalog ${SDR_DIRECTORY_SEED_VERSION}.`,
     generatedAt: new Date().toISOString()
   });
 }
@@ -62,18 +74,18 @@ export default {
       return baseWorker.fetch(request, env, ctx);
     }
 
-    const livePromise = Promise.resolve(baseWorker.fetch(request, env, ctx)).catch(() => null);
-    const candidate = await Promise.race([
+    // Race the COMPLETE usable live payload (including response.json()), not
+    // merely baseWorker.fetch() resolving with headers.
+    const livePromise = fullyBufferedUsableReceiverResponse(request, env, ctx).catch(() => null);
+    const usable = await Promise.race([
       livePromise,
       deadline(RECEIVER_RESPONSE_DEADLINE_MS)
     ]);
 
-    const usable = await usableReceiverResponse(candidate);
     if (usable) return usable;
 
-    // Do not hold the phone open while ReceiverBook is slow or unreachable.
-    // The existing worker-v2 resolver already knows every bundled seed ID, so
-    // these choices remain compatible with the proven SND/W/F proxy path.
+    // Keep the live request running in the background so its internal directory
+    // cache can still warm, while the phone gets a complete ranked response now.
     ctx?.waitUntil(livePromise.then(() => undefined));
     return rankedSeedResponse(request);
   },
