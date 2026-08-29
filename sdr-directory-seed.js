@@ -25,7 +25,7 @@ export const SDR_DIRECTORY_SEED = [
   { id:'palomar-1.proxy.kiwisdr.com:8073', name:'K6VZK KiwiSDR #1', location:'Palomar Mountain, California', url:'http://palomar-1.proxy.kiwisdr.com:8073', lat:33.3220, lon:-116.8640, minKHz:10, maxKHz:30000 }
 ];
 
-function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function finite(v){if(v==null||String(v).trim()==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 function milesBetween(lat1,lon1,lat2,lon2){if(![lat1,lon1,lat2,lon2].every(Number.isFinite))return null;const r=Math.PI/180;const a=Math.sin((lat2-lat1)*r/2)**2+Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin((lon2-lon1)*r/2)**2;return 2*3958.8*Math.asin(Math.sqrt(a));}
 function solarHour(lon,date=new Date()){return Number.isFinite(lon)?(date.getUTCHours()+date.getUTCMinutes()/60+lon/15+24)%24:null;}
