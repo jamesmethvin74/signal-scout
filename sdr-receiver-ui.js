@@ -32,7 +32,7 @@
   document.head.appendChild(style);
 
   const optionsFix = document.createElement('script');
-  optionsFix.src = 'sdr-options-fix.js?v=3';
+  optionsFix.src = 'sdr-options-fix.js?v=4';
   optionsFix.async = false;
   document.body.appendChild(optionsFix);
 })();
