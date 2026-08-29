@@ -27,8 +27,8 @@ function injectScheduledService(response) {
     html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=6');
     if (!html.includes('sdr-runtime-trace.js')) {
       html = html.replace(
-        '<script src="freqbeacon-brand.js?v=1"></script>',
-        '<script src="/sdr-runtime-trace.js?v=1"></script>\n  <script src="freqbeacon-brand.js?v=1"></script>'
+        '</head>',
+        '  <script src="/sdr-runtime-trace.js?v=1"></script>\n</head>'
       );
     }
     if (!html.includes('program-guide-scheduled-service.js')) {
