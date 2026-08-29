@@ -50,6 +50,61 @@
     return true;
   }
 
+  let polishTimer = null;
+
+  function polishChooser() {
+    const chooser = document.querySelector('.sdr-chooser');
+    const list = chooser?.querySelector('[data-sdr-chooser-list]');
+    if (!chooser || chooser.hidden || !list?.children.length) return false;
+
+    const subtitle = chooser.querySelector('[data-sdr-chooser-subtitle]');
+    if (subtitle) {
+      const rankedText = subtitle.textContent.replace(/\s*★.*$/, '').trim();
+      setTextIfChanged(subtitle, `${rankedText} ★ marks the best match for what you may hear at your location.`);
+    }
+
+    const seen = new Set();
+    [...list.querySelectorAll('.sdr-choice')].forEach((choice) => {
+      const name = normalizeText(choice.querySelector('.sdr-choice-name')?.textContent);
+      const location = normalizeText(choice.querySelector('.sdr-choice-location')?.textContent);
+      const distance = normalizeText(choice.querySelector('.sdr-choice-distance')?.textContent);
+      const key = `${name}|${location}|${distance}`;
+
+      if (seen.has(key)) {
+        choice.remove();
+        return;
+      }
+      seen.add(key);
+
+      const recommended = choice.querySelector('.sdr-choice-badge.is-recommended');
+      const roleBadges = [...choice.querySelectorAll('.sdr-choice-badge:not(.is-recommended)')]
+        .map((badge) => normalizeText(badge.textContent));
+      const reason = choice.querySelector('.sdr-choice-reason');
+
+      if (recommended) {
+        setTextIfChanged(recommended, '★ Best match for you');
+        if (reason && roleBadges.includes('near you')) {
+          setTextIfChanged(reason, 'Best receiver for comparing with what your radio is likely to hear at your location. It is nearby and still follows a useful HF path.');
+        } else if (reason) {
+          setTextIfChanged(reason, 'Best overall receiver for comparing against your location, considering distance, path, frequency, and current day/night conditions.');
+        }
+      }
+
+      if (reason && roleBadges.includes('station check')) {
+        setTextIfChanged(reason, 'Best used to check whether the transmitter appears active. It is not necessarily the best receiver for matching what you should hear at your location.');
+      }
+    });
+    return true;
+  }
+
+  function scheduleChooserPolish(attempt = 0) {
+    window.clearTimeout(polishTimer);
+    polishTimer = window.setTimeout(() => {
+      if (polishChooser()) return;
+      if (attempt < 8) scheduleChooserPolish(attempt + 1);
+    }, attempt === 0 ? 0 : 350);
+  }
+
   function openReceiverOptions(card) {
     if (!prepareLookupContext(card)) return;
     const smartButton = document.getElementById('lookupReceiverButton');
@@ -58,7 +113,13 @@
     const openPlayer = document.querySelector('#sdrPlayer:not([hidden])');
     if (openPlayer) openPlayer.querySelector('[data-sdr-close]')?.click();
 
-    smartButton.click();
+    // Let the lookup DOM settle before starting receiver ranking. This avoids
+    // stacking lookup rendering, chooser rendering, and network callbacks in
+    // the same Android click turn.
+    window.requestAnimationFrame(() => {
+      smartButton.click();
+      scheduleChooserPolish();
+    });
   }
 
   // The original Receiver options button predates the smart receiver chooser and
@@ -75,63 +136,10 @@
     openReceiverOptions(card);
   }, true);
 
-  let polishing = false;
-
-  function polishChooser() {
-    if (polishing) return;
-    const chooser = document.querySelector('.sdr-chooser');
-    const list = chooser?.querySelector('[data-sdr-chooser-list]');
-    if (!list) return;
-
-    polishing = true;
-    try {
-      const subtitle = chooser.querySelector('[data-sdr-chooser-subtitle]');
-      if (subtitle && !subtitle.dataset.purposeExplained) {
-        subtitle.dataset.purposeExplained = 'true';
-        const rankedText = subtitle.textContent.replace(/\s*★.*$/, '').trim();
-        setTextIfChanged(subtitle, `${rankedText} ★ marks the best match for what you may hear at your location.`);
-      }
-
-      const seen = new Set();
-      [...list.querySelectorAll('.sdr-choice')].forEach((choice) => {
-        const name = normalizeText(choice.querySelector('.sdr-choice-name')?.textContent);
-        const location = normalizeText(choice.querySelector('.sdr-choice-location')?.textContent);
-        const distance = normalizeText(choice.querySelector('.sdr-choice-distance')?.textContent);
-        const key = `${name}|${location}|${distance}`;
-
-        if (seen.has(key)) {
-          choice.remove();
-          return;
-        }
-        seen.add(key);
-
-        const recommended = choice.querySelector('.sdr-choice-badge.is-recommended');
-        const roleBadges = [...choice.querySelectorAll('.sdr-choice-badge:not(.is-recommended)')]
-          .map((badge) => normalizeText(badge.textContent));
-        const reason = choice.querySelector('.sdr-choice-reason');
-
-        if (recommended) {
-          setTextIfChanged(recommended, '★ Best match for you');
-          if (reason && roleBadges.includes('near you')) {
-            setTextIfChanged(reason, 'Best receiver for comparing with what your radio is likely to hear at your location. It is nearby and still follows a useful HF path.');
-          } else if (reason) {
-            setTextIfChanged(reason, 'Best overall receiver for comparing against your location, considering distance, path, frequency, and current day/night conditions.');
-          }
-        }
-
-        if (reason && roleBadges.includes('station check')) {
-          setTextIfChanged(reason, 'Best used to check whether the transmitter appears active. It is not necessarily the best receiver for matching what you should hear at your location.');
-        }
-      });
-    } finally {
-      polishing = false;
-    }
-  }
-
-  const chooser = document.querySelector('.sdr-chooser');
-  if (chooser) {
-    const observer = new MutationObserver(polishChooser);
-    observer.observe(chooser, { childList: true, subtree: true, characterData: true });
-    polishChooser();
-  }
+  // Polish only after an intentional chooser open. Do not observe chooser DOM
+  // mutations: an earlier version created a feedback loop that could freeze the
+  // browser when the receiver list was rendered or rewritten.
+  document.getElementById('lookupReceiverButton')?.addEventListener('click', () => {
+    scheduleChooserPolish();
+  });
 })();
