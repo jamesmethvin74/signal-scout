@@ -143,7 +143,7 @@ async function resilientReceiverRecommendations(request, env, ctx) {
     && liveReceivers.length > 3
     && proxyDirectory instanceof Map
     && proxyDirectory.size > 3
-    && liveReceivers.some((receiver) => proxyDirectory.has(receiver?.id));
+    && liveReceivers.every((receiver) => proxyDirectory.has(receiver?.id));
 
   if (liveDirectoryReady) return response;
 
