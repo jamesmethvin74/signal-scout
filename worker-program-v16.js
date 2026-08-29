@@ -24,7 +24,13 @@ function injectScheduledService(response) {
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
-    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=5');
+    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=6');
+    if (!html.includes('sdr-runtime-trace.js')) {
+      html = html.replace(
+        '<script src="freqbeacon-brand.js?v=1"></script>',
+        '<script src="/sdr-runtime-trace.js?v=1"></script>\n  <script src="freqbeacon-brand.js?v=1"></script>'
+      );
+    }
     if (!html.includes('program-guide-scheduled-service.js')) {
       html = html.replace('</body>', '  <script src="program-guide-scheduled-service.js?v=1"></script>\n</body>');
     }
@@ -33,7 +39,7 @@ function injectScheduledService(response) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v2');
-    headers.set('x-freqbeacon-receiver-ui','direct-options-player-v3');
+    headers.set('x-freqbeacon-receiver-ui','runtime-trace-v1');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }

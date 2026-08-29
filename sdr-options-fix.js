@@ -1,4 +1,6 @@
 (() => {
+  const trace = (event, detail = {}) => window.__freqbeaconSdrTrace?.(`options-${event}`, detail);
+
   function normalizeText(value) {
     return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
@@ -29,23 +31,20 @@
 
   function prepareReceiverContext(card) {
     const frequency = frequencyFromCard(card);
-    if (!Number.isFinite(frequency)) return false;
+    if (!Number.isFinite(frequency)) {
+      trace('context-failed', { reason: 'invalid-card-frequency' });
+      return false;
+    }
 
     const input = document.getElementById('lookupFrequency');
-    if (!input) return false;
+    if (!input) {
+      trace('context-failed', { reason: 'lookup-frequency-input-missing', frequency });
+      return false;
+    }
 
-    // Receiver options used to call lookupSubmit.click(), which synchronously
-    // rendered the entire hidden Lookup results tree before opening the chooser.
-    // On Android that stacked Lookup rendering, Lookup observers, receiver
-    // ranking, and chooser rendering into one tap. Receiver selection only needs
-    // a frequency/station context, so provide that context without running Lookup.
     input.value = Number.isInteger(frequency) ? String(frequency) : frequency.toFixed(1);
     input.dispatchEvent(new Event('input', { bubbles: false }));
 
-    // If Lookup was used earlier in this session, refresh the lightweight
-    // primary-result context in place so sdr-player.js does not rank the old
-    // frequency. Updating existing text nodes does not trigger the child-list
-    // observer used by the Lookup recommendation scheduler.
     const primary = document.querySelector('#lookupResults .lookup-result-primary, #lookupResults .lookup-result');
     if (primary) {
       const frequencyText = `${Number.isInteger(frequency) ? frequency.toLocaleString() : frequency.toLocaleString(undefined, { maximumFractionDigits: 1 })} kHz`;
@@ -53,6 +52,12 @@
       const stationName = card.querySelector('.station-name')?.textContent?.trim();
       if (stationName) setPlainTextNode(primary.querySelector('h3'), stationName);
     }
+    trace('context-prepared', {
+      frequency,
+      inputValue: input.value,
+      station: card.querySelector('.station-name')?.textContent?.trim() || '',
+      primaryLookupResultPresent: Boolean(primary)
+    });
     return true;
   }
 
@@ -100,6 +105,7 @@
         setTextIfChanged(reason, 'Best used to check whether the transmitter appears active. It is not necessarily the best receiver for matching what you should hear at your location.');
       }
     });
+    trace('chooser-polished', { choiceCount: list.querySelectorAll('.sdr-choice').length });
     return true;
   }
 
@@ -108,42 +114,56 @@
     polishTimer = window.setTimeout(() => {
       if (polishChooser()) return;
       if (attempt < 8) scheduleChooserPolish(attempt + 1);
+      else trace('chooser-polish-exhausted');
     }, attempt === 0 ? 0 : 350);
   }
 
   function openReceiverOptions(card) {
+    trace('open-start');
     if (!prepareReceiverContext(card)) return;
     const smartButton = document.getElementById('lookupReceiverButton');
-    if (!smartButton) return;
+    if (!smartButton) {
+      trace('open-failed', { reason: 'smart-button-missing' });
+      return;
+    }
 
     const openPlayer = document.querySelector('#sdrPlayer:not([hidden])');
+    trace('open-before-player-close', { openPlayer: Boolean(openPlayer), smartButtonText: smartButton.textContent?.trim().replace(/\s+/g, ' ') || '' });
     if (openPlayer) openPlayer.querySelector('[data-sdr-close]')?.click();
 
-    // Open the existing smart chooser directly. No hidden Lookup submit, no
-    // smooth-scroll/navigation path, and no full Lookup-results DOM rebuild.
     window.requestAnimationFrame(() => {
+      trace('raf-before-smart-click', { lookupFrequency: document.getElementById('lookupFrequency')?.value || '' });
       smartButton.click();
+      trace('raf-after-smart-click', {
+        chooserHidden: document.querySelector('.sdr-chooser')?.hidden ?? null,
+        choiceCount: document.querySelectorAll('.sdr-chooser .sdr-choice').length
+      });
       scheduleChooserPolish();
     });
   }
 
-  // The original Receiver options button predates the smart receiver chooser
-  // and routes to Lookup. Intercept it before that legacy target handler runs.
   window.addEventListener('click', (event) => {
     const button = event.target.closest('.card-receiver-options');
     if (!button) return;
     const card = button.closest('.signal-card');
+    trace('card-click-handler-enter', {
+      defaultPrevented: event.defaultPrevented,
+      isTrusted: event.isTrusted,
+      tag: button.tagName,
+      type: button.getAttribute('type'),
+      href: button.getAttribute('href'),
+      cardFound: Boolean(card)
+    });
     if (!card) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
+    trace('card-click-prevented', { defaultPrevented: event.defaultPrevented });
     openReceiverOptions(card);
   }, true);
 
-  // Polish only after an intentional chooser open. Do not observe chooser DOM
-  // mutations: an earlier version created a feedback loop that could freeze the
-  // browser when the receiver list was rendered or rewritten.
   document.getElementById('lookupReceiverButton')?.addEventListener('click', () => {
+    trace('lookup-smart-button-handler-observed');
     scheduleChooserPolish();
   });
 })();
