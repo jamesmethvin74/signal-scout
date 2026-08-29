@@ -21,10 +21,10 @@
 </div>
 <script>
 (() => {
-  const VERSION = 'sdr-diag-v1';
+  const VERSION = 'sdr-diag-v2';
   const EXPECTED = {
-    receiverUi: 'sdr-receiver-ui.js?v=4',
-    optionsFix: 'sdr-options-fix.js?v=3',
+    receiverUi: 'sdr-receiver-ui.js?v=5',
+    optionsFix: 'sdr-options-fix.js?v=4',
     directoryHeader: 'fast-fallback-v1'
   };
   const report = [];
@@ -71,14 +71,15 @@
       add('runtime','App HTML HTTP',`${root.r.status} in ${root.ms} ms`,root.r.ok?'ok':'bad');
       add('runtime','x-freqbeacon-brand',root.r.headers.get('x-freqbeacon-brand')||'MISSING',(root.r.headers.get('x-freqbeacon-brand')?'ok':'warn'));
       add('runtime','x-signal-scout-sdr-runtime',root.r.headers.get('x-signal-scout-sdr-runtime')||'MISSING',(root.r.headers.get('x-signal-scout-sdr-runtime')?'ok':'warn'));
-      const uiSrc=scriptSrc(root.text,'sdr-receiver-ui.js'); add('runtime','HTML receiver UI script',uiSrc,uiSrc.includes('v=4')?'ok':'bad'); if(!uiSrc.includes('v=4')) runtimeBad=true;
+      add('runtime','x-freqbeacon-receiver-ui',root.r.headers.get('x-freqbeacon-receiver-ui')||'MISSING',(root.r.headers.get('x-freqbeacon-receiver-ui')?'ok':'warn'));
+      const uiSrc=scriptSrc(root.text,'sdr-receiver-ui.js'); add('runtime','HTML receiver UI script',uiSrc,uiSrc.includes('v=5')?'ok':'bad'); if(!uiSrc.includes('v=5')) runtimeBad=true;
       const playerSrc=scriptSrc(root.text,'sdr-player.js'); add('runtime','HTML SDR player script',playerSrc,playerSrc!=='NOT FOUND'?'ok':'bad');
     }catch(e){add('runtime','App HTML fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
 
     try{
       const ui=await fetchText('/sdr-receiver-ui.js?diag='+Date.now());
       add('runtime','Receiver UI HTTP',`${ui.r.status} in ${ui.ms} ms`,ui.r.ok?'ok':'bad');
-      const pointsV3=ui.text.includes(EXPECTED.optionsFix); add('runtime','Receiver UI points to options v3',pointsV3?'YES':'NO',pointsV3?'ok':'bad'); if(!pointsV3) runtimeBad=true;
+      const pointsV4=ui.text.includes(EXPECTED.optionsFix); add('runtime','Receiver UI points to options v4',pointsV4?'YES':'NO',pointsV4?'ok':'bad'); if(!pointsV4) runtimeBad=true;
     }catch(e){add('runtime','Receiver UI fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
 
     try{
@@ -86,6 +87,8 @@
       add('runtime','Options fix HTTP',`${fix.r.status} in ${fix.ms} ms`,fix.r.ok?'ok':'bad');
       const hasObserver=/new\s+MutationObserver\s*\(/.test(fix.text); add('runtime','Chooser MutationObserver present',hasObserver?'YES — stale/unsafe':'NO',hasObserver?'bad':'ok'); if(hasObserver) runtimeBad=true;
       const bounded=fix.text.includes('requestAnimationFrame')&&fix.text.includes('polishChooser'); add('runtime','Bounded chooser polish present',bounded?'YES':'NO',bounded?'ok':'warn');
+      const hiddenLookupSubmit=fix.text.includes('submit.click()')||fix.text.includes('lookupSubmit')&&fix.text.includes('.click()'); add('runtime','Hidden Lookup submit on Receiver options',hiddenLookupSubmit?'YES — stale path':'NO',hiddenLookupSubmit?'bad':'ok'); if(hiddenLookupSubmit) runtimeBad=true;
+      const directContext=fix.text.includes('prepareReceiverContext')&&fix.text.includes('Open the existing smart chooser directly'); add('runtime','Direct Receiver options path present',directContext?'YES':'NO',directContext?'ok':'bad'); if(!directContext) runtimeBad=true;
     }catch(e){add('runtime','Options fix fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
 
     let directoryBad=false;
@@ -106,7 +109,7 @@
 
     if(runtimeBad){$('summary').textContent='FAIL: production runtime is not serving the expected receiver-option fix'; $('summary').className='summary bad';}
     else if(directoryBad){$('summary').textContent='FAIL: receiver directory request is still failing on this device'; $('summary').className='summary bad';}
-    else{$('summary').textContent='PASS: expected SDR runtime is loaded and receiver API returns >3 choices'; $('summary').className='summary ok';}
+    else{$('summary').textContent='PASS: direct Receiver options runtime is loaded and receiver API returns >3 choices'; $('summary').className='summary ok';}
     $('report').textContent=report.join('\n');
   }
   $('run').addEventListener('click',run);
