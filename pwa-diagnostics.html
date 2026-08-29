@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>FREQBEACON PWA Diagnostics</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#07111f;color:#eef8ff;font:15px/1.45 system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:760px;margin:auto}.head{display:flex;gap:12px;align-items:center;margin-bottom:18px}.mark{width:48px;height:48px;border-radius:12px;background:url('/freqbeacon-icon-v3-192.webp') center/cover}.title{font-weight:900;letter-spacing:.08em}.sub{color:#78d9ff;font-size:13px}.card{background:#0d2134;border:1px solid #214662;border-radius:16px;padding:14px;margin:12px 0}.row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start;padding:9px 0;border-bottom:1px solid #17344b}.row:last-child{border-bottom:0}.k{color:#abc1d4}.v{font-weight:800;text-align:right;max-width:420px;word-break:break-word}.ok{color:#65e58a}.bad{color:#ff7373}.warn{color:#ffd166}.summary{font-size:18px;font-weight:900}.small{font-size:12px;color:#8fa8bb}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}button{width:100%;padding:13px;border:0;border-radius:12px;background:#1e577a;color:white;font-weight:800;margin-top:12px}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head"><div class="mark"></div><div><div class="title">FREQBEACON PWA DIAGNOSTICS</div><div class="sub">Live Chrome installability checks</div></div></div>
+  <div class="card"><div id="summary" class="summary">Running checks…</div><div class="small">Wait about 5 seconds. This page does not change app data or radio behavior.</div></div>
+  <div id="rows" class="card"></div>
+  <div class="card"><div class="small">Chrome install event</div><div id="promptState" class="v warn">Waiting…</div></div>
+  <button onclick="location.reload()">Run again</button>
+</div>
+<script>
+(() => {
+  const rows = document.getElementById('rows');
+  const summary = document.getElementById('summary');
+  const promptState = document.getElementById('promptState');
+  let promptFired = false;
+  window.addEventListener('beforeinstallprompt', e => {
+    promptFired = true;
+    promptState.textContent = 'FIRED — Chrome considers this page installable';
+    promptState.className = 'v ok';
+  });
+  const add = (k,v,state='') => {
+    const d=document.createElement('div');d.className='row';
+    d.innerHTML=`<div class="k">${k}</div><div class="v ${state}">${String(v)}</div>`;rows.appendChild(d);
+  };
+  const checkImage = src => new Promise(resolve => {
+    const img=new Image(); img.onload=()=>resolve({ok:true,w:img.naturalWidth,h:img.naturalHeight}); img.onerror=()=>resolve({ok:false,w:0,h:0}); img.src=src+'?diag='+Date.now();
+  });
+  async function run(){
+    const failures=[];
+    add('Origin', location.origin, location.protocol==='https:'?'ok':'bad');
+    add('Secure context', isSecureContext?'YES':'NO', isSecureContext?'ok':'bad'); if(!isSecureContext) failures.push('Not secure');
+    const manifestLink=document.querySelector('link[rel="manifest"]')?.href||'';
+    add('Manifest link', manifestLink||'MISSING', manifestLink?'ok':'bad'); if(!manifestLink) failures.push('Manifest link missing');
+    let manifest=null;
+    try{
+      const r=await fetch(manifestLink,{cache:'no-store'}); add('Manifest HTTP', `${r.status} ${r.headers.get('content-type')||''}`, r.ok?'ok':'bad');
+      if(!r.ok) failures.push('Manifest HTTP failure'); else manifest=await r.json();
+    }catch(e){add('Manifest fetch', e.name+': '+e.message,'bad');failures.push('Manifest fetch failed');}
+    if(manifest){
+      add('Manifest name',manifest.name||'MISSING',manifest.name?'ok':'bad');
+      add('start_url',manifest.start_url||'MISSING',manifest.start_url?'ok':'bad');
+      add('display',manifest.display||'MISSING',['standalone','fullscreen','minimal-ui'].includes(manifest.display)?'ok':'bad');
+      const icons=Array.isArray(manifest.icons)?manifest.icons:[];
+      add('Manifest icons',icons.length,icons.length?'ok':'bad'); if(!icons.length) failures.push('No manifest icons');
+      for(const icon of icons){
+        const src=new URL(icon.src,manifestLink).href; let respOk=false,ct='';
+        try{const r=await fetch(src,{cache:'no-store'});respOk=r.ok;ct=r.headers.get('content-type')||'';}catch{}
+        const dec=await checkImage(src);
+        const good=respOk&&dec.ok&&dec.w>=192&&dec.h>=192;
+        add(`Icon ${icon.sizes||'?'} ${icon.purpose||'any'}`,`${respOk?'HTTP OK':'HTTP FAIL'} · ${ct||'no MIME'} · ${dec.ok?dec.w+'×'+dec.h:'decode FAIL'}`,good?'ok':'bad');
+        if(!good) failures.push('Bad icon '+(icon.sizes||icon.src));
+      }
+    }
+    if('serviceWorker' in navigator){
+      try{
+        const reg=await navigator.serviceWorker.getRegistration('/');
+        add('Service worker registration',reg?'FOUND':'NONE',reg?'ok':'bad'); if(!reg) failures.push('No service worker registration');
+        if(reg){
+          add('SW scope',reg.scope,'ok');
+          add('SW active',reg.active?.scriptURL||'NO ACTIVE WORKER',reg.active?'ok':'bad'); if(!reg.active) failures.push('No active service worker');
+        }
+        add('Page controlled by SW',navigator.serviceWorker.controller?.scriptURL||'NO',navigator.serviceWorker.controller?'ok':'bad'); if(!navigator.serviceWorker.controller) failures.push('Page not controlled by service worker');
+      }catch(e){add('Service worker check',e.name+': '+e.message,'bad');failures.push('Service worker check failed');}
+    }else{add('Service worker API','UNAVAILABLE','bad');failures.push('Service worker unavailable');}
+    setTimeout(()=>{
+      if(!promptFired){promptState.textContent='NOT FIRED';promptState.className='v bad';}
+      if(failures.length){summary.textContent='FAIL: '+failures[0];summary.className='summary bad';}
+      else if(promptFired){summary.textContent='PASS: Chrome reports installable';summary.className='summary ok';}
+      else{summary.textContent='SITE CHECKS PASS — Chrome still withholds install event';summary.className='summary warn';}
+    },5000);
+  }
+  run();
+})();
+</script>
+</body>
+</html>
