@@ -23,6 +23,7 @@ function injectScheduledService(response) {
       /<link\s+rel="apple-touch-icon"\s+sizes="180x180"\s+href="apple-touch-icon\.png"\s*\/?>/i,
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
+    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=4');
     if (!html.includes('program-guide-scheduled-service.js')) {
       html = html.replace('</body>', '  <script src="program-guide-scheduled-service.js?v=1"></script>\n</body>');
     }
@@ -31,6 +32,7 @@ function injectScheduledService(response) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v2');
+    headers.set('x-freqbeacon-receiver-ui','freeze-fix-v4');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
