@@ -115,9 +115,9 @@ function injectScheduledService(response, url) {
       /<link\s+rel="apple-touch-icon"\s+sizes="180x180"\s+href="apple-touch-icon\.png"\s*\/?>/i,
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
-    html = html.replace(/lookup\.js\?v=\d+/g, 'lookup.js?v=2');
-    html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=4');
-    html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=4');
+    html = html.replace(/lookup\.js\?v=\d+/g, 'lookup.js?v=3');
+    html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=5');
+    html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=5');
 
     // Receiver selection has one owner. Remove the superseded local-catalog,
     // synchronous chooser, and v8/options wrapper chain so they cannot replace
@@ -156,7 +156,7 @@ function injectScheduledService(response, url) {
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
     headers.set('x-freqbeacon-receiver-ui','receiver-runtime-v3');
     headers.set('x-freqbeacon-receiver-catalog','live-cache-health-v3');
-    headers.set('x-freqbeacon-sdr-root-cause-fix','v1');
+    headers.set('x-freqbeacon-sdr-root-cause-fix','v2-delivery');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
