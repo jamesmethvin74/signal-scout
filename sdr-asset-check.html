@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FREQBEACON SDR Asset Check</title>
+<style>
+body{margin:0;padding:24px;background:#07111f;color:#eef8ff;font:16px/1.45 system-ui,-apple-system,sans-serif}main{max-width:820px;margin:auto}h1{font-size:24px}.card{margin:16px 0;padding:16px;border:1px solid #24455e;border-radius:14px;background:#0d2134}.pass{color:#65df91}.fail{color:#ff7c7c}.wait{color:#f4d46b}pre{white-space:pre-wrap;word-break:break-word;background:#06101b;padding:14px;border-radius:10px}button{padding:12px 16px;border:0;border-radius:10px;font-weight:800;background:#a8dcff;color:#07111f}</style>
+</head>
+<body><main>
+<h1>FREQBEACON SDR production asset check</h1>
+<p>This checks the exact JavaScript responses this browser is receiving.</p>
+<div id="status" class="card wait">Checking…</div>
+<pre id="report"></pre>
+<button id="copy" type="button">Copy report</button>
+<script>
+(async()=>{
+ const specs=[
+  {name:'sdr-player',url:'/sdr-player.js?v=5',needle:"button.querySelector('span span')",header:'player-selector-v1'},
+  {name:'sdr-health',url:'/sdr-health.js?v=5',needle:"runtimeDirectory.startsWith('receiver-runtime-v3')",header:'health-bypass-v1'},
+  {name:'lookup',url:'/lookup.js?v=3',needle:"document.createElement('button')",header:'listen-button-v1'}
+ ];
+ const lines=[]; let all=true;
+ for(const s of specs){
+  try{
+   const r=await fetch(s.url,{cache:'no-store'}); const text=await r.text();
+   const marker=r.headers.get('x-freqbeacon-sdr-root-cause-fix')||'MISSING';
+   const code=text.includes(s.needle); const head=marker===s.header;
+   all=all&&r.ok&&code&&head;
+   lines.push(`${s.name}: HTTP ${r.status} | header=${marker} | patched-code=${code?'YES':'NO'} | ${r.ok&&code&&head?'PASS':'FAIL'}`);
+  }catch(e){all=false;lines.push(`${s.name}: ERROR ${e?.name||'Error'} ${e?.message||e} | FAIL`);}
+ }
+ lines.push(`Overall: ${all?'PASS':'FAIL'}`);
+ lines.push(`UTC: ${new Date().toISOString()}`);
+ document.getElementById('report').textContent=lines.join('\n');
+ const st=document.getElementById('status'); st.textContent=all?'PASS — browser is receiving all three patched assets':'FAIL — at least one production asset is not the patched version'; st.className=`card ${all?'pass':'fail'}`;
+ document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(lines.join('\n')).catch(()=>{});
+})();
+</script></main></body></html>
