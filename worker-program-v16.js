@@ -26,6 +26,16 @@ function injectScheduledService(response, url) {
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
     html = html.replace(/<script\s+src="sdr-receiver-ui\.js\?v=\d+"><\/script>/g, '<script src="/sdr-receiver-ui-v8.js?v=1"></script>');
 
+    // Receiver Options must open in the same click event. This capture-level
+    // runtime owns the card tap and renders the ranked local list immediately,
+    // before the older async player/receiver handlers get a chance to wait.
+    if (!html.includes('sdr-receiver-options-sync.js')) {
+      html = html.replace(
+        '</head>',
+        '  <script src="/sdr-receiver-options-sync.js?v=1"></script>\n</head>'
+      );
+    }
+
     // Keep a pre-player local receiver catalog as a safety path. The v8
     // receiver UI also installs its own immediate in-memory ranked response,
     // so Receiver Options cannot block on the network even if one layer fails.
@@ -56,7 +66,7 @@ function injectScheduledService(response, url) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','receiver-ui-v8-instant-local');
+    headers.set('x-freqbeacon-receiver-ui','receiver-options-sync-v1');
     headers.set('x-freqbeacon-receiver-catalog','client-catalog-v2');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
