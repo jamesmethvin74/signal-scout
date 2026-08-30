@@ -44,17 +44,23 @@ function injectScheduledService(response) {
   });
 }
 
-function injectDiagnosticsReturn(response) {
+function injectDiagnosticsReturn(response, pathname) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
+    if (pathname === '/sdr-runtime-trace.html' && !html.includes('data-freqbeacon-return-home')) {
+      const startControl = `
+<a href="/?sdrtest=1" data-freqbeacon-return-home="true" onclick="try{localStorage.removeItem('freqbeacon:sdr-runtime-trace:v1')}catch(e){}" style="position:sticky;top:8px;z-index:2147483647;display:block;width:100%;max-width:900px;margin:0 auto 14px;padding:14px 16px;border:1px solid #54c7f3;border-radius:12px;background:#123f5b;color:#fff;font:900 15px/1.2 system-ui,-apple-system,sans-serif;text-align:center;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.32)">▶ CLEAR TRACE &amp; START SDR TEST</a>
+`;
+      html = html.replace('<body>', `<body>${startControl}`);
+    }
     if (!html.includes('diagnostics-home.js')) {
-      html = html.replace('</body>', '  <script src="/diagnostics-home.js?v=1"></script>\n</body>');
+      html = html.replace('</body>', '  <script src="/diagnostics-home.js?v=2"></script>\n</body>');
     }
     const headers = new Headers(response.headers);
     headers.set('content-type','text/html; charset=utf-8');
     headers.set('cache-control','no-store, max-age=0');
-    headers.set('x-freqbeacon-diagnostics-return','v1');
+    headers.set('x-freqbeacon-diagnostics-return','v2');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
@@ -67,7 +73,7 @@ export default {
       return injectScheduledService(response);
     }
     if (request.method === 'GET' && (url.pathname === '/sdr-diagnostics.html' || url.pathname === '/sdr-runtime-trace.html')) {
-      return injectDiagnosticsReturn(response);
+      return injectDiagnosticsReturn(response, url.pathname);
     }
     return response;
   },
