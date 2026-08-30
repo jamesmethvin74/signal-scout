@@ -24,28 +24,22 @@ function injectScheduledService(response, url) {
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
-    html = html.replace(/<script\s+src="sdr-receiver-ui\.js\?v=\d+"><\/script>/g, '<script src="/sdr-receiver-ui-v8.js?v=1"></script>');
 
-    // Receiver Options must open in the same click event. This capture-level
-    // runtime owns the card tap and renders the ranked local list immediately,
-    // before the older async player/receiver handlers get a chance to wait.
-    if (!html.includes('sdr-receiver-options-sync.js')) {
+    // Receiver selection has one owner. Remove the superseded local-catalog,
+    // synchronous chooser, and v8/options wrapper chain so they cannot replace
+    // fetch/selection state after the health and reliability runtimes load.
+    html = html.replace(/\s*<script\s+src="\/?sdr-receiver-options-sync\.js\?v=\d+"><\/script>\s*/g, '\n');
+    html = html.replace(/\s*<script\s+src="\/?sdr-receiver-local-catalog\.js\?v=\d+"><\/script>\s*/g, '\n');
+    html = html.replace(/\s*<script\s+src="\/?sdr-receiver-ui-v8\.js\?v=\d+"><\/script>\s*/g, '\n');
+    html = html.replace(/\s*<script\s+src="\/?sdr-receiver-ui\.js\?v=\d+"><\/script>\s*/g, '\n');
+
+    // Load before sdr-health.js. Health and reliability then wrap this one
+    // receiver source normally, preserving cooldown and geography behavior.
+    if (!html.includes('sdr-receiver-runtime-v3.js')) {
       html = html.replace(
         '</head>',
-        '  <script src="/sdr-receiver-options-sync.js?v=1"></script>\n</head>'
+        '  <script src="/sdr-receiver-runtime-v3.js?v=1"></script>\n</head>'
       );
-    }
-
-    // Keep a pre-player local receiver catalog as a safety path. The v8
-    // receiver UI also installs its own immediate in-memory ranked response,
-    // so Receiver Options cannot block on the network even if one layer fails.
-    if (!html.includes('sdr-receiver-local-catalog.js')) {
-      html = html.replace(
-        '</head>',
-        '  <script src="/sdr-receiver-local-catalog.js?v=2"></script>\n</head>'
-      );
-    } else {
-      html = html.replace(/sdr-receiver-local-catalog\.js\?v=\d+/g, 'sdr-receiver-local-catalog.js?v=2');
     }
 
     // Do not monkey-patch fetch/Response with the forensic tracer on normal
@@ -66,8 +60,8 @@ function injectScheduledService(response, url) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','receiver-options-sync-v1');
-    headers.set('x-freqbeacon-receiver-catalog','client-catalog-v2');
+    headers.set('x-freqbeacon-receiver-ui','receiver-runtime-v3');
+    headers.set('x-freqbeacon-receiver-catalog','live-cache-health-v3');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }

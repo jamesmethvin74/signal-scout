@@ -34,14 +34,36 @@ function rankedSeedResponse(request) {
   });
 }
 
+async function liveReceiverResponse(request, env, ctx) {
+  const liveUrl = new URL(request.url);
+  liveUrl.pathname = '/api/sdr/receivers';
+  const liveRequest = new Request(liveUrl.toString(), request);
+  const response = await baseWorker.fetch(liveRequest, env, ctx);
+  const headers = new Headers(response.headers);
+  headers.set('cache-control', 'private, max-age=0, no-store');
+  headers.set('x-freqbeacon-sdr-live-refresh', 'receiverbook-background-v1');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (request.method === 'GET' && url.pathname === '/api/sdr/receivers/live') {
+      // Background-only live discovery. This intentionally bypasses the outer
+      // immediate seed response while preserving worker-v2's proven ReceiverBook
+      // parsing, resolver validation, and stale/fallback behavior.
+      return liveReceiverResponse(request, env, ctx);
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/sdr/receivers') {
-      // Receiver options must never block on live ReceiverBook parsing. The
-      // bundled catalog is already geographically ranked for the user's
-      // location, transmitter path and frequency, and worker-v2 can resolve
-      // every bundled receiver ID directly for Kiwi WebSocket connections.
+      // Keep the synchronous server fallback for diagnostics and clients that
+      // do not have the receiver runtime. Normal app selection is satisfied
+      // immediately from the client cache and refreshed above in the background.
       return rankedSeedResponse(request);
     }
 
