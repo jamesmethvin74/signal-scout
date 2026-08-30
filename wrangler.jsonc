@@ -21,6 +21,8 @@
       "/api/ham-activity",
       "/",
       "/index.html",
+      "/sdr-diagnostics.html",
+      "/sdr-runtime-trace.html",
       "/full-data.js",
       "/sdr-rf-v2.js",
       "/sdr-health.js"
