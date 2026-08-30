@@ -48,7 +48,7 @@ function injectScheduledService(response, url) {
     if (url.searchParams.get('sdrtest') === '1' && !html.includes('sdr-runtime-trace-safe.js')) {
       html = html.replace(
         '</head>',
-        '  <script src="/sdr-runtime-trace-safe.js?v=1"></script>\n</head>'
+        '  <script src="/sdr-runtime-trace-safe.js?v=3"></script>\n</head>'
       );
     }
 
