@@ -1,5 +1,97 @@
 import baseWorker from './worker-program-v15.js';
 
+const SDR_ROOT_CAUSE_ASSETS = new Set(['/sdr-player.js', '/sdr-health.js', '/lookup.js']);
+
+function patchedJsResponse(response, source, marker) {
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/javascript; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  headers.set('x-freqbeacon-sdr-root-cause-fix', marker);
+  return new Response(source, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function patchSdrPlayer(source) {
+  let patched = source.replace(
+    "    const strong = button.querySelector('strong');\n    const meta = button.querySelector('span');\n    const badge = button.querySelector('b');",
+    `    let strong = button.querySelector('strong');
+    let meta = button.querySelector('span span') || button.querySelector('.lookup-receiver-smart-main span');
+    let badge = button.querySelector('b');
+    if (!strong || !meta || !badge) {
+      button.innerHTML = '<div class="lookup-receiver-smart-main"><strong></strong><span></span></div><b></b>';
+      strong = button.querySelector('strong');
+      meta = button.querySelector('.lookup-receiver-smart-main span');
+      badge = button.querySelector('b');
+    }`
+  );
+
+  // The first render used to select the OUTER wrapper span as `meta`. Setting
+  // meta.textContent then deleted the nested <strong>, so the next receiver
+  // update crashed at sdr-player.js:430 before chooser/WebSocket handoff.
+  return patched;
+}
+
+function patchSdrHealth(source) {
+  return source.replace(
+    "    if (!url || url.origin !== window.location.origin || url.pathname !== '/api/sdr/receivers') return response;\n\n    try {",
+    `    if (!url || url.origin !== window.location.origin || url.pathname !== '/api/sdr/receivers') return response;
+
+    // receiver-runtime-v3 already applies cooldown/recent-success health while
+    // ranking its local/live cache. Do not clone and re-parse that synthetic
+    // Response here. On Android that duplicate Response clone stalled the body
+    // handoff for tens of seconds even though ranking itself completed in ~5 ms.
+    const runtimeDirectory = response.headers.get('x-freqbeacon-sdr-directory') || '';
+    if (runtimeDirectory.startsWith('receiver-runtime-v3')) return response;
+
+    try {`
+  );
+}
+
+function patchLookup(source) {
+  let patched = source.replace(
+    `          <a class=\"listen-live-button\" \${liveAnchorAttributes(liveUrl)}>
+            <span class=\"live-dot\" aria-hidden=\"true\"></span>
+            Listen live
+          </a>`,
+    `          <button type=\"button\" class=\"listen-live-button\">
+            <span class=\"live-dot\" aria-hidden=\"true\"></span>
+            Listen live
+          </button>`
+  );
+
+  patched = patched.replace(
+    `    const live = document.createElement('a');
+    live.className = 'listen-live-button card-listen-live';
+    live.href = liveUrl;
+    if (!isAndroid) {
+      live.target = '_blank';
+      live.rel = 'noopener noreferrer';
+    }`,
+    `    const live = document.createElement('button');
+    live.type = 'button';
+    live.className = 'listen-live-button card-listen-live';`
+  );
+
+  // Listen Live is an in-app SDR action now. Leaving the old Android
+  // intent:// Kiwi link on the control allowed Chrome to start a navigation
+  // progress bar while the in-app player was also handling the same tap.
+  return patched;
+}
+
+function patchSdrRootCauseAsset(response, pathname) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/javascript|text\/plain/.test(contentType)) return response;
+  return response.text().then((source) => {
+    if (pathname === '/sdr-player.js') return patchedJsResponse(response, patchSdrPlayer(source), 'player-selector-v1');
+    if (pathname === '/sdr-health.js') return patchedJsResponse(response, patchSdrHealth(source), 'health-bypass-v1');
+    if (pathname === '/lookup.js') return patchedJsResponse(response, patchLookup(source), 'listen-button-v1');
+    return response;
+  });
+}
+
 function injectScheduledService(response, url) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
@@ -23,7 +115,9 @@ function injectScheduledService(response, url) {
       /<link\s+rel="apple-touch-icon"\s+sizes="180x180"\s+href="apple-touch-icon\.png"\s*\/?>/i,
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
-    html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
+    html = html.replace(/lookup\.js\?v=\d+/g, 'lookup.js?v=2');
+    html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=4');
+    html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=4');
 
     // Receiver selection has one owner. Remove the superseded local-catalog,
     // synchronous chooser, and v8/options wrapper chain so they cannot replace
@@ -62,6 +156,7 @@ function injectScheduledService(response, url) {
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
     headers.set('x-freqbeacon-receiver-ui','receiver-runtime-v3');
     headers.set('x-freqbeacon-receiver-catalog','live-cache-health-v3');
+    headers.set('x-freqbeacon-sdr-root-cause-fix','v1');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
@@ -91,6 +186,9 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const response = await baseWorker.fetch(request, env, ctx);
+    if (request.method === 'GET' && SDR_ROOT_CAUSE_ASSETS.has(url.pathname)) {
+      return patchSdrRootCauseAsset(response, url.pathname);
+    }
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return injectScheduledService(response, url);
     }
