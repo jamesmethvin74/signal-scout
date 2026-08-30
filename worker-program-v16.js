@@ -24,11 +24,11 @@ function injectScheduledService(response, url) {
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
-    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=7');
+    html = html.replace(/<script\s+src="sdr-receiver-ui\.js\?v=\d+"><\/script>/g, '<script src="/sdr-receiver-ui-v8.js?v=1"></script>');
 
-    // Keep a pre-player local receiver catalog as a belt-and-suspenders safety
-    // path. Receiver Options v6 also owns its own local ranking, so the chooser
-    // cannot regress to a network wait even if either layer is stale/missing.
+    // Keep a pre-player local receiver catalog as a safety path. The v8
+    // receiver UI also installs its own immediate in-memory ranked response,
+    // so Receiver Options cannot block on the network even if one layer fails.
     if (!html.includes('sdr-receiver-local-catalog.js')) {
       html = html.replace(
         '</head>',
@@ -38,9 +38,8 @@ function injectScheduledService(response, url) {
       html = html.replace(/sdr-receiver-local-catalog\.js\?v=\d+/g, 'sdr-receiver-local-catalog.js?v=2');
     }
 
-    // Do not monkey-patch fetch/Response on normal production launches. The
-    // forensic tracer is loaded only when the diagnostics page explicitly sends
-    // the app to /?sdrtest=1.
+    // Do not monkey-patch fetch/Response with the forensic tracer on normal
+    // production launches. It remains opt-in via /?sdrtest=1.
     html = html.replace(/\s*<script src="\/sdr-runtime-trace(?:-safe)?\.js\?v=\d+"><\/script>\s*/g, '\n');
     if (url.searchParams.get('sdrtest') === '1' && !html.includes('sdr-runtime-trace-safe.js')) {
       html = html.replace(
@@ -57,7 +56,7 @@ function injectScheduledService(response, url) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','instant-options-v6');
+    headers.set('x-freqbeacon-receiver-ui','receiver-ui-v8-instant-local');
     headers.set('x-freqbeacon-receiver-catalog','client-catalog-v2');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
