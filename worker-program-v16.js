@@ -1,6 +1,6 @@
 import baseWorker from './worker-program-v15.js';
 
-function injectScheduledService(response) {
+function injectScheduledService(response, url) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
@@ -25,13 +25,29 @@ function injectScheduledService(response) {
     );
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
     html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=6');
-    html = html.replace(/\s*<script src="\/sdr-runtime-trace\.js\?v=\d+"><\/script>\s*/g, '\n');
-    if (!html.includes('sdr-runtime-trace-safe.js')) {
+
+    // Receiver selection must not wait on ReceiverBook or the network. Load a
+    // client-side ranked catalog before sdr-player.js so its receiver fetch is
+    // satisfied locally in milliseconds. This is intentionally independent of
+    // the Kiwi audio/RF/WebSocket protocol layer.
+    if (!html.includes('sdr-receiver-local-catalog.js')) {
+      html = html.replace(
+        '</head>',
+        '  <script src="/sdr-receiver-local-catalog.js?v=1"></script>\n</head>'
+      );
+    }
+
+    // Do not monkey-patch fetch/Response on normal production launches. The
+    // forensic tracer is loaded only when the diagnostics page explicitly sends
+    // the app to /?sdrtest=1.
+    html = html.replace(/\s*<script src="\/sdr-runtime-trace(?:-safe)?\.js\?v=\d+"><\/script>\s*/g, '\n');
+    if (url.searchParams.get('sdrtest') === '1' && !html.includes('sdr-runtime-trace-safe.js')) {
       html = html.replace(
         '</head>',
         '  <script src="/sdr-runtime-trace-safe.js?v=1"></script>\n</head>'
       );
     }
+
     if (!html.includes('program-guide-scheduled-service.js')) {
       html = html.replace('</body>', '  <script src="program-guide-scheduled-service.js?v=1"></script>\n</body>');
     }
@@ -40,7 +56,8 @@ function injectScheduledService(response) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','runtime-trace-v3-safe');
+    headers.set('x-freqbeacon-receiver-ui','client-catalog-v1');
+    headers.set('x-freqbeacon-receiver-catalog','client-catalog-v1');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
@@ -71,7 +88,7 @@ export default {
     const url = new URL(request.url);
     const response = await baseWorker.fetch(request, env, ctx);
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      return injectScheduledService(response);
+      return injectScheduledService(response, url);
     }
     if (request.method === 'GET' && (url.pathname === '/sdr-diagnostics.html' || url.pathname === '/sdr-runtime-trace.html')) {
       return injectDiagnosticsReturn(response, url.pathname);
