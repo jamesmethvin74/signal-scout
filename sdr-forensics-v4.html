@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FREQBEACON SDR Forensics v4</title>
+<style>body{margin:0;padding:22px;background:#071321;color:#eaf7ff;font:16px/1.45 system-ui,-apple-system,sans-serif}main{max-width:900px;margin:auto}h1{font-size:26px}.card{background:#0d2437;border:1px solid #284b65;border-radius:16px;padding:16px;margin:14px 0}.good{color:#68df92}.bad{color:#ff7d7d}.warn{color:#ffd66b}button,a.action{display:inline-block;padding:12px 15px;border:0;border-radius:10px;background:#afe0ff;color:#071321;font-weight:850;text-decoration:none;margin:4px 6px 4px 0}pre{white-space:pre-wrap;word-break:break-word;background:#05101a;border-radius:12px;padding:14px;font-size:12px;max-height:55vh;overflow:auto}.row{padding:7px 0;border-bottom:1px solid #1c3a50}.row:last-child{border:0}</style></head><body><main>
+<h1>FREQBEACON SDR FORENSICS v4</h1>
+<p>Non-invasive trace of Receiver Options, Listen Live, WebSocket handoff, and page loading.</p>
+<div><a class="action" id="start" href="/?sdrtest=2">CLEAR TRACE &amp; START CONTROLLED TEST</a><button id="refresh">Refresh report</button><button id="copy">Copy full report</button></div>
+<div id="summary" class="card">No trace yet.</div><pre id="report"></pre>
+<script>
+const KEY='freqbeacon:sdr-forensics:v4';
+document.getElementById('start').onclick=()=>{try{localStorage.removeItem(KEY)}catch{}};
+function read(){try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch{return[]}}
+const ev=(a,n)=>a.filter(x=>x.event===n), last=(a,n)=>ev(a,n).at(-1), first=(a,n)=>ev(a,n)[0];
+function fmt(x){return x?`${x.t} ${x.event} ${JSON.stringify(x.detail||{})}`:''}
+function render(){
+ const a=read(), lines=[];
+ const rxTap=first(a,'click-capture-early');
+ const receiverTap=a.find(x=>x.event==='click-capture-early'&&String(x.detail?.target?.className||'').includes('card-receiver-options'));
+ const listenTap=a.find(x=>x.event==='click-capture-early'&&String(x.detail?.target?.className||'').includes('listen-live'));
+ const lookupSynthetic=a.find(x=>x.event==='programmatic-click'&&x.detail?.target?.id==='lookupReceiverButton');
+ const rankEnter=last(a,'player-rank-enter'), rankJson=last(a,'player-rank-json'), rankApplied=last(a,'player-rank-applied'), rankReturn=last(a,'player-start-rank-return');
+ const guard=last(a,'player-start-guard-return'), connect=last(a,'player-connect-enter'), wsCreate=last(a,'ws-create'), wsOpen=last(a,'ws-open'), snd=last(a,'ws-first-snd');
+ const errors=[...ev(a,'window-error'),...ev(a,'unhandled-rejection'),...ev(a,'player-rank-error'),...ev(a,'player-ws-constructor-error')];
+ const load=last(a,'window-load'), snaps=ev(a,'page-snapshot'), lastSnap=snaps.at(-1);
+ const inFlight=lastSnap?.detail?.inflightFetches||[];
+ const longest=(lastSnap?.detail?.longest||[]).slice(0,8);
+ const player=last(a,'player-state')?.detail||lastSnap?.detail?.player||{};
+ const chooser=last(a,'chooser-state')?.detail||lastSnap?.detail?.chooser||{};
+ lines.push('FREQBEACON SDR forensic report v4'); lines.push(`UTC: ${new Date().toISOString()}`); lines.push(`Entries: ${a.length}`);
+ lines.push(`Receiver Options tap seen before runtime: ${receiverTap?'YES':'NO'}`);
+ lines.push(`Receiver Options synthetic SMART click: ${lookupSynthetic?'YES':'NO'}`);
+ lines.push(`Listen Live tap: ${listenTap?'YES':'NO'}`);
+ lines.push(`Player ranking entered: ${rankEnter?'YES':'NO'}`);
+ lines.push(`Player ranking JSON completed: ${rankJson?`YES · ${rankJson.detail?.receiverCount||0} receivers`:'NO'}`);
+ lines.push(`Player ranking applied: ${rankApplied?'YES':'NO'}`);
+ lines.push(`startPlayer ranking returned: ${rankReturn?'YES':'NO'}`);
+ lines.push(`Post-ranking guard stopped connection: ${guard?`YES · ${JSON.stringify(guard.detail)}`:'NO'}`);
+ lines.push(`connectSdr reached: ${connect?'YES':'NO'}`);
+ lines.push(`WebSocket create/open/first SND: ${wsCreate?'YES':'NO'} / ${wsOpen?'YES':'NO'} / ${snd?'YES':'NO'}`);
+ lines.push(`Chooser final: hidden=${chooser.hidden} · choices=${chooser.count??0}`);
+ lines.push(`Player final: ${player.status||'-'} · ${player.frequency||'-'} · ${player.receiver||'-'} · ${player.message||'-'}`);
+ lines.push(`Window load fired: ${load?'YES':'NO'}`);
+ lines.push(`Document readyState at final snapshot: ${lastSnap?.detail?.readyState||document.readyState}`);
+ lines.push(`In-flight fetches at final snapshot: ${inFlight.length}${inFlight.length?' :: '+inFlight.map(x=>`${x.ms}ms ${x.url}`).join(' | '):''}`);
+ lines.push(`Incomplete images: ${(lastSnap?.detail?.incompleteImages||[]).length}`);
+ lines.push(`Unloaded stylesheets: ${(lastSnap?.detail?.unloadedStyles||[]).length}`);
+ lines.push(`Errors: ${errors.length}`);
+ if(errors.length) errors.forEach(x=>lines.push(`ERROR ${x.t}: ${x.detail?.message||JSON.stringify(x.detail)}`));
+ lines.push(''); lines.push('LONGEST RESOURCES:'); longest.forEach(x=>lines.push(`${x.duration}ms ${x.type||''} ${x.name}`));
+ lines.push(''); lines.push('CRITICAL SEQUENCE:');
+ ['click-capture-early','programmatic-click','player-lookup-click-enter','player-lookup-rank-return','player-open-chooser-enter','player-chooser-visible','player-listen-click','player-start-enter','audio-context-create','audio-context-created','audio-resume-start','audio-resume-end','player-audio-ready','player-rank-enter','fetch-start','fetch-response','response-json-start','response-json-end','player-rank-response','player-rank-json','player-rank-applied','player-start-rank-return','player-start-guard-return','player-before-connect','player-connect-enter','player-connect-audio-ready','player-websocket-create-attempt','ws-create','ws-open','ws-first-message','ws-first-snd','ws-error','ws-close','window-error','unhandled-rejection'].forEach(n=>ev(a,n).forEach(x=>lines.push(fmt(x))));
+ lines.push(''); lines.push('FULL TRACE:'); a.forEach(x=>lines.push(fmt(x)));
+ const report=lines.join('\n'); document.getElementById('report').textContent=report;
+ let verdict='Need a controlled run.'; let cls='warn';
+ if(a.length){
+   if(errors.length){verdict='Runtime exception captured — exact failure is in the report.';cls='bad'}
+   else if(listenTap&&rankJson&&!connect){verdict=guard?'Ranking succeeds, then the player guard aborts before connectSdr.':'Ranking succeeds, but player never reaches connectSdr.';cls='bad'}
+   else if(connect&&!wsCreate){verdict='connectSdr runs, but WebSocket constructor is never reached.';cls='bad'}
+   else if(wsCreate&&!wsOpen){verdict='WebSocket is created but does not open.';cls='bad'}
+   else if(wsOpen&&!snd){verdict='WebSocket opens but Kiwi never reaches first SND.';cls='bad'}
+   else if(receiverTap&&!lookupSynthetic){verdict='Receiver Options tap is intercepted before it reaches the SMART receiver control.';cls='bad'}
+   else if(receiverTap&&lookupSynthetic&&chooser.hidden){verdict='Receiver Options reaches SMART control but chooser remains hidden.';cls='bad'}
+   else if(snd){verdict='Kiwi connection reaches SND; remaining issue is after connection.';cls='good'}
+ }
+ document.getElementById('summary').className=`card ${cls}`; document.getElementById('summary').textContent=verdict;
+ document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(report).catch(()=>{});
+}
+document.getElementById('refresh').onclick=render; render();
+</script></main></body></html>
