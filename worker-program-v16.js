@@ -24,17 +24,18 @@ function injectScheduledService(response, url) {
       '<link rel="apple-touch-icon" href="/freqbeacon-icon-192.png" />'
     );
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=3');
-    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=6');
+    html = html.replace(/sdr-receiver-ui\.js\?v=\d+/g, 'sdr-receiver-ui.js?v=7');
 
-    // Receiver selection must not wait on ReceiverBook or the network. Load a
-    // client-side ranked catalog before sdr-player.js so its receiver fetch is
-    // satisfied locally in milliseconds. This is intentionally independent of
-    // the Kiwi audio/RF/WebSocket protocol layer.
+    // Keep a pre-player local receiver catalog as a belt-and-suspenders safety
+    // path. Receiver Options v6 also owns its own local ranking, so the chooser
+    // cannot regress to a network wait even if either layer is stale/missing.
     if (!html.includes('sdr-receiver-local-catalog.js')) {
       html = html.replace(
         '</head>',
-        '  <script src="/sdr-receiver-local-catalog.js?v=1"></script>\n</head>'
+        '  <script src="/sdr-receiver-local-catalog.js?v=2"></script>\n</head>'
       );
+    } else {
+      html = html.replace(/sdr-receiver-local-catalog\.js\?v=\d+/g, 'sdr-receiver-local-catalog.js?v=2');
     }
 
     // Do not monkey-patch fetch/Response on normal production launches. The
@@ -56,8 +57,8 @@ function injectScheduledService(response, url) {
     headers.set('cache-control','no-store, max-age=0');
     headers.set('x-freqbeacon-scheduled-service','v1');
     headers.set('x-freqbeacon-pwa-manifest','static-v3');
-    headers.set('x-freqbeacon-receiver-ui','client-catalog-v1');
-    headers.set('x-freqbeacon-receiver-catalog','client-catalog-v1');
+    headers.set('x-freqbeacon-receiver-ui','instant-options-v6');
+    headers.set('x-freqbeacon-receiver-catalog','client-catalog-v2');
     return new Response(html,{status:response.status,statusText:response.statusText,headers});
   });
 }
