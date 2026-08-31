@@ -219,12 +219,18 @@
       button.textContent = minimized ? '⌃' : '⌄';
       button.setAttribute('aria-label', minimized ? 'Expand player' : 'Minimize player');
     });
-    panel.querySelector('[data-sdr-toggle]').addEventListener('click', () => {
+    panel.querySelector('[data-sdr-toggle]').addEventListener('click', async () => {
       if (sdr.manager?.activeSocket || sdr.connected) {
-        stopSdr({ keepPanel:true, message:'Stopped. Tap Play to reconnect.' });
+        await stopSdr({ keepPanel:true, message:'Stopped. Tap Play to reconnect.' });
       } else if (Number.isFinite(sdr.frequency)) {
         sdr.manualStop = false;
-        startConnection({ manual:Boolean(sdr.manualReceiverId && sdr.manualContextKey === contextKey(sdr.recommendationContext)) });
+        try {
+          await ensureAudioContext();
+          startConnection({ manual:Boolean(sdr.manualReceiverId && sdr.manualContextKey === contextKey(sdr.recommendationContext)) });
+        } catch (error) {
+          setStatus('Audio blocked', false);
+          setMessage(error?.message || 'Could not restart audio.', true);
+        }
       }
     });
     panel.querySelector('[data-sdr-volume]').addEventListener('input', (event) => {
@@ -339,7 +345,7 @@
     if (sdr.chooser) sdr.chooser.hidden = true;
   }
 
-  function chooseReceiver(index) {
+  async function chooseReceiver(index) {
     const receiver = sdr.receivers[index];
     if (!receiver) return;
     sdr.receiverIndex = index;
@@ -351,7 +357,13 @@
     rewriteLookupLiveNotes();
     if (!sdr.panel?.hidden && Number.isFinite(sdr.frequency)) {
       sdr.manualStop = false;
-      startConnection({ manual:true });
+      try {
+        await ensureAudioContext();
+        startConnection({ manual:true });
+      } catch (error) {
+        setStatus('Audio blocked', false);
+        setMessage(error?.message || 'Could not start audio for the selected receiver.', true);
+      }
     }
   }
 
@@ -585,9 +597,11 @@
         sdr.connected = false;
         sdr.gotAudio = false;
         sdr.configured = false;
-        if (!manual && reason === 'remote-close') {
+        if (reason === 'remote-close') {
           setStatus('Disconnected', false);
-          setMessage('The public receiver disconnected. Tap Play to reconnect.', true);
+          setMessage(manual
+            ? 'The selected public receiver disconnected. Choose another receiver or tap Play to retry it.'
+            : 'The public receiver disconnected and no further ranked candidate was available.', true);
         }
         updatePlayerReadout();
       }
@@ -615,8 +629,8 @@
     if (sequence !== sdr.recommendationSequence || !Array.isArray(payload?.receivers) || !payload.receivers.length) return false;
     sdr.receivers = payload.receivers;
     sdr.directorySource = payload.source || 'receiver-runtime-seed';
-    sdr.directoryWarning = payload.source === 'receiver-runtime-stale-cache'
-      ? 'Using the last known receiver catalog while FreqBeacon refreshes ReceiverBook in the background.' : null;
+    sdr.directoryWarning = payload.warning || (payload.source === 'receiver-runtime-stale-cache'
+      ? 'Using the last known receiver catalog while FreqBeacon refreshes ReceiverBook in the background.' : null);
     sdr.recommendationFrequency = context.frequency;
     sdr.recommendationStation = context.station || '';
     sdr.recommendationContext = context;
@@ -668,8 +682,6 @@
     setMessage('Opening the highest-ranked local/cached receiver immediately…');
     drawIdleSpectrum('CONNECTING');
 
-    // Start audio permission/resume and the WebSocket in the same user-action
-    // turn. ReceiverBook refresh is deliberately not on this critical path.
     const audioReady = ensureAudioContext();
     startConnection({ manual:Boolean(sameManualContext) });
     refreshCatalogInBackground(context, { force:false });
