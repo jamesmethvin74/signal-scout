@@ -1,10 +1,11 @@
 (() => {
-  if (window.FreqBeaconSdrConnectionManager?.version === 'fast-path-v6-ranked-failover') return;
+  if (window.FreqBeaconSdrConnectionManager?.version === 'fast-path-v7-open-reconcile') return;
 
   const TOTAL_CONNECT_BUDGET_MS = 9500;
   const CONNECT_TIMEOUT_MS = 4000;
   const FIRST_SND_TIMEOUT_MS = 2500;
   const FAILOVER_DELAY_MS = 75;
+  const OPEN_RECONCILE_MS = 50;
   const MAX_AUTO_ATTEMPTS = 3;
   const decoder = new TextDecoder();
 
@@ -95,6 +96,7 @@
       this.connectTimer = null;
       this.dataTimer = null;
       this.failoverTimer = null;
+      this.openReconcileTimer = null;
       this.totalTimer = null;
     }
 
@@ -109,7 +111,8 @@
       window.clearTimeout(this.connectTimer);
       window.clearTimeout(this.dataTimer);
       window.clearTimeout(this.failoverTimer);
-      this.connectTimer = this.dataTimer = this.failoverTimer = null;
+      window.clearTimeout(this.openReconcileTimer);
+      this.connectTimer = this.dataTimer = this.failoverTimer = this.openReconcileTimer = null;
     }
 
     clearAllTimers() {
@@ -237,20 +240,28 @@
       this.socket = socket;
       this.onAttempt({ receiver, index, attempt:this.attemptCount, generation, manual:this.manual, upstreamId:upstreamReceiver.id });
 
+      let openHandled = false;
       const handlers = {
         open: () => {
-          if (!this.isCurrent(socket, generation)) return;
+          if (!this.isCurrent(socket, generation) || openHandled) return;
+          openHandled = true;
           window.clearTimeout(this.connectTimer);
-          this.connectTimer = null;
+          window.clearTimeout(this.openReconcileTimer);
+          this.connectTimer = this.openReconcileTimer = null;
           this.onOpen({ socket, receiver, index, attempt:this.attemptCount, generation, upstreamId:upstreamReceiver.id });
           const wait = Math.min(FIRST_SND_TIMEOUT_MS, Math.max(250, this.remainingMs()));
           this.dataTimer = window.setTimeout(() => {
             if (!this.isCurrent(socket, generation) || this.gotUsefulData) return;
-            this.failAttempt('timeout', 'WebSocket opened but no useful SND data arrived', generation);
+            this.failAttempt('snd-timeout', 'WebSocket opened but no useful SND data arrived', generation);
           }, wait);
         },
         message: (event) => {
           if (!this.isCurrent(socket, generation)) return;
+          // Some wrapped/very-fast sockets can already be OPEN before this
+          // manager observes the browser's open event. Reconcile that state
+          // before processing the first server frame so SND auth/configuration
+          // is never skipped.
+          if (!openHandled && socket.readyState === window.WebSocket.OPEN) handlers.open();
           const inspection = inspectKiwiMessage(event.data);
           if (inspection.failure) {
             this.failAttempt(inspection.failure, `Receiver reported ${inspection.failure}`, generation);
@@ -281,10 +292,35 @@
       };
       this.bindSocket(socket, handlers);
 
+      // RF v2 attaches its SND observer inside the WebSocket wrapper before the
+      // constructor returns. If that wrapper sees OPEN before this manager's
+      // listener does, poll readyState briefly and invoke the same open handler
+      // exactly once. This closes the race that left RF alive while audio stayed
+      // CONNECTING and eventually reported one bounded attempt.
+      const reconcileOpen = () => {
+        if (!this.isCurrent(socket, generation) || openHandled) return;
+        if (socket.readyState === window.WebSocket.OPEN) {
+          handlers.open();
+          return;
+        }
+        if (socket.readyState === window.WebSocket.CONNECTING) {
+          this.openReconcileTimer = window.setTimeout(reconcileOpen, OPEN_RECONCILE_MS);
+        }
+      };
+      reconcileOpen();
+
       const wait = Math.min(CONNECT_TIMEOUT_MS, Math.max(250, this.remainingMs()));
       this.connectTimer = window.setTimeout(() => {
-        if (!this.isCurrent(socket, generation) || socket.readyState !== window.WebSocket.CONNECTING) return;
-        this.failAttempt('timeout', 'WebSocket connection timed out', generation);
+        if (!this.isCurrent(socket, generation) || this.gotUsefulData) return;
+        if (socket.readyState === window.WebSocket.OPEN) {
+          handlers.open();
+          return;
+        }
+        if (socket.readyState === window.WebSocket.CONNECTING) {
+          this.failAttempt('connect-timeout', 'WebSocket handshake did not open in time', generation);
+          return;
+        }
+        this.failAttempt('closed-before-open', 'WebSocket closed before the open event was observed', generation);
       }, wait);
     }
 
@@ -369,12 +405,13 @@
     }
   }
 
-  FreqBeaconSdrConnectionManager.version = 'fast-path-v6-ranked-failover';
+  FreqBeaconSdrConnectionManager.version = 'fast-path-v7-open-reconcile';
   FreqBeaconSdrConnectionManager.constants = Object.freeze({
     TOTAL_CONNECT_BUDGET_MS,
     CONNECT_TIMEOUT_MS,
     FIRST_SND_TIMEOUT_MS,
     FAILOVER_DELAY_MS,
+    OPEN_RECONCILE_MS,
     MAX_AUTO_ATTEMPTS
   });
   FreqBeaconSdrConnectionManager.inspectKiwiMessage = inspectKiwiMessage;
