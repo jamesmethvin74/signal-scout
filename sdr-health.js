@@ -6,6 +6,7 @@
   const HEALTH_RETENTION_MS = 48 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
   const MAX_FAILURES = 6;
+  const DEFINITIVE_COOLDOWN_REASONS = new Set(['busy', 'offline', 'refused']);
 
   function now() {
     return Date.now();
@@ -56,8 +57,7 @@
     if (reason === 'busy') return Math.min(10, Math.max(2, failures * 2));
     if (reason === 'offline') return 30;
     if (reason === 'refused') return Math.min(30, 6 + failures * 4);
-    if (reason === 'timeout') return Math.min(30, Math.round(7 * Math.pow(1.55, Math.max(0, failures - 1))));
-    return Math.min(25, Math.round(5 * Math.pow(1.5, Math.max(0, failures - 1))));
+    return 0;
   }
 
   function get(receiverId) {
@@ -71,13 +71,17 @@
     const previous = health[receiverId] || {};
     const failures = Math.min(MAX_FAILURES, Math.max(0, Number(previous.failures || 0)) + 1);
     const timestamp = now();
+    const normalizedReason = String(reason || 'error');
+    const cooldown = DEFINITIVE_COOLDOWN_REASONS.has(normalizedReason)
+      ? cooldownMinutes(normalizedReason, failures) * 60 * 1000
+      : 0;
     const entry = {
       ...previous,
       failures,
       lastFailure: timestamp,
-      lastFailureReason: String(reason || 'error'),
+      lastFailureReason: normalizedReason,
       lastFailureDetail: String(detail || '').slice(0, 180),
-      cooldownUntil: timestamp + cooldownMinutes(reason, failures) * 60 * 1000
+      cooldownUntil: cooldown ? timestamp + cooldown : 0
     };
     health[receiverId] = entry;
     save(health);
@@ -102,15 +106,17 @@
 
   function state(receiverId, timestamp = now()) {
     const entry = get(receiverId);
+    const lastFailureReason = String(entry.lastFailureReason || '');
+    const definitiveCooldown = DEFINITIVE_COOLDOWN_REASONS.has(lastFailureReason);
     return {
       entry,
-      cooling: Number(entry.cooldownUntil || 0) > timestamp,
+      cooling: definitiveCooldown && Number(entry.cooldownUntil || 0) > timestamp,
       recentSuccess: Number(entry.lastSuccess || 0) > timestamp - RECENT_SUCCESS_MS,
       failures: Math.max(0, Number(entry.failures || 0)),
       cooldownUntil: Number(entry.cooldownUntil || 0),
       lastSuccess: Number(entry.lastSuccess || 0),
       lastFailure: Number(entry.lastFailure || 0),
-      lastFailureReason: String(entry.lastFailureReason || '')
+      lastFailureReason
     };
   }
 
@@ -126,7 +132,7 @@
   }
 
   window.__freqbeaconReceiverHealth = Object.freeze({
-    version: 'receiver-health-v2-source',
+    version: 'receiver-health-v3-transport-safe',
     key: HEALTH_KEY,
     recentSuccessMs: RECENT_SUCCESS_MS,
     get,
