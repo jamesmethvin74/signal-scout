@@ -1,8 +1,15 @@
 import baseWorker from './worker-receiver-json-fast.js';
 
 const DIRECT_MARKER = 'receiver-direct-inmemory-recovery-v2';
-const HEALTH_MARKER = 'sdr-health-native-watchdog-v1';
-const RF_SND_FIRST_MARKER = 'rf-snd-first-v1';
+const NATIVE_SND_MARKER = 'native-snd-ownership-v1';
+
+function jsResponse(response, source, markerName, markerValue) {
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/javascript; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  if (markerName) headers.set(markerName, markerValue);
+  return new Response(source, { status: response.status, statusText: response.statusText, headers });
+}
 
 function patchRuntime(response) {
   const contentType = String(response.headers.get('content-type') || '');
@@ -32,11 +39,7 @@ function patchRuntime(response) {
   };`;
 
     const patched = source.replace(oldExport, newExport);
-    const headers = new Headers(response.headers);
-    headers.set('content-type', 'application/javascript; charset=utf-8');
-    headers.set('cache-control', 'no-store, max-age=0');
-    headers.set('x-freqbeacon-direct-ranking', patched === source ? 'runtime-patch-miss' : DIRECT_MARKER);
-    return new Response(patched, { status: response.status, statusText: response.statusText, headers });
+    return jsResponse(response, patched, 'x-freqbeacon-direct-ranking', patched === source ? 'runtime-patch-miss' : DIRECT_MARKER);
   });
 }
 
@@ -45,15 +48,10 @@ function patchHealth(response) {
   if (!/javascript|text\/plain/.test(contentType)) return response;
 
   return response.text().then((source) => {
-    // Leave the source watchdog at its native 5.5s. The previous 2.2s Worker
-    // rewrite could kill a valid Cloudflare -> Kiwi handshake before the
-    // player's own 9s connection budget had a chance to succeed.
-    const patched = source;
-    const headers = new Headers(response.headers);
-    headers.set('content-type', 'application/javascript; charset=utf-8');
-    headers.set('cache-control', 'no-store, max-age=0');
-    headers.set('x-freqbeacon-health-timeout', HEALTH_MARKER);
-    return new Response(patched, { status: response.status, statusText: response.statusText, headers });
+    const oldAssignment = '  window.WebSocket = HealthAwareWebSocket;';
+    const eventBridge = `  // Native SND ownership: health observes explicit player events instead of\n  // wrapping window.WebSocket. It can no longer affect socket construction.\n  window.addEventListener('freqbeacon:snd-audio', (event) => {\n    const receiverId = event.detail?.receiverId;\n    if (receiverId) markSuccess(receiverId);\n  });\n  window.addEventListener('freqbeacon:snd-state', (event) => {\n    const receiverId = event.detail?.receiverId;\n    const reason = event.detail?.reason;\n    if (receiverId && (reason === 'busy' || reason === 'offline')) markFailure(receiverId, reason);\n  });`;
+    const patched = source.replace(oldAssignment, eventBridge);
+    return jsResponse(response, patched, 'x-freqbeacon-native-snd', patched === source ? 'health-patch-miss' : NATIVE_SND_MARKER);
   });
 }
 
@@ -62,44 +60,22 @@ function patchRf(response) {
   if (!/javascript|text\/plain/.test(contentType)) return response;
 
   return response.text().then((source) => {
-    const oldLine = "      socket.addEventListener('open', () => startWaterfall(meta, socket), { once: true });";
-    const newBlock = `      let rfStarted = false;
-      const startRfOnce = () => {
-        if (rfStarted) return;
-        rfStarted = true;
-        startWaterfall(meta, socket);
-      };
-      const inspectSndReady = (data) => {
-        try {
-          let bytes = null;
-          if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
-          else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-          if (!bytes || bytes.length < 3) return;
-          const tag = String.fromCharCode(bytes[0], bytes[1], bytes[2]);
-          if (tag === 'SND') {
-            startRfOnce();
-            return;
-          }
-          if (tag === 'MSG' && bytes.length > 4) {
-            const text = decoder.decode(bytes.subarray(4));
-            if (/(?:^|\\s)sample_rate=[0-9.]+(?:\\s|$)/.test(text)) startRfOnce();
-          }
-        } catch {}
-      };
-      socket.addEventListener('message', (event) => {
-        if (event.data instanceof Blob) {
-          event.data.arrayBuffer().then((buffer) => inspectSndReady(buffer)).catch(() => {});
-        } else {
-          inspectSndReady(event.data);
-        }
-      });`;
+    const oldAssignment = '  window.WebSocket = RfSessionWebSocket;';
+    const eventBridge = `  // Native SND ownership: RF no longer wraps the audio WebSocket. The player\n  // announces a fully initialized SND session, then RF opens the paired W/F\n  // socket with the same receiver/timestamp.\n  window.addEventListener('freqbeacon:snd-ready', (event) => {\n    const socket = event.detail?.socket;\n    const url = event.detail?.url;\n    const meta = parseSocketMeta(url);\n    if (!socket || meta?.stream !== 'SND') return;\n    if (state.sndSocket === socket && state.socket) return;\n    startWaterfall(meta, socket);\n    socket.addEventListener('close', () => {\n      if (state.sndSocket === socket) {\n        state.generation += 1;\n        state.sndSocket = null;\n        closeWaterfall('RF STOPPED');\n      }\n    }, { once: true });\n  });`;
+    const patched = source.replace(oldAssignment, eventBridge);
+    return jsResponse(response, patched, 'x-freqbeacon-native-snd', patched === source ? 'rf-patch-miss' : NATIVE_SND_MARKER);
+  });
+}
 
-    const patched = source.replace(oldLine, newBlock);
-    const headers = new Headers(response.headers);
-    headers.set('content-type', 'application/javascript; charset=utf-8');
-    headers.set('cache-control', 'no-store, max-age=0');
-    headers.set('x-freqbeacon-rf-snd-first', patched === source ? 'rf-patch-miss' : RF_SND_FIRST_MARKER);
-    return new Response(patched, { status: response.status, statusText: response.statusText, headers });
+function patchTuning(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/javascript|text\/plain/.test(contentType)) return response;
+
+  return response.text().then((source) => {
+    const oldAssignment = '  window.WebSocket = TuningWebSocket;';
+    const eventBridge = `  // Native SND ownership: tuning observes the player's native socket instead\n  // of wrapping WebSocket construction.\n  window.addEventListener('freqbeacon:snd-created', (event) => {\n    const socket = event.detail?.socket;\n    if (!socket) return;\n    state.sndSocket = socket;\n    state.sessionApplied = false;\n    socket.addEventListener('close', () => {\n      if (state.sndSocket === socket) {\n        state.sndSocket = null;\n        state.sessionApplied = false;\n      }\n    }, { once: true });\n  });\n  window.addEventListener('freqbeacon:snd-ready', (event) => {\n    const socket = event.detail?.socket;\n    if (!socket || state.sndSocket !== socket) return;\n    state.sessionApplied = true;\n    if (Number.isFinite(state.manualKHz)) window.setTimeout(() => performTune(), 0);\n  });`;
+    const patched = source.replace(oldAssignment, eventBridge);
+    return jsResponse(response, patched, 'x-freqbeacon-native-snd', patched === source ? 'tuning-patch-miss' : NATIVE_SND_MARKER);
   });
 }
 
@@ -108,14 +84,14 @@ function patchPlayer(response) {
   if (!/javascript|text\/plain/.test(contentType)) return response;
 
   return response.text().then((source) => {
-    const oldBlock = `      const response = await fetch(recommendationUrl(frequency, container), {
+    const oldRecommendationBlock = `      const response = await fetch(recommendationUrl(frequency, container), {
         headers: { Accept: 'application/json' },
         signal: controller.signal
       });
       if (!response.ok) throw new Error(\`Receiver directory HTTP \${response.status}\`);
       const payload = await response.json();`;
 
-    const newBlock = `      const directRuntime = window.__freqbeaconReceiverRuntime;
+    const newRecommendationBlock = `      const directRuntime = window.__freqbeaconReceiverRuntime;
       let payload;
       if (typeof directRuntime?.recommend === 'function') {
         payload = directRuntime.recommend(recommendationUrl(frequency, container));
@@ -128,17 +104,93 @@ function patchPlayer(response) {
         payload = await response.json();
       }`;
 
-    let patched = source.replace(oldBlock, newBlock);
+    let patched = source.replace(oldRecommendationBlock, newRecommendationBlock);
     patched = patched.replace(
       'window.setTimeout(() => connectSdr(next), 450);',
       'window.setTimeout(() => connectSdr(next), 75);'
     );
 
-    const headers = new Headers(response.headers);
-    headers.set('content-type', 'application/javascript; charset=utf-8');
-    headers.set('cache-control', 'no-store, max-age=0');
-    headers.set('x-freqbeacon-direct-ranking', patched === source ? 'player-patch-miss' : DIRECT_MARKER);
-    return new Response(patched, { status: response.status, statusText: response.statusText, headers });
+    const oldSocketOpen = `      socket = new WebSocket(websocketUrl(sdr.receiverIndex));
+      socket.binaryType = 'arraybuffer';`;
+    const newSocketOpen = `      const socketUrl = websocketUrl(sdr.receiverIndex);
+      const NativeSocket = window.__signalScoutNativeWebSocket || window.WebSocket;
+      socket = new NativeSocket(socketUrl);
+      socket.binaryType = 'arraybuffer';
+      sdr.socketUrl = socketUrl;
+      sdr.socketReceiverId = receiver?.id || null;
+      sdr.sndReadySignaled = false;
+      window.dispatchEvent(new CustomEvent('freqbeacon:snd-created', {
+        detail: { socket, url: socketUrl, receiverId: sdr.socketReceiverId }
+      }));`;
+    patched = patched.replace(oldSocketOpen, newSocketOpen);
+
+    const oldSampleRate = `      if (sampleRate) {
+        sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
+        configureSdr();
+      }`;
+    const newSampleRate = `      if (sampleRate) {
+        sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
+        configureSdr();
+        if (!sdr.sndReadySignaled) {
+          sdr.sndReadySignaled = true;
+          window.dispatchEvent(new CustomEvent('freqbeacon:snd-ready', {
+            detail: { socket: sdr.socket, url: sdr.socketUrl, receiverId: sdr.socketReceiverId }
+          }));
+        }
+      }`;
+    patched = patched.replace(oldSampleRate, newSampleRate);
+
+    const oldSndGate = `    if (tag !== 'SND' || bytes.byteLength < 10) return;
+    const body = bytes.subarray(3);`;
+    const newSndGate = `    if (tag !== 'SND' || bytes.byteLength < 10) return;
+    if (!sdr.sndReadySignaled) {
+      sdr.sndReadySignaled = true;
+      window.dispatchEvent(new CustomEvent('freqbeacon:snd-ready', {
+        detail: { socket: sdr.socket, url: sdr.socketUrl, receiverId: sdr.socketReceiverId }
+      }));
+    }
+    const body = bytes.subarray(3);`;
+    patched = patched.replace(oldSndGate, newSndGate);
+
+    patched = patched.replace(
+      `      if (/(?:^|\\s)too_busy=1(?:\\s|$)/.test(text)) failCurrentReceiver('Receiver is full. Trying the next ranked receiver…');`,
+      `      if (/(?:^|\\s)too_busy=1(?:\\s|$)/.test(text)) {\n        window.dispatchEvent(new CustomEvent('freqbeacon:snd-state', { detail: { receiverId: sdr.socketReceiverId, reason: 'busy' } }));\n        failCurrentReceiver('Receiver is full. Trying the next ranked receiver…');\n      }`
+    );
+    patched = patched.replace(
+      `      if (/(?:^|\\s)down=1(?:\\s|$)/.test(text)) failCurrentReceiver('Receiver is offline. Trying the next ranked receiver…');`,
+      `      if (/(?:^|\\s)down=1(?:\\s|$)/.test(text)) {\n        window.dispatchEvent(new CustomEvent('freqbeacon:snd-state', { detail: { receiverId: sdr.socketReceiverId, reason: 'offline' } }));\n        failCurrentReceiver('Receiver is offline. Trying the next ranked receiver…');\n      }`
+    );
+
+    const oldGotAudio = `    if (!sdr.gotAudio) {
+      sdr.gotAudio = true;
+      sdr.connected = true;`;
+    const newGotAudio = `    if (!sdr.gotAudio) {
+      sdr.gotAudio = true;
+      window.dispatchEvent(new CustomEvent('freqbeacon:snd-audio', {
+        detail: { socket: sdr.socket, url: sdr.socketUrl, receiverId: sdr.socketReceiverId }
+      }));
+      sdr.connected = true;`;
+    patched = patched.replace(oldGotAudio, newGotAudio);
+
+    const oldDisconnectReset = `    sdr.connected = false;
+    sdr.configured = false;
+    sdr.gotAudio = false;`;
+    const newDisconnectReset = `    sdr.connected = false;
+    sdr.configured = false;
+    sdr.gotAudio = false;
+    sdr.socketUrl = null;
+    sdr.socketReceiverId = null;
+    sdr.sndReadySignaled = false;`;
+    patched = patched.replace(oldDisconnectReset, newDisconnectReset);
+
+    const patchesApplied = [
+      oldSocketOpen,
+      oldSampleRate,
+      oldSndGate,
+      oldGotAudio
+    ].every((needle) => source.includes(needle));
+
+    return jsResponse(response, patched, 'x-freqbeacon-native-snd', patchesApplied ? NATIVE_SND_MARKER : 'player-patch-miss');
   });
 }
 
@@ -147,14 +199,15 @@ function patchRoot(response) {
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
     html = html.replace(/sdr-receiver-runtime-v3\.js\?v=\d+/g, 'sdr-receiver-runtime-v3.js?v=8');
-    html = html.replace(/sdr-player\.js\?v=\d+(?:&sdrdiag=\d+)?/g, 'sdr-player.js?v=8');
-    html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=9');
-    html = html.replace(/sdr-rf-v2\.js\?v=\d+/g, 'sdr-rf-v2.js?v=9');
+    html = html.replace(/sdr-player\.js\?v=\d+(?:&sdrdiag=\d+)?/g, 'sdr-player.js?v=10');
+    html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=10');
+    html = html.replace(/sdr-rf-v2\.js\?v=\d+/g, 'sdr-rf-v2.js?v=10');
+    html = html.replace(/sdr-tuning\.js\?v=\d+/g, 'sdr-tuning.js?v=2');
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
     headers.set('x-freqbeacon-direct-ranking', DIRECT_MARKER);
-    headers.set('x-freqbeacon-rf-snd-first', RF_SND_FIRST_MARKER);
+    headers.set('x-freqbeacon-native-snd', NATIVE_SND_MARKER);
     return new Response(html, { status: response.status, statusText: response.statusText, headers });
   });
 }
@@ -164,21 +217,12 @@ export default {
     const url = new URL(request.url);
     const response = await baseWorker.fetch(request, env, ctx);
 
-    if (request.method === 'GET' && url.pathname === '/sdr-receiver-runtime-v3.js') {
-      return patchRuntime(response);
-    }
-    if (request.method === 'GET' && url.pathname === '/sdr-health.js') {
-      return patchHealth(response);
-    }
-    if (request.method === 'GET' && url.pathname === '/sdr-rf-v2.js') {
-      return patchRf(response);
-    }
-    if (request.method === 'GET' && url.pathname === '/sdr-player.js') {
-      return patchPlayer(response);
-    }
-    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      return patchRoot(response);
-    }
+    if (request.method === 'GET' && url.pathname === '/sdr-receiver-runtime-v3.js') return patchRuntime(response);
+    if (request.method === 'GET' && url.pathname === '/sdr-health.js') return patchHealth(response);
+    if (request.method === 'GET' && url.pathname === '/sdr-rf-v2.js') return patchRf(response);
+    if (request.method === 'GET' && url.pathname === '/sdr-tuning.js') return patchTuning(response);
+    if (request.method === 'GET' && url.pathname === '/sdr-player.js') return patchPlayer(response);
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return patchRoot(response);
     return response;
   },
 
