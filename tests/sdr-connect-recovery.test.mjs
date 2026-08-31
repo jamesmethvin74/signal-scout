@@ -101,6 +101,7 @@ function managerHarness() {
   const sockets = [];
   const attempts = [];
   const opens = [];
+  const unavailable = [];
   const window = {
     WebSocket:FakeSocket,
     setTimeout,
@@ -109,7 +110,7 @@ function managerHarness() {
   };
   const context = vm.createContext({
     window, console, TextDecoder, ArrayBuffer, Uint8Array,
-    Array, Set, Object, String, Number, TypeError
+    Array, Set, Object, String, Number, TypeError, Date
   });
   vm.runInContext(managerSource, context, { filename:'sdr-connection-manager.js' });
   const Manager = window.FreqBeaconSdrConnectionManager;
@@ -123,11 +124,13 @@ function managerHarness() {
     urlForReceiver:receiver => `wss://freqbeacon.example/api/sdr/ws?receiver=${receiver.id}`,
     onAttempt:event => attempts.push({
       id:event.receiver.id,
+      upstreamId:event.upstreamId,
       hasActiveSocket:Boolean(manager.activeSocket)
     }),
-    onOpen:event => opens.push(event.receiver.id)
+    onOpen:event => opens.push(event.receiver.id),
+    onUnavailable:event => unavailable.push(event)
   });
-  return { manager, sockets, attempts, opens, runDelay, Manager };
+  return { manager, sockets, attempts, opens, unavailable, runDelay, Manager };
 }
 
 test('ranked live catalog always includes a deployment-bundled recovery receiver', () => {
@@ -158,6 +161,14 @@ test('manager observes native open through EventTarget listeners', () => {
   assert.deepEqual(h.opens, ['live-a']);
 });
 
+test('KM4RT Tipton uses the current raw public endpoint while preserving display identity', () => {
+  const h = managerHarness();
+  h.manager.connect([{id:'km4rt.ddns.net:8073', name:'KM4RT 0-30 MHz SDR', location:'Tipton County, Tennessee', bundledSeed:true}]);
+  assert.equal(h.attempts[0].id, 'km4rt.ddns.net:8073');
+  assert.equal(h.attempts[0].upstreamId, '64.22.14.214:8073');
+  assert.match(h.sockets[0].url, /64\.22\.14\.214:8073/);
+});
+
 test('first live receiver failure jumps directly to bundled fallback', () => {
   const h = managerHarness();
   h.manager.connect([
@@ -167,7 +178,7 @@ test('first live receiver failure jumps directly to bundled fallback', () => {
     {id:'live-c', name:'Live C', location:'Site D', bundledSeed:false}
   ]);
   h.sockets[0].remoteClose();
-  h.runDelay(100);
+  h.runDelay(75);
   assert.equal(h.attempts.length, 2);
   assert.equal(h.attempts[1].id, 'seed-safe');
 });
@@ -180,14 +191,16 @@ test('automatic failover never retries the same physical receiver under another 
     {id:'different-site', name:'Different SDR', location:'Memphis, Tennessee', bundledSeed:false}
   ]);
   h.sockets[0].remoteClose();
-  h.runDelay(100);
+  h.runDelay(75);
   assert.equal(h.attempts.length, 2);
   assert.equal(h.attempts[1].id, 'different-site');
 });
 
-test('handshake timeout matches the proven pre-cleanup mobile budget', () => {
+test('automatic listening has one sub-10-second budget instead of per-receiver waiting', () => {
   const h = managerHarness();
-  assert.equal(h.Manager.constants.CONNECT_TIMEOUT_MS, 9000);
-  assert.equal(h.Manager.constants.FIRST_SND_TIMEOUT_MS, 5000);
-  assert.equal(h.Manager.constants.MAX_AUTO_ATTEMPTS, 5);
+  assert.equal(h.Manager.version, 'fast-path-v5');
+  assert.equal(h.Manager.constants.TOTAL_CONNECT_BUDGET_MS, 9500);
+  assert.equal(h.Manager.constants.CONNECT_TIMEOUT_MS, 4000);
+  assert.equal(h.Manager.constants.FIRST_SND_TIMEOUT_MS, 2500);
+  assert.equal(h.Manager.constants.MAX_AUTO_ATTEMPTS, 3);
 });

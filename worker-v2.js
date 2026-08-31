@@ -13,6 +13,17 @@ const LEGACY_RECEIVERS = {
   pennsylvania: 'http://22479.proxy.kiwisdr.com'
 };
 
+// Current ReceiverBook publishes the KM4RT Tipton receiver under both its
+// public IPv4 endpoint and a DDNS alias. Native Kiwi reaches the public endpoint
+// immediately, while Cloudflare egress has been stalling on the DDNS route.
+// Resolve both IDs to the current public endpoint before any directory lookup.
+// This is transport routing only; the displayed receiver identity/ranking stays
+// KM4RT Tipton and remains independent of the user's reception score.
+const FAST_RECEIVER_ENDPOINTS = {
+  'km4rt.ddns.net:8073': 'http://64.22.14.214:8073',
+  '64.22.14.214:8073': 'http://64.22.14.214:8073'
+};
+
 let directoryMemory = null;
 let directoryMemoryAt = 0;
 
@@ -100,6 +111,9 @@ async function receiverDirectory() {
 }
 
 async function resolveReceiver(receiverId) {
+  const fastUrl = FAST_RECEIVER_ENDPOINTS[String(receiverId || '').toLowerCase()];
+  if (fastUrl) return normalizeReceiverUrl(fastUrl);
+
   const legacyUrl = LEGACY_RECEIVERS[receiverId];
   if (legacyUrl) return normalizeReceiverUrl(legacyUrl);
 
@@ -121,9 +135,6 @@ function jsonResponse(value, status = 200) {
 }
 
 async function resilientReceiverRecommendations(request, env, ctx) {
-  // Prime the WebSocket resolver directory in parallel with ranking. If either
-  // live lookup cannot produce a trustworthy ReceiverBook catalog, return a
-  // broad bundled catalog instead of collapsing to the three legacy sites.
   const proxyDirectoryPromise = receiverDirectory().catch(() => null);
   const response = await baseWorker.fetch(request, env, ctx);
   const proxyDirectory = await proxyDirectoryPromise;
