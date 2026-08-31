@@ -4,11 +4,6 @@ const PROBE_TIMEOUT_MS = 3500;
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 
-const FAST_RECEIVER_ENDPOINTS = Object.freeze({
-  'km4rt.ddns.net:8073': 'http://64.22.14.214:8073',
-  '64.22.14.214:8073': 'http://64.22.14.214:8073'
-});
-
 function normalize(rawUrl) {
   try {
     const url = new URL(rawUrl);
@@ -28,10 +23,6 @@ const ALLOWED = new Map();
 for (const seed of SDR_DIRECTORY_SEED) {
   const normalized = normalize(seed.url);
   if (normalized) ALLOWED.set(String(seed.id).toLowerCase(), normalized);
-}
-for (const [id, rawUrl] of Object.entries(FAST_RECEIVER_ENDPOINTS)) {
-  const normalized = normalize(rawUrl);
-  if (normalized) ALLOWED.set(id, normalized);
 }
 
 function proxySafeTimestamp(timestamp) {
