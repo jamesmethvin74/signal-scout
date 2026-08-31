@@ -37,10 +37,11 @@ function harness() {
 
 test('automatic listening is bounded under ten seconds', () => {
   const { Manager } = harness();
-  assert.equal(Manager.version, 'fast-path-v6-ranked-failover');
+  assert.equal(Manager.version, 'fast-path-v7-open-reconcile');
   assert.equal(Manager.constants.TOTAL_CONNECT_BUDGET_MS, 9500);
   assert.equal(Manager.constants.CONNECT_TIMEOUT_MS, 4000);
   assert.equal(Manager.constants.FIRST_SND_TIMEOUT_MS, 2500);
+  assert.equal(Manager.constants.OPEN_RECONCILE_MS, 50);
   assert.equal(Manager.constants.MAX_AUTO_ATTEMPTS, 3);
 });
 
