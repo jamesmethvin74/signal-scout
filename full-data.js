@@ -1,7 +1,32 @@
 (() => {
-  const SCHEDULE_URL = 'https://raw.githubusercontent.com/Roger-Need/StationFinder/main/Frequency%20Lists/Merged/A26%20merged_schedule.csv';
+  function lastSundayUtc(year, monthIndex) {
+    const d = new Date(Date.UTC(year, monthIndex + 1, 0));
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return d;
+  }
+
+  function hfccSeasonFor(date = new Date()) {
+    const year = date.getUTCFullYear();
+    const yy = String(year).slice(-2);
+    const aStart = lastSundayUtc(year, 2);
+    const bStart = lastSundayUtc(year, 9);
+    return date >= aStart && date < bStart ? `A${yy}` : `B${yy}`;
+  }
+
+  function hfccSeasonCandidates(date = new Date()) {
+    const current = hfccSeasonFor(date);
+    const year = date.getUTCFullYear();
+    const yy = String(year).slice(-2);
+    const prevYear = String(year - 1).slice(-2);
+    return current.startsWith('A')
+      ? [current, `B${prevYear}`, `A${prevYear}`]
+      : [current, `A${yy}`, `B${prevYear}`];
+  }
+
+  const SCHEDULE_BASE = 'https://raw.githubusercontent.com/Roger-Need/StationFinder/main/Frequency%20Lists/Merged/';
   const COUNTRIES_URL = 'https://raw.githubusercontent.com/google/dspl/master/samples/google/canonical/countries.csv';
   const ALLOWED_SOURCES = new Set(['HFCC', 'EiBi']);
+  let ACTIVE_HFCC_SEASON = hfccSeasonFor();
   const stations = window.SIGNAL_SCOUT_STATIONS || (window.SIGNAL_SCOUT_STATIONS = []);
   const seedShortwave = stations.filter((station) => station.band === 'SW');
   const mediumWave = stations.filter((station) => station.band !== 'SW');
@@ -9,7 +34,7 @@
   window.SIGNAL_SCOUT_DATA_STATE = {
     loading: true,
     loaded: false,
-    source: 'HFCC + EiBi A26',
+    source: `HFCC + EiBi ${ACTIVE_HFCC_SEASON}`,
     count: seedShortwave.length,
     error: null
   };
@@ -38,6 +63,25 @@
 
   const UTILITY_RE = /\b(?:navy|naval|coast guard|uscg|radiofax|\bfax\b|hfdl|volmet|aeronautical|marine weather|maritime safety|rtty|teletype|sub comms|submarine)\b/i;
 
+  async function fetchCurrentSchedule() {
+    let lastError = null;
+    for (const season of hfccSeasonCandidates()) {
+      const filename = encodeURIComponent(`${season} merged_schedule.csv`);
+      try {
+        const response = await fetch(`${SCHEDULE_BASE}${filename}`, { cache: 'default' });
+        if (!response.ok) {
+          lastError = new Error(`${season} schedule fetch failed (${response.status})`);
+          continue;
+        }
+        ACTIVE_HFCC_SEASON = season;
+        return response;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('No current HFCC/EiBi season feed is available');
+  }
+
   function parseCsvLine(line) {
     const out = [];
     let value = '';
@@ -63,10 +107,7 @@
   }
 
   function normalize(value) {
-    return String(value || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ')
-      .trim();
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   }
 
   function friendlyStation(name) {
@@ -86,7 +127,6 @@
     if (lines.length < 2) throw new Error('Full schedule file is empty');
     const headers = parseCsvLine(lines[0]).map((header) => header.trim());
     const idx = Object.fromEntries(headers.map((header, i) => [header, i]));
-
     return lines.slice(1).map((line) => {
       const cols = parseCsvLine(line);
       const get = (name) => String(cols[idx[name]] ?? '').trim();
@@ -119,9 +159,7 @@
       const name = String(cols[idx.name] || '').trim();
       const lat = Number(cols[idx.latitude]);
       const lon = Number(cols[idx.longitude]);
-      if (name && Number.isFinite(lat) && Number.isFinite(lon)) {
-        byName.set(normalize(name), { lat, lon });
-      }
+      if (name && Number.isFinite(lat) && Number.isFinite(lon)) byName.set(normalize(name), { lat, lon });
     }
     return byName;
   }
@@ -129,29 +167,17 @@
   function countryAliases(name) {
     const clean = normalize(name);
     const aliases = {
-      'united states of america': 'united states',
-      'usa': 'united states',
-      'u s a': 'united states',
-      'uk': 'united kingdom',
-      'great britain': 'united kingdom',
-      'russian federation': 'russia',
-      'south korea': 'korea south',
-      'north korea': 'korea north',
-      'viet nam': 'vietnam',
-      'czech republic': 'czechia',
-      'swaziland': 'eswatini',
-      'ivory coast': 'cote d ivoire'
+      'united states of america': 'united states', 'usa': 'united states', 'u s a': 'united states',
+      'uk': 'united kingdom', 'great britain': 'united kingdom', 'russian federation': 'russia',
+      'south korea': 'korea south', 'north korea': 'korea north', 'viet nam': 'vietnam',
+      'czech republic': 'czechia', 'swaziland': 'eswatini', 'ivory coast': 'cote d ivoire'
     };
     return aliases[clean] || clean;
   }
 
   function centroidFor(row, countries) {
-    const candidates = [row.txCountry, row.origin]
-      .map(countryAliases)
-      .filter(Boolean);
-    for (const candidate of candidates) {
-      if (countries.has(candidate)) return countries.get(candidate);
-    }
+    const candidates = [row.txCountry, row.origin].map(countryAliases).filter(Boolean);
+    for (const candidate of candidates) if (countries.has(candidate)) return countries.get(candidate);
     return null;
   }
 
@@ -165,23 +191,15 @@
   }
 
   function groupKey(row) {
-    return [
-      Math.round(row.frequencyHz),
-      row.on,
-      row.off,
-      normalize(row.origin || row.txCountry),
-      normalize(row.mode || 'AM')
-    ].join('|');
+    return [Math.round(row.frequencyHz), row.on, row.off, normalize(row.origin || row.txCountry), normalize(row.mode || 'AM')].join('|');
   }
 
   function chooseDisplayRow(rows) {
-    return rows.find((row) => row.source === 'EiBi') ||
-      rows.find((row) => row.source === 'HFCC') || rows[0];
+    return rows.find((row) => row.source === 'EiBi') || rows.find((row) => row.source === 'HFCC') || rows[0];
   }
 
   function chooseTechnicalRow(rows) {
-    return rows.find((row) => row.source === 'HFCC' && (row.power || row.site || row.txCountry)) ||
-      rows.find((row) => row.source === 'HFCC') || rows[0];
+    return rows.find((row) => row.source === 'HFCC' && (row.power || row.site || row.txCountry)) || rows.find((row) => row.source === 'HFCC') || rows[0];
   }
 
   function seedMatch(frequencyKHz, displayName) {
@@ -196,12 +214,8 @@
   function formatType(mode, stationName) {
     const upperMode = String(mode || 'AM').toUpperCase();
     if (upperMode.includes('DRM')) return 'DRM digital broadcast';
-    if (/bbc|radio romania|radio exterior|radio new zealand|rnz|voice of|china radio|nhk|nippon hoso/i.test(stationName)) {
-      return 'International broadcast';
-    }
-    if (/adventist|eternal word|wewn|relig|gospel|bible|ministry|ministries/i.test(stationName)) {
-      return 'Religious / international';
-    }
+    if (/bbc|radio romania|radio exterior|radio new zealand|rnz|voice of|china radio|nhk|nippon hoso/i.test(stationName)) return 'International broadcast';
+    if (/adventist|eternal word|wewn|relig|gospel|bible|ministry|ministries/i.test(stationName)) return 'Religious / international';
     return upperMode === 'AM' ? 'Shortwave broadcast' : `${upperMode} broadcast`;
   }
 
@@ -222,46 +236,32 @@
       const exact = seedMatch(frequencyKHz, displayName);
       const centroid = centroidFor(technical, countries) || centroidFor(display, countries);
       const location = exact && Number.isFinite(exact.lat) && Number.isFinite(exact.lon)
-        ? { lat: exact.lat, lon: exact.lon, approximate: false }
-        : centroid
-          ? { lat: centroid.lat, lon: centroid.lon, approximate: true }
-          : { lat: 0, lon: 0, approximate: true };
-      const language = decodeLanguage(
-        (groupedRows.find((row) => row.source === 'HFCC' && row.language && row.language.length > 2) || display).language,
-        (groupedRows.find((row) => row.source === 'HFCC' && row.language && row.language.length > 2) || display).source
-      );
+        ? { lat:exact.lat, lon:exact.lon, approximate:false }
+        : centroid ? { lat:centroid.lat, lon:centroid.lon, approximate:true } : { lat:0, lon:0, approximate:true };
+      const languageRow = groupedRows.find((row) => row.source === 'HFCC' && row.language && row.language.length > 2) || display;
+      const language = decodeLanguage(languageRow.language, languageRow.source);
       const sources = [...new Set(groupedRows.map((row) => row.source))].join(' + ');
       const transmitter = exact?.transmitter || technical.site || display.site || technical.txCountry || display.txCountry || technical.origin || display.origin || 'Site not listed';
       const txCountry = exact?.country || technical.txCountry || display.txCountry || technical.origin || display.origin || 'Unknown';
       const target = display.target || technical.target;
       const power = Number(technical.power);
       const azimuth = Number(technical.azimuth);
-
       built.push({
-        band: 'SW',
-        frequency: frequencyKHz,
-        start: String(display.on || technical.on).padStart(4, '0'),
-        end: String(display.off || technical.off).padStart(4, '0'),
-        name: displayName,
-        country: txCountry,
-        language,
-        format: formatType(technical.mode || display.mode, displayName),
-        transmitter,
-        lat: location.lat,
-        lon: location.lon,
-        locationApproximate: location.approximate,
-        power: Number.isFinite(power) && power > 0 ? power : 10,
-        beam: Number.isFinite(azimuth) ? azimuth : 0,
-        days: technical.days || display.days || '1234567',
-        target: target || '',
-        origin: display.origin || technical.origin || '',
-        source: sources,
-        note: target
-          ? `A26 schedule · target: ${target} · source: ${sources}`
-          : `A26 schedule · source: ${sources}`
+        band:'SW', frequency:frequencyKHz,
+        start:String(display.on || technical.on).padStart(4, '0'),
+        end:String(display.off || technical.off).padStart(4, '0'),
+        name:displayName, country:txCountry, language,
+        format:formatType(technical.mode || display.mode, displayName),
+        transmitter, lat:location.lat, lon:location.lon, locationApproximate:location.approximate,
+        power:Number.isFinite(power) && power > 0 ? power : 10,
+        beam:Number.isFinite(azimuth) ? azimuth : 0,
+        days:technical.days || display.days || '1234567',
+        target:target || '', origin:display.origin || technical.origin || '', source:sources,
+        note:target
+          ? `${ACTIVE_HFCC_SEASON} schedule · target: ${target} · source: ${sources}`
+          : `${ACTIVE_HFCC_SEASON} schedule · source: ${sources}`
       });
     }
-
     return built.sort((a, b) => a.frequency - b.frequency || a.start.localeCompare(b.start));
   }
 
@@ -288,56 +288,39 @@
 
   async function loadFullData() {
     const sourceNote = document.querySelector('.source-note');
-    if (sourceNote) sourceNote.textContent = 'Loading full A26 HFCC + EiBi shortwave schedules…';
-
+    if (sourceNote) sourceNote.textContent = `Loading current ${ACTIVE_HFCC_SEASON} HFCC + EiBi shortwave schedules…`;
     try {
       const [scheduleResponse, countriesResponse] = await Promise.all([
-        fetch(SCHEDULE_URL, { cache: 'default' }),
-        fetch(COUNTRIES_URL, { cache: 'default' })
+        fetchCurrentSchedule(),
+        fetch(COUNTRIES_URL, { cache:'default' })
       ]);
-      if (!scheduleResponse.ok) throw new Error(`Schedule fetch failed (${scheduleResponse.status})`);
       if (!countriesResponse.ok) throw new Error(`Country-location fetch failed (${countriesResponse.status})`);
-
-      const [scheduleText, countriesText] = await Promise.all([
-        scheduleResponse.text(),
-        countriesResponse.text()
-      ]);
+      const [scheduleText, countriesText] = await Promise.all([scheduleResponse.text(), countriesResponse.text()]);
       const fullShortwave = buildStations(parseSchedule(scheduleText), parseCountries(countriesText));
       if (fullShortwave.length < 500) throw new Error(`Only ${fullShortwave.length} schedule entries were parsed`);
 
       stations.splice(0, stations.length, ...fullShortwave, ...mediumWave);
       window.SIGNAL_SCOUT_FULL_SW = fullShortwave;
       window.SIGNAL_SCOUT_DATA_STATE = {
-        loading: false,
-        loaded: true,
-        source: 'HFCC + EiBi A26',
-        count: fullShortwave.length,
-        error: null
+        loading:false, loaded:true, source:`HFCC + EiBi ${ACTIVE_HFCC_SEASON}`,
+        count:fullShortwave.length, error:null
       };
-
       if (sourceNote) {
-        sourceNote.textContent = `Full A26 shortwave schedule loaded: ${fullShortwave.length.toLocaleString()} normalized HFCC/EiBi transmission entries, plus the current medium-wave starter set. Reception distances marked ≈ use a transmitter-country centroid until exact site coordinates are enriched.`;
+        sourceNote.textContent = `Full ${ACTIVE_HFCC_SEASON} shortwave schedule loaded: ${fullShortwave.length.toLocaleString()} normalized HFCC/EiBi transmission entries, plus the current medium-wave starter set. Reception distances marked ≈ use a transmitter-country centroid until exact site coordinates are enriched.`;
       }
-
-      document.getElementById('languageFilter')?.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('languageFilter')?.dispatchEvent(new Event('change', { bubbles:true }));
       window.setTimeout(fixApproximateDistanceLabels, 0);
     } catch (error) {
       window.SIGNAL_SCOUT_DATA_STATE = {
-        loading: false,
-        loaded: false,
-        source: 'starter fallback',
-        count: seedShortwave.length,
-        error: String(error?.message || error)
+        loading:false, loaded:false, source:'starter fallback', count:seedShortwave.length,
+        error:String(error?.message || error)
       };
-      if (sourceNote) {
-        sourceNote.textContent = `Full schedule could not be loaded; using the built-in starter data. ${window.SIGNAL_SCOUT_DATA_STATE.error}`;
-      }
-      console.error('Signal Scout full-data load failed:', error);
+      if (sourceNote) sourceNote.textContent = `Full schedule could not be loaded; using the built-in starter data. ${window.SIGNAL_SCOUT_DATA_STATE.error}`;
+      console.error('FreqBeacon full-data load failed:', error);
     }
   }
 
   const grid = document.getElementById('signalGrid');
-  if (grid) new MutationObserver(() => window.setTimeout(fixApproximateDistanceLabels, 0)).observe(grid, { childList: true, subtree: true });
-
+  if (grid) new MutationObserver(() => window.setTimeout(fixApproximateDistanceLabels, 0)).observe(grid, { childList:true, subtree:true });
   window.SIGNAL_SCOUT_DATA_READY = loadFullData();
 })();
