@@ -1,5 +1,5 @@
 (() => {
-  const HEALTH_KEY = 'signalScout:sdrHealth:v1';
+  const HEALTH_KEY = 'signalScout:sdrHealth:v2';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
   const NativeFetch = window.fetch.bind(window);
