@@ -82,7 +82,7 @@ test('already-open wrapped socket is reconciled even if open event was missed', 
   const h = harness({ startsOpen:true });
   h.manager.connect([{ id:'km4rt.ddns.net:8073', name:'KM4RT', location:'Tipton County, Tennessee' }]);
   assert.deepEqual(h.opens, ['km4rt.ddns.net:8073']);
-  assert.equal(h.manager.activeSocket.readyState, h.Manager.constants ? 1 : 1);
+  assert.equal(h.manager.activeSocket.readyState, 1);
 });
 
 test('socket that becomes OPEN without emitting open is discovered by 50 ms reconciliation', () => {
