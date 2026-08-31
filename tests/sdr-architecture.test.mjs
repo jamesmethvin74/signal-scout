@@ -30,7 +30,7 @@ test('production HTML loads one deterministic SDR runtime graph', () => {
     'sdr-tuning-v3.js?v=3',
     'sdr-health.js?v=4',
     'sdr-receiver-runtime-v3.js?v=6',
-    'sdr-connection-manager.js?v=3',
+    'sdr-connection-manager.js?v=4',
     'sdr-player.js?v=5',
     'sdr-live-reliability-v2.js?v=3'
   ]) assert.match(index, new RegExp(asset.replace(/[.?]/g, '\\$&')));
