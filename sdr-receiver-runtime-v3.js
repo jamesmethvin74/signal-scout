@@ -179,11 +179,21 @@
     } catch {}
   }
 
+  function livePoolState(now = Date.now()) {
+    const age = now - Number(livePool.updatedAt || 0);
+    const enough = livePool.receivers.length >= 4;
+    return {
+      age,
+      fresh: enough && age < LIVE_POOL_FRESH_MS,
+      usable: enough && age < LIVE_POOL_STALE_MS,
+      expired: enough && age >= LIVE_POOL_STALE_MS
+    };
+  }
+
   function currentPool() {
-    const age = Date.now() - Number(livePool.updatedAt || 0);
-    const liveUsable = livePool.receivers.length >= 4 && age < LIVE_POOL_STALE_MS;
+    const state = livePoolState();
     const seed = SEED.map((receiver) => normalizeReceiver(receiver, false)).filter(Boolean);
-    return liveUsable ? dedupeReceivers([...livePool.receivers, ...seed]) : dedupeReceivers(seed);
+    return state.usable ? dedupeReceivers([...livePool.receivers, ...seed]) : dedupeReceivers(seed);
   }
 
   function milesBetween(lat1, lon1, lat2, lon2) {
@@ -314,9 +324,6 @@
       });
 
     if (ham) {
-      // Geography is first-order for amateur activity. Health only changes the
-      // order inside broad geographic buckets, so a failed local SDR cannot
-      // make another continent look like the sensible recommendation.
       eligible.sort((a, b) => {
         const ad = a.userDistance ?? Infinity;
         const bd = b.userDistance ?? Infinity;
@@ -460,14 +467,15 @@
     recommend(input) {
       const context = normalizeContext(input);
       const receivers = rankReceivers(context);
-      const age = Date.now() - Number(livePool.updatedAt || 0);
+      const state = livePoolState();
       return {
         receivers,
-        source: livePool.receivers.length >= 4
-          ? (age < LIVE_POOL_FRESH_MS ? 'receiver-runtime-live-cache' : 'receiver-runtime-stale-cache')
+        source: state.usable
+          ? (state.fresh ? 'receiver-runtime-live-cache' : 'receiver-runtime-stale-cache')
           : 'receiver-runtime-seed',
+        warning: state.expired ? 'Cached ReceiverBook data is older than seven days; using the bundled seed catalog while refreshing in the background.' : null,
         generatedAt: new Date().toISOString(),
-        catalogAgeMs: Number.isFinite(age) ? Math.max(0, age) : null
+        catalogAgeMs: Number.isFinite(state.age) ? Math.max(0, state.age) : null
       };
     },
     rankReceivers,
