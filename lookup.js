@@ -1,23 +1,6 @@
 (() => {
   const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
   const KIWISDR_DIRECTORY = 'https://kiwisdr.com/.public/';
-  const RECEIVERS = [
-    {
-      name: 'Florida KiwiSDR',
-      location: 'Palm Harbor, Florida',
-      baseUrl: 'http://22315.proxy.kiwisdr.com'
-    },
-    {
-      name: 'North Carolina KiwiSDR',
-      location: 'Apex, North Carolina',
-      baseUrl: 'http://22904.proxy.kiwisdr.com'
-    },
-    {
-      name: 'Pennsylvania KiwiSDR',
-      location: 'Ridley Park, Pennsylvania',
-      baseUrl: 'http://22479.proxy.kiwisdr.com'
-    }
-  ];
 
   const lookupView = document.getElementById('lookupView');
   const lookupButton = document.getElementById('lookupButton');
@@ -47,8 +30,6 @@
   let lastFrequency = null;
   let discoveryBestOnly = bestBetsButton?.classList.contains('active') || false;
 
-  const isAndroid = /Android/i.test(navigator.userAgent || '');
-
   function escapeHtml(value) {
     return String(value ?? '')
       .replaceAll('&', '&amp;')
@@ -63,7 +44,7 @@
     lookupView.hidden = false;
     document.querySelectorAll('.bottom-nav .nav-button').forEach((button) => button.classList.remove('active'));
     lookupButton.classList.add('active');
-    window.setTimeout(() => frequencyInput.focus({ preventScroll: true }), 0);
+    window.setTimeout(() => frequencyInput.focus({ preventScroll:true }), 0);
     updateTimeLabel();
     if (lastFrequency != null) runLookup();
   }
@@ -82,9 +63,7 @@
   function hhmmToMinutes(value) {
     const clean = String(value || '').padStart(4, '0');
     if (clean === '2400') return 1440;
-    const hours = Number(clean.slice(0, 2));
-    const minutes = Number(clean.slice(2, 4));
-    return hours * 60 + minutes;
+    return Number(clean.slice(0, 2)) * 60 + Number(clean.slice(2, 4));
   }
 
   function isOnAir(station, date) {
@@ -111,13 +90,14 @@
 
   function formatLookupFrequency(khz) {
     const decimals = Number.isInteger(khz) ? 0 : 1;
-    return `${khz.toLocaleString(undefined, { maximumFractionDigits: decimals })} kHz`;
+    return `${khz.toLocaleString(undefined, { maximumFractionDigits:decimals })} kHz`;
   }
 
   function scheduleText(station) {
     if (station.band !== 'SW') return 'Local/medium-wave service';
-    const start = `${String(station.start).padStart(4, '0').slice(0, 2)}:${String(station.start).padStart(4, '0').slice(2)}`;
+    const startRaw = String(station.start).padStart(4, '0');
     const endRaw = String(station.end).padStart(4, '0');
+    const start = `${startRaw.slice(0, 2)}:${startRaw.slice(2)}`;
     const end = endRaw === '2400' ? '24:00' : `${endRaw.slice(0, 2)}:${endRaw.slice(2)}`;
     return `${start}–${end} UTC`;
   }
@@ -127,8 +107,7 @@
       const payload = JSON.parse(window.localStorage?.getItem(LOCATION_STORAGE_KEY) || 'null');
       const lat = Number(payload?.lat);
       const lon = Number(payload?.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return { lat, lon };
+      return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
     } catch {
       return null;
     }
@@ -156,44 +135,16 @@
     return score;
   }
 
-  function currentReceiver() {
-    return RECEIVERS[Number(receiverSelect?.value || 0)] || RECEIVERS[0];
-  }
-
-  function rawReceiverUrl(frequencyKHz, mode = 'am', receiver = currentReceiver()) {
-    const normalizedMode = String(mode || 'am').toLowerCase();
-    return `${receiver.baseUrl}/?f=${frequencyKHz.toFixed(1)}${normalizedMode}z8`;
-  }
-
-  function androidIntentUrl(rawUrl) {
-    const withoutScheme = rawUrl.replace(/^http:\/\//i, '');
-    const fallback = encodeURIComponent(KIWISDR_DIRECTORY);
-    return `intent://${withoutScheme}#Intent;scheme=http;package=com.android.chrome;S.browser_fallback_url=${fallback};end`;
-  }
-
-  function liveReceiverUrl(frequencyKHz, mode = 'am', receiver = currentReceiver()) {
-    const rawUrl = rawReceiverUrl(frequencyKHz, mode, receiver);
-    return isAndroid ? androidIntentUrl(rawUrl) : rawUrl;
-  }
-
-  function liveAnchorAttributes(url) {
-    return isAndroid
-      ? `href="${escapeHtml(url)}"`
-      : `href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"`;
-  }
-
   function renderCandidate(candidate, index, requestedFrequency, mode) {
     const { station, delta } = candidate;
     const exact = delta < 0.01;
     const stationFrequency = Number(station.frequency);
-    const liveUrl = liveReceiverUrl(stationFrequency, mode);
     const target = station.target ? `<span class="lookup-tag">Target ${escapeHtml(station.target)}</span>` : '';
     const approximate = station.locationApproximate ? '≈' : '';
     const user = loadStoredLocation();
     const distance = user && Number.isFinite(station.lat) && Number.isFinite(station.lon) && (station.lat !== 0 || station.lon !== 0)
       ? `${approximate}${Math.round(milesBetween(user.lat, user.lon, station.lat, station.lon)).toLocaleString()} mi from you`
       : '';
-    const receiver = currentReceiver();
 
     return `
       <article class="lookup-result ${index === 0 ? 'lookup-result-primary' : ''}">
@@ -213,11 +164,11 @@
           ${target}
         </div>
         <div class="lookup-actions">
-          <a class="listen-live-button" ${liveAnchorAttributes(liveUrl)}>
+          <button type="button" class="listen-live-button" data-sdr-frequency="${stationFrequency}" data-sdr-mode="${escapeHtml(mode)}">
             <span class="live-dot" aria-hidden="true"></span>
             Listen live
-          </a>
-          <span class="lookup-live-note">Live RF · ${escapeHtml(receiver.location)} · tuned to ${escapeHtml(formatLookupFrequency(stationFrequency))}${isAndroid ? ' · opens in Chrome' : ''}</span>
+          </button>
+          <span class="lookup-live-note">Live RF · FreqBeacon chooses a ranked public receiver locally · tuned to ${escapeHtml(formatLookupFrequency(stationFrequency))}</span>
           <a class="lookup-directory-link" href="${KIWISDR_DIRECTORY}" target="_blank" rel="noopener noreferrer">Receiver directory</a>
         </div>
       </article>`;
@@ -227,10 +178,7 @@
     if (!lookupTimeLabel) return;
     const date = targetDate();
     const local = new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZoneName: 'short'
+      hour:'numeric', minute:'2-digit', hour12:true, timeZoneName:'short'
     }).format(date);
     const utc = `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
     lookupTimeLabel.textContent = `${local} · ${utc}`;
@@ -239,10 +187,9 @@
   function runLookup() {
     const requestedFrequency = parseFrequency(frequencyInput.value);
     updateTimeLabel();
-
     if (requestedFrequency == null || requestedFrequency < 100 || requestedFrequency > 30000) {
       lookupSummary.textContent = 'Enter a frequency between 100 and 30,000 kHz. You can also type MHz, such as 9.955.';
-      lookupResults.innerHTML = '<div class="lookup-empty">Give me the number on your radio dial and Signal Scout will work backward from there.</div>';
+      lookupResults.innerHTML = '<div class="lookup-empty">Give me the number on your radio dial and FreqBeacon will work backward from there.</div>';
       return;
     }
 
@@ -252,42 +199,24 @@
     const user = loadStoredLocation();
     const candidates = stations
       .filter((station) => isOnAir(station, date))
-      .map((station) => ({
-        station,
-        delta: Math.abs(Number(station.frequency) - requestedFrequency)
-      }))
+      .map((station) => ({ station, delta:Math.abs(Number(station.frequency) - requestedFrequency) }))
       .filter(({ delta }) => Number.isFinite(delta) && delta <= 5.1)
-      .map((candidate) => ({
-        ...candidate,
-        rank: candidateRank(candidate.station, candidate.delta, user)
-      }))
+      .map((candidate) => ({ ...candidate, rank:candidateRank(candidate.station, candidate.delta, user) }))
       .sort((a, b) => a.delta - b.delta || b.rank - a.rank)
       .slice(0, 12);
 
     const exactCount = candidates.filter(({ delta }) => delta < 0.01).length;
-    if (candidates.length === 0) {
+    if (!candidates.length) {
       lookupSummary.textContent = `No scheduled broadcasts found within ±5 kHz of ${formatLookupFrequency(requestedFrequency)} at this time.`;
-      lookupResults.innerHTML = `
-        <div class="lookup-empty">
-          <strong>Nothing scheduled here right now.</strong>
-          Your radio may be slightly off-frequency, the station may be unscheduled, or this may be utility/amateur traffic that is not in the broadcast schedule yet.
-        </div>`;
+      lookupResults.innerHTML = '<div class="lookup-empty"><strong>Nothing scheduled here right now.</strong> Your radio may be slightly off-frequency, the station may be unscheduled, or this may be utility/amateur traffic that is not in the broadcast schedule yet.</div>';
       return;
     }
 
     lookupSummary.textContent = exactCount
       ? `${exactCount} exact scheduled match${exactCount === 1 ? '' : 'es'} on ${formatLookupFrequency(requestedFrequency)} right now.`
       : `No exact match on ${formatLookupFrequency(requestedFrequency)}. Showing the closest scheduled broadcasts within ±5 kHz.`;
-
     const mode = modeSelect?.value || 'am';
     lookupResults.innerHTML = candidates.map((candidate, index) => renderCandidate(candidate, index, requestedFrequency, mode)).join('');
-  }
-
-  function populateReceivers() {
-    if (!receiverSelect) return;
-    receiverSelect.innerHTML = RECEIVERS.map((receiver, index) =>
-      `<option value="${index}">${escapeHtml(receiver.name)} · ${escapeHtml(receiver.location)}</option>`
-    ).join('');
   }
 
   function frequencyFromCard(card) {
@@ -308,28 +237,22 @@
     lastFrequency = frequencyKHz;
     showLookup();
     runLookup();
-    lookupView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    lookupView.scrollIntoView({ behavior:'smooth', block:'start' });
   }
 
   function decorateFrontPageCard(card) {
     if (!card.classList.contains('signal-card') || card.querySelector('[data-card-live-row]')) return;
     const frequencyKHz = frequencyFromCard(card);
     if (!Number.isFinite(frequencyKHz) || frequencyKHz < 100 || frequencyKHz > 30000) return;
-
     const stationName = card.querySelector('.station-name')?.textContent?.trim() || 'this signal';
-    const receiver = RECEIVERS[0];
-    const liveUrl = liveReceiverUrl(frequencyKHz, 'am', receiver);
     const row = document.createElement('div');
     row.className = 'card-live-row';
     row.dataset.cardLiveRow = 'true';
 
-    const live = document.createElement('a');
+    const live = document.createElement('button');
+    live.type = 'button';
     live.className = 'listen-live-button card-listen-live';
-    live.href = liveUrl;
-    if (!isAndroid) {
-      live.target = '_blank';
-      live.rel = 'noopener noreferrer';
-    }
+    live.dataset.sdrFrequency = String(frequencyKHz);
     live.setAttribute('aria-label', `Listen live to ${stationName} near ${formatLookupFrequency(frequencyKHz)}`);
     live.innerHTML = '<span class="live-dot" aria-hidden="true"></span><span>Listen live</span>';
 
@@ -337,10 +260,11 @@
     options.type = 'button';
     options.className = 'card-receiver-options';
     options.textContent = 'Receiver options';
-    options.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openLookupForFrequency(frequencyKHz);
+    // sdr-player.js owns this action in the capture phase so the chooser can
+    // open directly without navigation or any ReceiverBook wait. This fallback
+    // keeps the card useful if the player bundle ever fails to initialize.
+    options.addEventListener('click', () => {
+      if (!window.__freqbeaconSdrPlayer) openLookupForFrequency(frequencyKHz);
     });
 
     row.append(live, options);
@@ -354,50 +278,18 @@
   }
 
   function stabilizeBackgroundLocationRefresh() {
-    if (!locationButton) return;
-    if (locationButton.textContent.trim() !== 'Refreshing…') return;
-    if (!loadStoredLocation()) return;
+    if (!locationButton || locationButton.textContent.trim() !== 'Refreshing…' || !loadStoredLocation()) return;
     locationButton.textContent = '✓ Located';
   }
 
   const style = document.createElement('style');
   style.id = 'signal-scout-live-actions-styles';
   style.textContent = `
-    .card-live-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 11px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(37,212,230,.1);
-    }
-    .card-listen-live {
-      min-height: 36px;
-      padding: 8px 11px;
-      flex: 0 0 auto;
-    }
-    .card-receiver-options {
-      min-height: 36px;
-      border: 1px solid #1d3940;
-      border-radius: 5px;
-      padding: 8px 10px;
-      color: #8fa4aa;
-      background: rgba(5,13,16,.78);
-      font-family: var(--mono);
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .05em;
-      text-transform: uppercase;
-    }
-    .card-receiver-options:hover {
-      border-color: #2b5962;
-      color: var(--accent-soft);
-    }
-    @media (max-width: 430px) {
-      .card-live-row { align-items: stretch; }
-      .card-listen-live,
-      .card-receiver-options { flex: 1 1 0; justify-content: center; }
-    }
+    .card-live-row{display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid rgba(37,212,230,.1)}
+    .card-listen-live{min-height:36px;padding:8px 11px;flex:0 0 auto}
+    .card-receiver-options{min-height:36px;border:1px solid #1d3940;border-radius:5px;padding:8px 10px;color:#8fa4aa;background:rgba(5,13,16,.78);font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+    .card-receiver-options:hover{border-color:#2b5962;color:var(--accent-soft)}
+    @media(max-width:430px){.card-live-row{align-items:stretch}.card-listen-live,.card-receiver-options{flex:1 1 0;justify-content:center}}
   `;
   document.head.appendChild(style);
 
@@ -411,15 +303,9 @@
     showDiscover(bestBetsButton);
   });
   lookupSubmit.addEventListener('click', runLookup);
-  frequencyInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') runLookup();
-  });
-  modeSelect?.addEventListener('change', () => {
-    if (lastFrequency != null) runLookup();
-  });
-  receiverSelect?.addEventListener('change', () => {
-    if (lastFrequency != null) runLookup();
-  });
+  frequencyInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') runLookup(); });
+  modeSelect?.addEventListener('change', () => { if (lastFrequency != null) runLookup(); });
+  receiverSelect?.addEventListener('change', () => { if (lastFrequency != null) runLookup(); });
 
   document.querySelectorAll('[data-lookup-offset]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -431,21 +317,11 @@
     });
   });
 
-  populateReceivers();
   updateTimeLabel();
   decorateFrontPageCards();
   stabilizeBackgroundLocationRefresh();
-
-  if (signalGrid) {
-    new MutationObserver(() => window.requestAnimationFrame(decorateFrontPageCards))
-      .observe(signalGrid, { childList: true, subtree: true });
-  }
-
-  if (locationButton) {
-    new MutationObserver(stabilizeBackgroundLocationRefresh)
-      .observe(locationButton, { childList: true, subtree: true, characterData: true });
-  }
-
+  if (signalGrid) new MutationObserver(() => window.requestAnimationFrame(decorateFrontPageCards)).observe(signalGrid, { childList:true, subtree:true });
+  if (locationButton) new MutationObserver(stabilizeBackgroundLocationRefresh).observe(locationButton, { childList:true, subtree:true, characterData:true });
   if (window.SIGNAL_SCOUT_DATA_READY?.then) {
     window.SIGNAL_SCOUT_DATA_READY.then(() => {
       decorateFrontPageCards();
