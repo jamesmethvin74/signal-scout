@@ -1,5 +1,6 @@
 import baseWorker from './worker-base.js';
 import { SDR_DIRECTORY_SEED, SDR_DIRECTORY_SEED_VERSION, rankSeedReceivers } from './sdr-directory-seed.js';
+import { handleSdrDiagnostic } from './sdr-diagnostics-worker.js';
 
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
@@ -191,18 +192,8 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
-  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
-  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
-  // source IPs. This matters behind Cloudflare because two outbound WebSockets
-  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-
-  // Current Kiwi 1.9xx distinguishes normal Kiwi UI WebSockets from the
-  // kiwirecorder/external-API URL form. External API connections can be disabled
-  // independently (ext_api_nchans=0) even while the normal browser UI is fully
-  // available. FREQBEACON is an interactive listening UI, so use the native Kiwi
-  // UI connection class instead of masquerading as kiwirecorder.
   const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
@@ -225,6 +216,9 @@ async function proxySdrWebSocket(request) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/sdr/diagnostics') {
+      return handleSdrDiagnostic(request, { resolveReceiver, proxySafeTimestamp });
+    }
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/api/sdr/receivers') return resilientReceiverRecommendations(request, env, ctx);
     return baseWorker.fetch(request, env, ctx);

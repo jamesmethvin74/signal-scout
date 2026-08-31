@@ -6,116 +6,45 @@
   <meta name="theme-color" content="#07111f" />
   <title>FREQBEACON SDR Diagnostics</title>
   <style>
-    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#07111f;color:#edf7ff;font:14px/1.45 system-ui,-apple-system,sans-serif;padding:18px}.wrap{max-width:820px;margin:auto}.head{display:flex;gap:12px;align-items:center;margin-bottom:16px}.mark{width:52px;height:52px;border-radius:13px;background:url('/freqbeacon-icon-v3-192.webp') center/cover}.title{font-size:18px;font-weight:950;letter-spacing:.07em}.sub{color:#7ddcff;font-size:12px}.card{background:#0d2134;border:1px solid #214662;border-radius:16px;padding:14px;margin:12px 0}.section{font-size:13px;font-weight:900;color:#7ddcff;letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px}.row{display:grid;grid-template-columns:minmax(130px,.9fr) minmax(0,1.6fr);gap:12px;padding:8px 0;border-bottom:1px solid #17344b}.row:last-child{border-bottom:0}.k{color:#a9bed0}.v{font-weight:750;word-break:break-word}.ok{color:#69e78e}.bad{color:#ff7474}.warn{color:#ffd166}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.summary{font-size:18px;font-weight:950}.small{font-size:12px;color:#90a9bc}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}button{padding:13px;border:1px solid #2b678e;border-radius:12px;background:#123550;color:#fff;font-weight:850}pre{white-space:pre-wrap;word-break:break-word;margin:0;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c7d8e6}@media(max-width:560px){.row{grid-template-columns:1fr}.buttons{grid-template-columns:1fr}.v{text-align:left}}
+    :root{color-scheme:dark;--bg:#07111f;--panel:#0b1828;--line:#21415a;--cyan:#32d7ef;--text:#edf7fb;--muted:#91a8b7;--good:#61e786;--bad:#ffbd59}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#17344b 0,#07111f 42%,#040a11 100%);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}.wrap{width:min(860px,100%);margin:0 auto;padding:18px 12px 50px}.brand{font-size:13px;letter-spacing:.18em;color:var(--cyan);font-weight:900}.brand span{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;margin-top:3px}.hero{margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:16px;background:rgba(8,22,36,.9);box-shadow:0 18px 50px rgba(0,0,0,.3)}h1{margin:0;font-size:24px}p{color:var(--muted)}.controls{display:grid;grid-template-columns:1fr 130px 100px;gap:8px;margin-top:14px}.controls input,.controls select,.controls button,.buttons button{min-height:44px;border:1px solid var(--line);border-radius:9px;background:#07131f;color:var(--text);padding:9px 11px;font:inherit}.controls button,.buttons button{background:rgba(50,215,239,.1);border-color:rgba(50,215,239,.55);color:#bff7ff;font-weight:800}.controls button:disabled{opacity:.5}.verdict{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#06101a;font-weight:800}.verdict.running{color:var(--cyan)}.verdict.good{border-color:rgba(97,231,134,.5);color:var(--good)}.verdict.bad{border-color:rgba(255,189,89,.5);color:var(--bad)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.card{border:1px solid var(--line);border-radius:13px;background:rgba(8,22,36,.88);padding:13px}.card h2{font-size:14px;margin:0 0 9px}.stage{padding:8px 9px;border-radius:8px;background:#07131f;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-word}.stage.good{color:var(--good)}.stage.bad{color:var(--bad)}.buttons{display:flex;gap:8px;margin:10px 0}.raw{margin-top:10px}.raw summary{cursor:pointer;color:var(--cyan);font-weight:800}.raw pre{overflow:auto;max-height:55vh;padding:12px;border:1px solid var(--line);border-radius:10px;background:#03090e;color:#b9d3df;font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}@media(max-width:650px){.controls{grid-template-columns:1fr 110px}.controls button{grid-column:1/-1}.grid{grid-template-columns:1fr}h1{font-size:21px}}
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="head"><div class="mark"></div><div><div class="title">FREQBEACON SDR DIAGNOSTICS</div><div class="sub">Production runtime · receiver directory · Android/PWA cache truth</div></div></div>
-  <div class="card"><div id="summary" class="summary">Running checks…</div><div class="small">This page is isolated from the receiver chooser and will not open SDR audio or WebSockets.</div></div>
-  <div id="environment" class="card"><div class="section">Device / PWA</div></div>
-  <div id="runtime" class="card"><div class="section">Production app runtime</div></div>
-  <div id="directory" class="card"><div class="section">Receiver directory</div></div>
-  <div id="reportCard" class="card"><div class="section">Copyable report</div><pre id="report">Building report…</pre></div>
-  <div class="buttons"><button id="run">Run again</button><button id="copy">Copy diagnostics</button></div>
-</div>
-<script>
-(() => {
-  const VERSION = 'sdr-diag-v2';
-  const EXPECTED = {
-    receiverUi: 'sdr-receiver-ui.js?v=5',
-    optionsFix: 'sdr-options-fix.js?v=4',
-    directoryHeader: 'fast-fallback-v1'
-  };
-  const report = [];
-  const $ = id => document.getElementById(id);
-  const clearSection = id => {
-    const el=$(id); [...el.querySelectorAll('.row')].forEach(n=>n.remove()); return el;
-  };
-  function add(section,key,value,state=''){
-    const el=$(section); const row=document.createElement('div'); row.className='row';
-    const k=document.createElement('div'); k.className='k'; k.textContent=key;
-    const v=document.createElement('div'); v.className='v '+state; v.textContent=String(value);
-    row.append(k,v); el.appendChild(row); report.push(`${key}: ${value}`);
-  }
-  function storedLocation(){
-    try{const p=JSON.parse(localStorage.getItem('signalScout:location:v1')||'null'); const lat=Number(p?.lat),lon=Number(p?.lon); return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null;}catch{return null;}
-  }
-  async function fetchText(url,timeout=6500){
-    const c=new AbortController(); const t=setTimeout(()=>c.abort(),timeout); const start=performance.now();
-    try{const r=await fetch(url,{cache:'no-store',headers:{'Cache-Control':'no-cache'},signal:c.signal}); const text=await r.text(); return {r,text,ms:Math.round(performance.now()-start)};}finally{clearTimeout(t);}
-  }
-  async function fetchJson(url,timeout=6500){
-    const c=new AbortController(); const t=setTimeout(()=>c.abort(),timeout); const start=performance.now();
-    try{const r=await fetch(url,{cache:'no-store',headers:{Accept:'application/json','Cache-Control':'no-cache'},signal:c.signal}); const text=await r.text(); let json=null; try{json=JSON.parse(text);}catch{} return {r,json,text,ms:Math.round(performance.now()-start)};}finally{clearTimeout(t);}
-  }
-  function scriptSrc(html,name){
-    const re=new RegExp(`<script[^>]+src=["']([^"']*${name}[^"']*)["']`,'i'); return html.match(re)?.[1]||'NOT FOUND';
-  }
-  async function run(){
-    report.length=0; ['environment','runtime','directory'].forEach(clearSection); $('summary').textContent='Running checks…'; $('summary').className='summary';
-    report.push(`FREQBEACON SDR diagnostics ${VERSION}`); report.push(`UTC: ${new Date().toISOString()}`);
-    add('environment','Diagnostic version',VERSION,'ok');
-    add('environment','Origin',location.origin,location.protocol==='https:'?'ok':'bad');
-    add('environment','User agent',navigator.userAgent,'mono');
-    add('environment','Display mode',matchMedia('(display-mode: standalone)').matches?'standalone/PWA':'browser','');
-    add('environment','Online',navigator.onLine?'YES':'NO',navigator.onLine?'ok':'bad');
-    const loc=storedLocation(); add('environment','Stored app location',loc?'FOUND (used for API test)':'NOT FOUND',loc?'ok':'warn');
-    if('serviceWorker' in navigator){
-      try{const reg=await navigator.serviceWorker.getRegistration('/'); add('environment','Service worker registration',reg?'FOUND':'NONE',reg?'warn':'ok'); add('environment','Page controlled by SW',navigator.serviceWorker.controller?.scriptURL||'NO',navigator.serviceWorker.controller?'warn':'ok');}catch(e){add('environment','Service worker check',e.name+': '+e.message,'warn');}
-    }
+  <main class="wrap">
+    <div class="brand">FREQBEACON <span>SDR DEEP DIAGNOSTICS · TRANSPORT ISOLATION</span></div>
+    <section class="hero">
+      <h1>KiwiSDR connection diagnostic</h1>
+      <p>This page bypasses the normal FREQBEACON SDR player, RF wrapper, health wrapper, and tuning wrapper. It independently tests Cloudflare → Kiwi and browser → FREQBEACON → Kiwi.</p>
+      <div class="controls">
+        <input id="receiver" value="km4rt.ddns.net:8073" aria-label="Receiver ID" />
+        <input id="frequency" value="5990" inputmode="decimal" aria-label="Frequency kHz" />
+        <select id="mode" aria-label="Mode"><option value="am">AM</option><option value="sam">SAM</option><option value="usb">USB</option><option value="lsb">LSB</option></select>
+        <button id="run">Run diagnostic</button>
+      </div>
+      <div id="verdict" class="verdict running">Waiting to run…</div>
+    </section>
 
-    let runtimeBad=false;
-    try{
-      const root=await fetchText('/?sdrdiag='+Date.now());
-      add('runtime','App HTML HTTP',`${root.r.status} in ${root.ms} ms`,root.r.ok?'ok':'bad');
-      add('runtime','x-freqbeacon-brand',root.r.headers.get('x-freqbeacon-brand')||'MISSING',(root.r.headers.get('x-freqbeacon-brand')?'ok':'warn'));
-      add('runtime','x-signal-scout-sdr-runtime',root.r.headers.get('x-signal-scout-sdr-runtime')||'MISSING',(root.r.headers.get('x-signal-scout-sdr-runtime')?'ok':'warn'));
-      add('runtime','x-freqbeacon-receiver-ui',root.r.headers.get('x-freqbeacon-receiver-ui')||'MISSING',(root.r.headers.get('x-freqbeacon-receiver-ui')?'ok':'warn'));
-      const uiSrc=scriptSrc(root.text,'sdr-receiver-ui.js'); add('runtime','HTML receiver UI script',uiSrc,uiSrc.includes('v=5')?'ok':'bad'); if(!uiSrc.includes('v=5')) runtimeBad=true;
-      const playerSrc=scriptSrc(root.text,'sdr-player.js'); add('runtime','HTML SDR player script',playerSrc,playerSrc!=='NOT FOUND'?'ok':'bad');
-    }catch(e){add('runtime','App HTML fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
+    <section class="grid">
+      <article class="card">
+        <h2>1 · Cloudflare Worker → Kiwi</h2>
+        <div id="workerStage" class="stage">Not run.</div>
+      </article>
+      <article class="card">
+        <h2>2 · Clean browser → FREQBEACON → Kiwi</h2>
+        <div id="browserStage" class="stage">Not run.</div>
+      </article>
+    </section>
 
-    try{
-      const ui=await fetchText('/sdr-receiver-ui.js?diag='+Date.now());
-      add('runtime','Receiver UI HTTP',`${ui.r.status} in ${ui.ms} ms`,ui.r.ok?'ok':'bad');
-      const pointsV4=ui.text.includes(EXPECTED.optionsFix); add('runtime','Receiver UI points to options v4',pointsV4?'YES':'NO',pointsV4?'ok':'bad'); if(!pointsV4) runtimeBad=true;
-    }catch(e){add('runtime','Receiver UI fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
+    <div class="buttons">
+      <button id="copy">Copy report</button>
+    </div>
 
-    try{
-      const fix=await fetchText('/sdr-options-fix.js?diag='+Date.now());
-      add('runtime','Options fix HTTP',`${fix.r.status} in ${fix.ms} ms`,fix.r.ok?'ok':'bad');
-      const hasObserver=/new\s+MutationObserver\s*\(/.test(fix.text); add('runtime','Chooser MutationObserver present',hasObserver?'YES — stale/unsafe':'NO',hasObserver?'bad':'ok'); if(hasObserver) runtimeBad=true;
-      const bounded=fix.text.includes('requestAnimationFrame')&&fix.text.includes('polishChooser'); add('runtime','Bounded chooser polish present',bounded?'YES':'NO',bounded?'ok':'warn');
-      const hiddenLookupSubmit=fix.text.includes('submit.click()')||fix.text.includes('lookupSubmit')&&fix.text.includes('.click()'); add('runtime','Hidden Lookup submit on Receiver options',hiddenLookupSubmit?'YES — stale path':'NO',hiddenLookupSubmit?'bad':'ok'); if(hiddenLookupSubmit) runtimeBad=true;
-      const directContext=fix.text.includes('prepareReceiverContext')&&fix.text.includes('Open the existing smart chooser directly'); add('runtime','Direct Receiver options path present',directContext?'YES':'NO',directContext?'ok':'bad'); if(!directContext) runtimeBad=true;
-    }catch(e){add('runtime','Options fix fetch',e.name+': '+e.message,'bad'); runtimeBad=true;}
-
-    let directoryBad=false;
-    const params=new URLSearchParams({frequency:'9955.0'}); if(loc){params.set('lat',loc.lat.toFixed(5));params.set('lon',loc.lon.toFixed(5));}
-    for(let i=1;i<=2;i++){
-      try{
-        const d=await fetchJson('/api/sdr/receivers?'+params+'&diag='+Date.now());
-        const count=Array.isArray(d.json?.receivers)?d.json.receivers.length:0;
-        const source=d.json?.source||'MISSING'; const marker=d.r.headers.get('x-freqbeacon-sdr-directory')||'MISSING';
-        add('directory',`API run ${i}`,`${d.r.status} · ${d.ms} ms · ${count} receivers`,d.r.ok&&count>3?'ok':'bad');
-        add('directory',`API run ${i} source`,source,count>3?'ok':'bad');
-        add('directory',`API run ${i} fast-fallback header`,marker,marker===EXPECTED.directoryHeader?'ok':'warn');
-        if(d.json?.warning) add('directory',`API run ${i} warning`,d.json.warning,'warn');
-        const names=(d.json?.receivers||[]).slice(0,7).map(x=>x.name||x.location||x.id).join(' | '); if(names)add('directory',`API run ${i} first choices`,names,'mono');
-        if(!d.r.ok||count<=3) directoryBad=true;
-      }catch(e){add('directory',`API run ${i}`,e.name+': '+e.message,'bad'); directoryBad=true;}
-    }
-
-    if(runtimeBad){$('summary').textContent='FAIL: production runtime is not serving the expected receiver-option fix'; $('summary').className='summary bad';}
-    else if(directoryBad){$('summary').textContent='FAIL: receiver directory request is still failing on this device'; $('summary').className='summary bad';}
-    else{$('summary').textContent='PASS: direct Receiver options runtime is loaded and receiver API returns >3 choices'; $('summary').className='summary ok';}
-    $('report').textContent=report.join('\n');
-  }
-  $('run').addEventListener('click',run);
-  $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('report').textContent);$('copy').textContent='Copied';setTimeout(()=>$('copy').textContent='Copy diagnostics',1200);}catch{$('copy').textContent='Copy failed';}});
-  run();
-})();
-</script>
+    <details class="raw" open>
+      <summary>Full diagnostic report</summary>
+      <pre id="raw">No report yet.</pre>
+    </details>
+  </main>
+  <script src="sdr-diagnostics.js?v=1"></script>
 </body>
 </html>
