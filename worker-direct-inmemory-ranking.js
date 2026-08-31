@@ -1,6 +1,6 @@
 import baseWorker from './worker-receiver-json-fast.js';
 
-const DIRECT_MARKER = 'receiver-direct-inmemory-v1';
+const DIRECT_MARKER = 'receiver-direct-inmemory-v2-endpoint-health';
 
 function patchRuntime(response) {
   const contentType = String(response.headers.get('content-type') || '');
@@ -9,7 +9,7 @@ function patchRuntime(response) {
   return response.text().then((source) => {
     const oldExport = "  window.__freqbeaconReceiverRuntime={version:VERSION,get livePoolCount(){return livePool.receivers.length;},get livePoolUpdatedAt(){return livePool.updatedAt;}};";
     const newExport = `  window.__freqbeaconReceiverRuntime={
-    version:'receiver-runtime-v4-direct-inmemory',
+    version:'receiver-runtime-v5-direct-inmemory-health',
     get livePoolCount(){return livePool.receivers.length;},
     get livePoolUpdatedAt(){return livePool.updatedAt;},
     recommend(input){
@@ -19,8 +19,62 @@ function patchRuntime(response) {
       } catch {
         return { receivers:[], source:'receiver-runtime-direct-error', generatedAt:new Date().toISOString() };
       }
+
       const context = contextFromUrl(url);
-      const receivers = Number.isFinite(context.frequency) ? rankReceivers(context) : [];
+      let receivers = Number.isFinite(context.frequency) ? rankReceivers(context) : [];
+
+      // ReceiverBook can expose more than one endpoint for the same physical
+      // KiwiSDR. Keep only the strongest endpoint for a callsign so FREQBEACON
+      // does not waste connection attempts on duplicate aliases. Prefer an
+      // endpoint that succeeded recently, then a stable hostname over a raw IP.
+      if (receivers.length > 1) {
+        const health = loadHealth();
+        const now = Date.now();
+        const recentCutoff = now - 45 * 60 * 1000;
+        const callsignFor = (receiver) => {
+          const text = String((receiver?.name || '') + ' ' + (receiver?.location || '')).toUpperCase();
+          return text.match(/\\b[A-Z]{1,2}\\d[A-Z]{1,4}\\b/)?.[0] || '';
+        };
+        const hostFor = (receiver) => String(receiver?.id || '').split(':')[0].toLowerCase();
+        const rawIp = (host) => /^(?:\\d{1,3}\\.){3}\\d{1,3}$/.test(host);
+        const endpointScore = (receiver, originalIndex) => {
+          const entry = health[receiver?.id] || {};
+          const cooling = Number(entry.cooldownUntil || 0) > now;
+          const recentSuccess = Number(entry.lastSuccess || 0) > recentCutoff;
+          return (cooling ? -10000 : 0)
+            + (recentSuccess ? 5000 : 0)
+            + (rawIp(hostFor(receiver)) ? 0 : 500)
+            + (receiver?.liveEvidence ? 25 : 0)
+            - originalIndex;
+        };
+
+        const deduped = [];
+        const aliasSlots = new Map();
+        receivers.forEach((receiver, index) => {
+          const callsign = callsignFor(receiver);
+          if (!callsign) {
+            deduped.push(receiver);
+            return;
+          }
+          if (!aliasSlots.has(callsign)) {
+            aliasSlots.set(callsign, deduped.length);
+            deduped.push(receiver);
+            return;
+          }
+          const slot = aliasSlots.get(callsign);
+          const existing = deduped[slot];
+          if (endpointScore(receiver, index) > endpointScore(existing, slot)) {
+            deduped[slot] = {
+              ...receiver,
+              role: existing.role,
+              reason: existing.reason,
+              recommended: existing.recommended
+            };
+          }
+        });
+        receivers = deduped.map((receiver, index) => ({ ...receiver, recommended:index === 0 }));
+      }
+
       return {
         receivers,
         source:livePool.receivers.length>=4?'receiver-runtime-live-cache':'receiver-runtime-seed',
@@ -76,7 +130,7 @@ function patchRoot(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
-    html = html.replace(/sdr-receiver-runtime-v3\.js\?v=\d+/g, 'sdr-receiver-runtime-v3.js?v=3');
+    html = html.replace(/sdr-receiver-runtime-v3\.js\?v=\d+/g, 'sdr-receiver-runtime-v3.js?v=4');
     html = html.replace(/sdr-player\.js\?v=\d+(?:&sdrdiag=\d+)?/g, 'sdr-player.js?v=6');
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
