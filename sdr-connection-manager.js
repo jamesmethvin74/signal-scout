@@ -214,15 +214,7 @@
           this.failAttempt('closed', event?.reason || `WebSocket closed (${event?.code || 0})`, generation);
           return;
         }
-        this.closeSocket('FreqBeacon remote close');
-        this.gotUsefulData = false;
-        this.onDisconnected({
-          reason:'remote-close',
-          manual:false,
-          receiver,
-          code:event?.code || 0,
-          detail:event?.reason || ''
-        });
+        this.recoverLiveClose(event, receiver, generation);
       };
 
       this.connectTimer = window.setTimeout(() => {
@@ -256,6 +248,34 @@
       const failed = receiver;
       const nextReceiver = this.candidates[next];
       this.onFailover({ failed, next:nextReceiver, reason, detail, attempt:this.attemptCount + 1, generation });
+      this.failoverTimer = window.setTimeout(() => {
+        if (generation !== this.generation || this.manualStop) return;
+        this.tryIndex(next, generation);
+      }, FAILOVER_DELAY_MS);
+    }
+
+    recoverLiveClose(event, receiver, generation = this.generation) {
+      if (generation !== this.generation || this.manualStop) return;
+      const detail = event?.reason || `WebSocket closed (${event?.code || 0})`;
+      window.__freqbeaconReceiverHealth?.markFailure?.(receiver?.id, 'remote-close', detail);
+      this.closeSocket('FreqBeacon remote close');
+      this.gotUsefulData = false;
+      this.failedAttempt = false;
+
+      if (this.manual) {
+        this.onDisconnected({ reason:'remote-close', manual:true, receiver, code:event?.code || 0, detail:event?.reason || '' });
+        return;
+      }
+
+      const next = this.nextCandidateIndex();
+      if (next == null || this.attemptCount >= MAX_AUTO_ATTEMPTS) {
+        this.onDisconnected({ reason:'remote-close', manual:false, receiver, code:event?.code || 0, detail:event?.reason || '' });
+        this.finishUnavailable(next == null ? 'exhausted-after-live' : 'failover-cap-after-live', generation, detail);
+        return;
+      }
+
+      const nextReceiver = this.candidates[next];
+      this.onFailover({ failed:receiver, next:nextReceiver, reason:'remote-close', detail, attempt:this.attemptCount + 1, generation });
       this.failoverTimer = window.setTimeout(() => {
         if (generation !== this.generation || this.manualStop) return;
         this.tryIndex(next, generation);
