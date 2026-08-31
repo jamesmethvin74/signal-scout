@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-health-final.js",
+  "main": "worker-receiver-json-fast.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
@@ -27,6 +27,7 @@
       "/sdr-rf-v2.js",
       "/sdr-health.js",
       "/sdr-player.js",
+      "/sdr-receiver-runtime-v3.js",
       "/lookup.js"
     ]
   }
