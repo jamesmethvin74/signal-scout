@@ -1,8 +1,8 @@
 (() => {
-  // FREQBEACON RF waterfall v2
+  // Signal Scout RF waterfall v2
   // Owns one Kiwi W/F stream paired to the player's SND session. This module
-  // deliberately captures the browser WebSocket before later tuning/runtime
-  // layers so RF sockets cannot be confused with player SND sockets.
+  // deliberately captures the browser WebSocket before the SDR health wrapper
+  // is installed so RF sockets can never be mistaken for failed audio sockets.
   const NativeWebSocket = window.WebSocket;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -53,8 +53,6 @@
     lastError: '',
     displayMinDb: -130,
     displayMaxDb: -55,
-    spectrumHistory: [],
-    spectrumHistoryMeta: '',
     keepaliveTimer: null,
     setupTimer: null,
     retryTimer: null,
@@ -64,10 +62,7 @@
   function parseSocketMeta(rawUrl) {
     try {
       const url = new URL(String(rawUrl), window.location.href);
-      // WebSocket URLs are ws:/wss: while the page is http:/https:. Compare
-      // host + route, not URL origin schemes. This is the proven production
-      // fix that previously lived in a Worker source-rewrite layer.
-      if (url.host !== window.location.host || url.pathname !== '/api/sdr/ws') return null;
+      if (url.origin !== window.location.origin || url.pathname !== '/api/sdr/ws') return null;
       return {
         receiverId: url.searchParams.get('receiver') || '',
         stream: url.searchParams.get('stream') || 'SND',
@@ -213,36 +208,6 @@
     state.displayMaxDb = state.displayMaxDb * 0.82 + targetMax * 0.18;
   }
 
-  function persistentSpectrumDb(dbValues) {
-    const meta = dbValues.length + '|' + state.zoom + '|' + (Number.isFinite(state.centerKHz) ? state.centerKHz.toFixed(3) : '');
-    if (state.spectrumHistoryMeta !== meta) {
-      state.spectrumHistoryMeta = meta;
-      state.spectrumHistory = [];
-    }
-
-    state.spectrumHistory.push(Float32Array.from(dbValues));
-    if (state.spectrumHistory.length > 4) state.spectrumHistory.shift();
-
-    if (state.spectrumHistory.length < 2) {
-      const useful = dbValues
-        .filter((value) => Number.isFinite(value) && value > -200 && value < 5)
-        .sort((a, b) => a - b);
-      const anchorDb = percentile(useful, 0.18) ?? -120;
-      return dbValues.map((value) => Math.min(value, anchorDb + 2.4));
-    }
-
-    const filtered = new Array(dbValues.length);
-    const samples = new Array(state.spectrumHistory.length);
-    for (let i = 0; i < dbValues.length; i += 1) {
-      for (let frame = 0; frame < state.spectrumHistory.length; frame += 1) {
-        samples[frame] = state.spectrumHistory[frame][i];
-      }
-      samples.sort((a, b) => a - b);
-      filtered[i] = samples[Math.max(0, samples.length - 2)];
-    }
-    return filtered;
-  }
-
   function smoothSpectrumDb(dbValues) {
     const smoothed = new Array(dbValues.length);
     for (let i = 0; i < dbValues.length; i += 1) {
@@ -328,7 +293,7 @@
     const bins = rawBins.subarray(0, state.fftBins);
     const db = Array.from(bins, (sample) => clamp(sample - 255, -200, 0));
     updateDisplayRange(db);
-    const spectrumDb = persistentSpectrumDb(smoothSpectrumDb(db));
+    const spectrumDb = smoothSpectrumDb(db);
     const floorDb = localSpectrumFloor(spectrumDb);
     const spectrumProfile = spectrumDisplayProfile(spectrumDb, floorDb);
 
@@ -460,16 +425,25 @@
     const directCompactBytes = 4 + bins;
     const compressedBytes = Math.ceil((bins + 10) / 2);
 
+    // Current compact format: 3-byte W/F tag + sequence byte + direct bins.
     if (bytes.length === directCompactBytes) return bytes.subarray(4, 4 + bins);
-    if (bytes.length === 4 + compressedBytes) return decodeWaterfallAdpcm(bytes.subarray(4), bins);
+
+    // Some compatible servers can send compact ADPCM without the extended
+    // metadata header. Accept it defensively.
+    if (bytes.length === 4 + compressedBytes) {
+      return decodeWaterfallAdpcm(bytes.subarray(4), bins);
+    }
 
     if (bytes.length >= 16) {
       const flagsAndZoom = littleEndianU32(bytes, 8);
       const compressedFlag = (flagsAndZoom & 0x00010000) !== 0;
       const payload = bytes.subarray(16);
       if (payload.length === bins && !compressedFlag) return payload.subarray(0, bins);
-      if (compressedFlag || payload.length === compressedBytes) return decodeWaterfallAdpcm(payload, bins);
+      if (compressedFlag || payload.length === compressedBytes) {
+        return decodeWaterfallAdpcm(payload, bins);
+      }
     }
+
     return null;
   }
 
@@ -482,9 +456,9 @@
 
   function bandwidthToKHz(value) {
     if (!Number.isFinite(value) || value <= 0) return null;
-    if (value >= 1_000_000) return value / 1000;
-    if (value >= 1000) return value;
-    return value * 1000;
+    if (value >= 1_000_000) return value / 1000; // Hz -> kHz
+    if (value >= 1000) return value;             // kHz
+    return value * 1000;                         // MHz -> kHz
   }
 
   function send(message) {
@@ -620,14 +594,12 @@
     state.socket = null;
     if (socket) {
       socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
-      try { socket.close(1000, 'FREQBEACON RF close'); } catch {}
+      try { socket.close(1000, 'Signal Scout RF close'); } catch {}
     }
     state.hasFrame = false;
     state.configured = false;
     state.wfSetupSeen = false;
     state.requestedCompression = false;
-    state.spectrumHistory = [];
-    state.spectrumHistoryMeta = '';
     if (ensureCanvas()) drawStage(reason);
   }
 
@@ -670,8 +642,8 @@
       if (generation !== state.generation) return;
       setStage('socket-open', 'RF SOCKET CONNECTED', 'Authenticating waterfall session…');
       send('SET auth t=kiwi p=#');
-      send('SET ident_user=FreqBeacon');
-      send('SERVER DE CLIENT FreqBeacon W/F');
+      send('SET ident_user=SignalScout');
+      send('SERVER DE CLIENT SignalScout W/F');
       send('SET wf_comp=0');
       send('SET send_dB=1');
       state.keepaliveTimer = window.setInterval(() => send('SET keepalive'), 5000);
@@ -692,7 +664,7 @@
             ? 'Waterfall setup completed, but the receiver sent no W/F rows.'
             : `No W/F rows or wf_setup received (${state.msgCount} MSG frames).`);
         setStage('timeout', 'RF WATERFALL TIMEOUT', detail, true);
-        try { socket.close(4000, 'FREQBEACON RF timeout'); } catch {}
+        try { socket.close(4000, 'Signal Scout RF timeout'); } catch {}
       }, RF_START_TIMEOUT_MS);
     };
 
@@ -718,7 +690,7 @@
       : new NativeWebSocket(url, protocols);
     const meta = parseSocketMeta(url);
     if (meta?.stream === 'SND') {
-      socket.addEventListener('open', () => startWaterfall(meta, socket), { once:true });
+      socket.addEventListener('open', () => startWaterfall(meta, socket), { once: true });
       socket.addEventListener('close', () => {
         if (state.sndSocket === socket) {
           state.generation += 1;
@@ -732,10 +704,10 @@
 
   RfSessionWebSocket.prototype = NativeWebSocket.prototype;
   Object.defineProperties(RfSessionWebSocket, {
-    CONNECTING: { value:NativeWebSocket.CONNECTING },
-    OPEN: { value:NativeWebSocket.OPEN },
-    CLOSING: { value:NativeWebSocket.CLOSING },
-    CLOSED: { value:NativeWebSocket.CLOSED }
+    CONNECTING: { value: NativeWebSocket.CONNECTING },
+    OPEN: { value: NativeWebSocket.OPEN },
+    CLOSING: { value: NativeWebSocket.CLOSING },
+    CLOSED: { value: NativeWebSocket.CLOSED }
   });
 
   window.WebSocket = RfSessionWebSocket;
