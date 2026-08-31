@@ -1,10 +1,6 @@
 (() => {
-  if (window.FreqBeaconSdrConnectionManager?.version === 'fast-path-v5') return;
+  if (window.FreqBeaconSdrConnectionManager?.version === 'fast-path-v6-ranked-failover') return;
 
-  // Listen Live is an interaction, not a background health check. A complete
-  // automatic connection sequence must either produce useful SND data or stop
-  // inside this total budget. We never make the user wait through 9 seconds per
-  // receiver.
   const TOTAL_CONNECT_BUDGET_MS = 9500;
   const CONNECT_TIMEOUT_MS = 4000;
   const FIRST_SND_TIMEOUT_MS = 2500;
@@ -12,11 +8,6 @@
   const MAX_AUTO_ATTEMPTS = 3;
   const decoder = new TextDecoder();
 
-  // ReceiverBook currently publishes the KM4RT Tipton Kiwi under both this
-  // DDNS name and its public IPv4 endpoint. FREQBEACON's cleanup collapsed the
-  // pair and always preferred the DDNS form, even though the raw endpoint is the
-  // fast/reliable Cloudflare path. Keep the UI identity but connect through the
-  // current public endpoint. The server resolver contains the same fast route.
   const CONNECTION_ENDPOINT_ALIASES = Object.freeze({
     'km4rt.ddns.net:8073': '64.22.14.214:8073'
   });
@@ -88,7 +79,6 @@
       this.onFailover = onFailover;
       this.onUnavailable = onUnavailable;
       this.onDisconnected = onDisconnected;
-
       this.generation = 0;
       this.socket = null;
       this.socketHandlers = null;
@@ -362,10 +352,6 @@
     }
 
     nextCandidateIndex() {
-      if (!this.manual && this.attemptCount === 1) {
-        const seedIndex = this.candidates.findIndex((receiver) => receiver?.bundledSeed && this.candidateUntried(receiver));
-        if (seedIndex >= 0) return seedIndex;
-      }
       for (let offset = 1; offset <= this.candidates.length; offset += 1) {
         const index = (this.currentIndex + offset) % this.candidates.length;
         if (this.candidateUntried(this.candidates[index])) return index;
@@ -383,7 +369,7 @@
     }
   }
 
-  FreqBeaconSdrConnectionManager.version = 'fast-path-v5';
+  FreqBeaconSdrConnectionManager.version = 'fast-path-v6-ranked-failover';
   FreqBeaconSdrConnectionManager.constants = Object.freeze({
     TOTAL_CONNECT_BUDGET_MS,
     CONNECT_TIMEOUT_MS,

@@ -1,15 +1,17 @@
 import sdrWorker from './worker-v2.js';
+import { probeSdrTransport } from './sdr-transport-probe-worker.js';
 import programWorker from './worker-program-v15.js';
 
 // FREQBEACON production Worker.
-//
-// Static HTML/JS/CSS/assets are intentionally NOT rewritten here. Cloudflare
-// serves those files directly from the asset binding. The Worker owns only
-// server responsibilities: APIs, ReceiverBook-backed SDR discovery, the proven
-// KiwiSDR WebSocket proxy, and scheduled program-source refreshes.
+// Static HTML/JS/CSS/assets are served directly. The Worker owns only APIs,
+// SDR WebSocket transport, and scheduled program-source refreshes.
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/api/sdr/probe') {
+      return probeSdrTransport(request);
+    }
 
     if (url.pathname.startsWith('/api/sdr/')) {
       return sdrWorker.fetch(request, env, ctx);
