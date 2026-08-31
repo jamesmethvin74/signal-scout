@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const worker = read('worker-runtime.js');
+const probeWorker = read('sdr-transport-probe-worker.js');
 const wrangler = JSON.parse(read('wrangler.jsonc'));
 const index = read('index.html');
 const lookup = read('lookup.js');
@@ -20,6 +21,7 @@ test('Cloudflare Worker is API-only and does not rewrite static runtime source',
   assert.equal(wrangler.main, 'worker-runtime.js');
   assert.deepEqual(wrangler.assets.run_worker_first, ['/api/*']);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/sdr\/'\)/);
+  assert.match(worker, /url\.pathname === '\/api\/sdr\/probe'/);
   assert.match(worker, /env\.ASSETS\.fetch\(request\)/);
   assert.doesNotMatch(worker, /response\.text\(|replaceAll\(|patchSdr|inject.*html/i);
 });
@@ -30,8 +32,9 @@ test('production HTML loads one deterministic SDR runtime graph', () => {
     'sdr-tuning-v3.js?v=3',
     'sdr-health.js?v=4',
     'sdr-receiver-runtime-v3.js?v=6',
-    'sdr-connection-manager.js?v=5',
+    'sdr-connection-manager.js?v=6',
     'sdr-player.js?v=5',
+    'sdr-transport-diagnostics.js?v=1',
     'sdr-live-reliability-v2.js?v=3'
   ]) assert.match(index, new RegExp(asset.replace(/[.?]/g, '\\$&')));
 
@@ -41,6 +44,14 @@ test('production HTML loads one deterministic SDR runtime graph', () => {
     'sdr-receiver-local-catalog.js',
     'sdr-receiver-ui-v8.js'
   ]) assert.doesNotMatch(index, new RegExp(obsolete.replace('.', '\\.')));
+});
+
+test('transport probe is bounded and restricted to deployment-known receivers', () => {
+  assert.match(probeWorker, /const PROBE_TIMEOUT_MS = 3500/);
+  assert.match(probeWorker, /SDR_DIRECTORY_SEED/);
+  assert.match(probeWorker, /Upgrade:'websocket'/);
+  assert.match(probeWorker, /socket\.accept\(\)/);
+  assert.match(probeWorker, /Receiver is not in the deployment-bundled diagnostic allowlist/);
 });
 
 test('Receiver Options and Listen Live are in-app controls with no Android intent navigation', () => {
