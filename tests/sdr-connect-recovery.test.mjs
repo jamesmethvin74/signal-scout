@@ -69,17 +69,38 @@ function managerHarness() {
     constructor(url) {
       this.url = url;
       this.readyState = FakeSocket.CONNECTING;
-      this.onopen = this.onmessage = this.onerror = this.onclose = null;
+      this.binaryType = '';
+      this.listeners = new Map();
     }
-    close() { this.readyState = FakeSocket.CLOSED; }
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(handler);
+    }
+    removeEventListener(type, handler) {
+      this.listeners.get(type)?.delete(handler);
+    }
+    dispatch(type, event = {}) {
+      for (const handler of [...(this.listeners.get(type) || [])]) handler(event);
+    }
+    open() {
+      this.readyState = FakeSocket.OPEN;
+      this.dispatch('open');
+    }
+    message(data) {
+      this.dispatch('message', { data });
+    }
+    close() {
+      this.readyState = FakeSocket.CLOSED;
+    }
     remoteClose(code=1006, reason='dead receiver') {
       this.readyState = FakeSocket.CLOSED;
-      this.onclose?.({ code, reason });
+      this.dispatch('close', { code, reason });
     }
   }
 
   const sockets = [];
   const attempts = [];
+  const opens = [];
   const window = {
     WebSocket:FakeSocket,
     setTimeout,
@@ -103,9 +124,10 @@ function managerHarness() {
     onAttempt:event => attempts.push({
       id:event.receiver.id,
       hasActiveSocket:Boolean(manager.activeSocket)
-    })
+    }),
+    onOpen:event => opens.push(event.receiver.id)
   });
-  return { manager, sockets, attempts, runDelay, Manager };
+  return { manager, sockets, attempts, opens, runDelay, Manager };
 }
 
 test('ranked live catalog always includes a deployment-bundled recovery receiver', () => {
@@ -129,13 +151,20 @@ test('CONNECTING callback runs only after the active socket exists', () => {
   assert.equal(h.manager.activeSocket, h.sockets[0]);
 });
 
+test('manager observes native open through EventTarget listeners', () => {
+  const h = managerHarness();
+  h.manager.connect([{id:'live-a'}]);
+  h.sockets[0].open();
+  assert.deepEqual(h.opens, ['live-a']);
+});
+
 test('first live receiver failure jumps directly to bundled fallback', () => {
   const h = managerHarness();
   h.manager.connect([
-    {id:'live-a', bundledSeed:false},
-    {id:'live-b', bundledSeed:false},
-    {id:'seed-safe', bundledSeed:true},
-    {id:'live-c', bundledSeed:false}
+    {id:'live-a', name:'Live A', location:'Site A', bundledSeed:false},
+    {id:'live-b', name:'Live B', location:'Site B', bundledSeed:false},
+    {id:'seed-safe', name:'Seed Safe', location:'Site C', bundledSeed:true},
+    {id:'live-c', name:'Live C', location:'Site D', bundledSeed:false}
   ]);
   h.sockets[0].remoteClose();
   h.runDelay(100);
@@ -143,9 +172,22 @@ test('first live receiver failure jumps directly to bundled fallback', () => {
   assert.equal(h.attempts[1].id, 'seed-safe');
 });
 
-test('connection timeouts are bounded for fast recovery', () => {
+test('automatic failover never retries the same physical receiver under another id', () => {
   const h = managerHarness();
-  assert.equal(h.Manager.constants.CONNECT_TIMEOUT_MS, 3500);
-  assert.equal(h.Manager.constants.FIRST_SND_TIMEOUT_MS, 4000);
+  h.manager.connect([
+    {id:'endpoint-a', name:'0-30 MHz SDR | [N0BQV]', location:'Republic, Missouri', bundledSeed:false},
+    {id:'endpoint-b', name:'KiwiSDR [N0BQV]', location:'Republic, Missouri', bundledSeed:false},
+    {id:'different-site', name:'Different SDR', location:'Memphis, Tennessee', bundledSeed:false}
+  ]);
+  h.sockets[0].remoteClose();
+  h.runDelay(100);
+  assert.equal(h.attempts.length, 2);
+  assert.equal(h.attempts[1].id, 'different-site');
+});
+
+test('handshake timeout matches the proven pre-cleanup mobile budget', () => {
+  const h = managerHarness();
+  assert.equal(h.Manager.constants.CONNECT_TIMEOUT_MS, 9000);
+  assert.equal(h.Manager.constants.FIRST_SND_TIMEOUT_MS, 5000);
   assert.equal(h.Manager.constants.MAX_AUTO_ATTEMPTS, 5);
 });

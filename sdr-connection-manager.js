@@ -1,8 +1,11 @@
 (() => {
   if (window.FreqBeaconSdrConnectionManager) return;
 
-  const CONNECT_TIMEOUT_MS = 3500;
-  const FIRST_SND_TIMEOUT_MS = 4000;
+  // Keep the proven pre-cleanup handshake budget. A Cloudflare -> public Kiwi
+  // WebSocket can legitimately take several seconds to reach OPEN on mobile.
+  // Errors/close still fail immediately; the timeout is only the silent ceiling.
+  const CONNECT_TIMEOUT_MS = 9000;
+  const FIRST_SND_TIMEOUT_MS = 5000;
   const FAILOVER_DELAY_MS = 100;
   const MAX_AUTO_ATTEMPTS = 5;
   const decoder = new TextDecoder();
@@ -31,6 +34,23 @@
     return { useful:false, failure:null };
   }
 
+  function compactLabel(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/\b(?:kiwisdr|sdr|receiver|0\s*[-–]\s*30\s*mhz|v2)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function receiverSignature(receiver) {
+    const combined = `${receiver?.name || ''} ${receiver?.location || ''}`.toUpperCase();
+    const call = combined.match(/\b[A-Z]{1,2}\d[A-Z]{1,4}\b/)?.[0];
+    if (call) return `call:${call}`;
+    const name = compactLabel(receiver?.name);
+    const location = compactLabel(receiver?.location);
+    return `site:${name}|${location}`;
+  }
+
   class FreqBeaconSdrConnectionManager {
     constructor({
       websocketFactory = (url) => new window.WebSocket(url),
@@ -56,9 +76,11 @@
 
       this.generation = 0;
       this.socket = null;
+      this.socketHandlers = null;
       this.candidates = [];
       this.currentIndex = -1;
       this.attempted = new Set();
+      this.attemptedSignatures = new Set();
       this.attemptCount = 0;
       this.manual = false;
       this.manualStop = false;
@@ -88,15 +110,38 @@
       this.connectTimer = this.dataTimer = this.failoverTimer = null;
     }
 
+    bindSocket(socket, handlers) {
+      this.socketHandlers = handlers;
+      if (typeof socket.addEventListener === 'function') {
+        for (const [type, handler] of Object.entries(handlers)) socket.addEventListener(type, handler);
+        return;
+      }
+      socket.onopen = handlers.open;
+      socket.onmessage = handlers.message;
+      socket.onerror = handlers.error;
+      socket.onclose = handlers.close;
+    }
+
+    unbindSocket(socket) {
+      const handlers = this.socketHandlers;
+      this.socketHandlers = null;
+      if (!socket || !handlers) return;
+      if (typeof socket.removeEventListener === 'function') {
+        for (const [type, handler] of Object.entries(handlers)) socket.removeEventListener(type, handler);
+        return;
+      }
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+    }
+
     closeSocket(reason = 'FreqBeacon disconnect') {
       this.clearTimers();
       const socket = this.socket;
       this.socket = null;
       if (!socket) return;
-      socket.onopen = null;
-      socket.onmessage = null;
-      socket.onerror = null;
-      socket.onclose = null;
+      this.unbindSocket(socket);
       try { socket.close(1000, reason); } catch {}
     }
 
@@ -125,6 +170,7 @@
       this.candidates = usable;
       this.currentIndex = usable[startIndex] ? startIndex : 0;
       this.attempted.clear();
+      this.attemptedSignatures.clear();
       this.attemptCount = 0;
       this.manual = Boolean(manual);
       this.manualStop = false;
@@ -160,6 +206,7 @@
       this.closeSocket('FreqBeacon failover');
       this.currentIndex = index;
       this.attempted.add(receiver.id);
+      this.attemptedSignatures.add(receiverSignature(receiver));
       this.attemptCount += 1;
       this.gotUsefulData = false;
       this.failedAttempt = false;
@@ -174,53 +221,51 @@
       }
       this.socket = socket;
 
-      // Announce the attempt only after the socket exists. The player uses
-      // activeSocket to decide whether the control should say Stop or Play;
-      // doing this before assignment produced the contradictory CONNECTING +
-      // Play state seen on Android.
+      // Announce only after the socket exists so CONNECTING always has a real
+      // cancellable connection behind it.
       this.onAttempt({ receiver, index, attempt:this.attemptCount, generation, manual:this.manual });
 
-      socket.onopen = () => {
-        if (!this.isCurrent(socket, generation)) return;
-        window.clearTimeout(this.connectTimer);
-        this.connectTimer = null;
-        this.onOpen({ socket, receiver, index, attempt:this.attemptCount, generation });
-        this.dataTimer = window.setTimeout(() => {
+      const handlers = {
+        open: () => {
+          if (!this.isCurrent(socket, generation)) return;
+          window.clearTimeout(this.connectTimer);
+          this.connectTimer = null;
+          this.onOpen({ socket, receiver, index, attempt:this.attemptCount, generation });
+          this.dataTimer = window.setTimeout(() => {
+            if (!this.isCurrent(socket, generation) || this.gotUsefulData) return;
+            this.failAttempt('timeout', 'WebSocket opened but no useful SND data arrived', generation);
+          }, FIRST_SND_TIMEOUT_MS);
+        },
+        message: (event) => {
+          if (!this.isCurrent(socket, generation)) return;
+          const inspection = inspectKiwiMessage(event.data);
+          if (inspection.failure) {
+            this.failAttempt(inspection.failure, `Receiver reported ${inspection.failure}`, generation);
+            return;
+          }
+          if (inspection.useful && !this.gotUsefulData) {
+            this.gotUsefulData = true;
+            window.clearTimeout(this.dataTimer);
+            this.dataTimer = null;
+            window.__freqbeaconReceiverHealth?.markSuccess?.(receiver.id);
+            this.onUsefulData({ socket, receiver, index, attempt:this.attemptCount, generation });
+          }
+          this.onMessage({ event, socket, receiver, index, generation });
+        },
+        error: () => {
           if (!this.isCurrent(socket, generation) || this.gotUsefulData) return;
-          this.failAttempt('timeout', 'WebSocket opened but no useful SND data arrived', generation);
-        }, FIRST_SND_TIMEOUT_MS);
-      };
-
-      socket.onmessage = (event) => {
-        if (!this.isCurrent(socket, generation)) return;
-        const inspection = inspectKiwiMessage(event.data);
-        if (inspection.failure) {
-          this.failAttempt(inspection.failure, `Receiver reported ${inspection.failure}`, generation);
-          return;
+          this.failAttempt('error', 'WebSocket error', generation);
+        },
+        close: (event) => {
+          if (!this.isCurrent(socket, generation)) return;
+          if (!this.gotUsefulData) {
+            this.failAttempt('closed', event?.reason || `WebSocket closed (${event?.code || 0})`, generation);
+            return;
+          }
+          this.recoverLiveClose(event, receiver, generation);
         }
-        if (inspection.useful && !this.gotUsefulData) {
-          this.gotUsefulData = true;
-          window.clearTimeout(this.dataTimer);
-          this.dataTimer = null;
-          window.__freqbeaconReceiverHealth?.markSuccess?.(receiver.id);
-          this.onUsefulData({ socket, receiver, index, attempt:this.attemptCount, generation });
-        }
-        this.onMessage({ event, socket, receiver, index, generation });
       };
-
-      socket.onerror = () => {
-        if (!this.isCurrent(socket, generation) || this.gotUsefulData) return;
-        this.failAttempt('error', 'WebSocket error', generation);
-      };
-
-      socket.onclose = (event) => {
-        if (!this.isCurrent(socket, generation)) return;
-        if (!this.gotUsefulData) {
-          this.failAttempt('closed', event?.reason || `WebSocket closed (${event?.code || 0})`, generation);
-          return;
-        }
-        this.recoverLiveClose(event, receiver, generation);
-      };
+      this.bindSocket(socket, handlers);
 
       this.connectTimer = window.setTimeout(() => {
         if (!this.isCurrent(socket, generation) || socket.readyState !== window.WebSocket.CONNECTING) return;
@@ -230,6 +275,12 @@
 
     isCurrent(socket, generation) {
       return generation === this.generation && socket === this.socket && !this.manualStop;
+    }
+
+    candidateUntried(receiver) {
+      return Boolean(receiver
+        && !this.attempted.has(receiver.id)
+        && !this.attemptedSignatures.has(receiverSignature(receiver)));
     }
 
     failAttempt(reason, detail, generation = this.generation) {
@@ -288,19 +339,18 @@
     }
 
     nextCandidateIndex() {
-      // After the first automatic failure, prefer one bundled receiver that the
-      // Worker can resolve without relying on a fresh ReceiverBook lookup. This
-      // keeps a stale/cooling live-cache endpoint from making Listen Live appear
-      // dead when our deployment-bundled safety catalog is still available.
-      if (!this.manual && this.attemptCount === 1 && !this.activeReceiver?.bundledSeed) {
-        const seedIndex = this.candidates.findIndex((receiver) => receiver?.bundledSeed && !this.attempted.has(receiver.id));
+      // After the first automatic failure, prefer one deployment-bundled
+      // receiver that is a genuinely different physical site. Worker-v2 can
+      // resolve these without a fresh ReceiverBook lookup.
+      if (!this.manual && this.attemptCount === 1) {
+        const seedIndex = this.candidates.findIndex((receiver) => receiver?.bundledSeed && this.candidateUntried(receiver));
         if (seedIndex >= 0) return seedIndex;
       }
 
       for (let offset = 1; offset <= this.candidates.length; offset += 1) {
         const index = (this.currentIndex + offset) % this.candidates.length;
         const receiver = this.candidates[index];
-        if (receiver && !this.attempted.has(receiver.id)) return index;
+        if (this.candidateUntried(receiver)) return index;
       }
       return null;
     }
@@ -321,5 +371,6 @@
     MAX_AUTO_ATTEMPTS
   });
   FreqBeaconSdrConnectionManager.inspectKiwiMessage = inspectKiwiMessage;
+  FreqBeaconSdrConnectionManager.receiverSignature = receiverSignature;
   window.FreqBeaconSdrConnectionManager = FreqBeaconSdrConnectionManager;
 })();
