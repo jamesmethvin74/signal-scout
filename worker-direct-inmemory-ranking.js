@@ -1,6 +1,6 @@
 import baseWorker from './worker-receiver-json-fast.js';
 
-const DIRECT_MARKER = 'receiver-direct-inmemory-v2-endpoint-health';
+const DIRECT_MARKER = 'receiver-direct-inmemory-v3-fast-failover-health';
 
 function patchRuntime(response) {
   const contentType = String(response.headers.get('content-type') || '');
@@ -9,7 +9,7 @@ function patchRuntime(response) {
   return response.text().then((source) => {
     const oldExport = "  window.__freqbeaconReceiverRuntime={version:VERSION,get livePoolCount(){return livePool.receivers.length;},get livePoolUpdatedAt(){return livePool.updatedAt;}};";
     const newExport = `  window.__freqbeaconReceiverRuntime={
-    version:'receiver-runtime-v5-direct-inmemory-health',
+    version:'receiver-runtime-v6-direct-inmemory-fast-health',
     get livePoolCount(){return livePool.receivers.length;},
     get livePoolUpdatedAt(){return livePool.updatedAt;},
     recommend(input){
@@ -23,20 +23,19 @@ function patchRuntime(response) {
       const context = contextFromUrl(url);
       let receivers = Number.isFinite(context.frequency) ? rankReceivers(context) : [];
 
-      // ReceiverBook can expose more than one endpoint for the same physical
-      // KiwiSDR. Keep only the strongest endpoint for a callsign so FREQBEACON
-      // does not waste connection attempts on duplicate aliases. Prefer an
-      // endpoint that succeeded recently, then a stable hostname over a raw IP.
+      // ReceiverBook can expose multiple aliases for one physical KiwiSDR.
+      // Collapse those aliases before the player connects. Prefer recent
+      // success, then a hostname over a raw IP, without changing RF ranking.
       if (receivers.length > 1) {
         const health = loadHealth();
         const now = Date.now();
         const recentCutoff = now - 45 * 60 * 1000;
         const callsignFor = (receiver) => {
           const text = String((receiver?.name || '') + ' ' + (receiver?.location || '')).toUpperCase();
-          return text.match(/\\b[A-Z]{1,2}\\d[A-Z]{1,4}\\b/)?.[0] || '';
+          return text.match(/[A-Z]{1,2}[0-9][A-Z]{1,4}/)?.[0] || '';
         };
         const hostFor = (receiver) => String(receiver?.id || '').split(':')[0].toLowerCase();
-        const rawIp = (host) => /^(?:\\d{1,3}\\.){3}\\d{1,3}$/.test(host);
+        const rawIp = (host) => /^[0-9]{1,3}(?:[.][0-9]{1,3}){3}$/.test(host);
         const endpointScore = (receiver, originalIndex) => {
           const entry = health[receiver?.id] || {};
           const cooling = Number(entry.cooldownUntil || 0) > now;
@@ -117,7 +116,82 @@ function patchPlayer(response) {
         payload = await response.json();
       }`;
 
-    const patched = source.replace(oldBlock, newBlock);
+    let patched = source.replace(oldBlock, newBlock);
+
+    patched = patched.replace(
+      "  function failCurrentReceiver(message) {",
+      `  function rememberCurrentReceiverHealth(success, reason = 'error') {
+    const receiver = currentReceiver();
+    const id = receiver?.id;
+    if (!id) return;
+    try {
+      const key = 'signalScout:sdrHealth:v1';
+      const health = JSON.parse(window.localStorage?.getItem(key) || '{}');
+      const previous = health[id] || {};
+      const timestamp = Date.now();
+      if (success) {
+        if (Number(previous.lastSuccess || 0) > timestamp - 2000) return;
+        health[id] = {
+          ...previous,
+          failures: 0,
+          cooldownUntil: 0,
+          lastSuccess: timestamp,
+          successes: Math.min(100, Number(previous.successes || 0) + 1)
+        };
+      } else {
+        if (Number(previous.lastFailure || 0) > timestamp - 2000) return;
+        const failures = Math.min(5, Number(previous.failures || 0) + 1);
+        const baseMinutes = reason === 'busy' ? 2 : (reason === 'offline' ? 30 : (reason === 'timeout' ? 8 : 5));
+        const cooldownMinutes = Math.min(30, Math.round(baseMinutes * Math.pow(1.4, Math.max(0, failures - 1))));
+        health[id] = {
+          ...previous,
+          failures,
+          lastFailure: timestamp,
+          lastFailureReason: reason,
+          cooldownUntil: timestamp + cooldownMinutes * 60 * 1000
+        };
+      }
+      window.localStorage?.setItem(key, JSON.stringify(health));
+    } catch {}
+  }
+
+  function failureReasonFromMessage(message) {
+    const text = String(message || '').toLowerCase();
+    if (text.includes('full') || text.includes('busy')) return 'busy';
+    if (text.includes('offline')) return 'offline';
+    if (text.includes('timed out') || text.includes('did not answer')) return 'timeout';
+    return 'error';
+  }
+
+  function failCurrentReceiver(message) {
+    rememberCurrentReceiverHealth(false, failureReasonFromMessage(message));`
+    );
+
+    patched = patched.replace(
+      "    window.setTimeout(() => connectSdr(next), 450);",
+      "    window.setTimeout(() => connectSdr(next), 75);"
+    );
+
+    patched = patched.replace(
+      `    sdr.connectTimer = window.setTimeout(() => {
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');
+    }, 9000);`,
+      `    const receiverWaitMs = receiver?.connectionHealth === 'recent-success' ? 3000 : 2200;
+    sdr.connectTimer = window.setTimeout(() => {
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');
+    }, receiverWaitMs);`
+    );
+
+    patched = patched.replace(
+      "    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.fallbackTried.clear();",
+      "    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.manualReceiverId = null;\n    sdr.fallbackTried.clear();"
+    );
+
+    patched = patched.replace(
+      "    if (!sdr.gotAudio) {\n      sdr.gotAudio = true;",
+      "    if (!sdr.gotAudio) {\n      rememberCurrentReceiverHealth(true);\n      sdr.gotAudio = true;"
+    );
+
     const headers = new Headers(response.headers);
     headers.set('content-type', 'application/javascript; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
@@ -130,8 +204,8 @@ function patchRoot(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
-    html = html.replace(/sdr-receiver-runtime-v3\.js\?v=\d+/g, 'sdr-receiver-runtime-v3.js?v=4');
-    html = html.replace(/sdr-player\.js\?v=\d+(?:&sdrdiag=\d+)?/g, 'sdr-player.js?v=6');
+    html = html.replace(/sdr-receiver-runtime-v3\.js\?v=\d+/g, 'sdr-receiver-runtime-v3.js?v=5');
+    html = html.replace(/sdr-player\.js\?v=\d+(?:&sdrdiag=\d+)?/g, 'sdr-player.js?v=7');
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
