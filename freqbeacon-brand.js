@@ -7,7 +7,7 @@
   const SPLASH_HOLD_MS = 1250;
   const SPLASH_FADE_MS = 300;
   const SPLASH_MAX_WAIT_MS = 4000;
-  const PWA_SW_PATH = '/freqbeacon-sw.js';
+  const PWA_SW_PATH = '/freqbeacon-sw.js?v=2';
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
@@ -28,7 +28,10 @@
             || '';
           let currentPath = '';
           try {
-            currentPath = currentUrl ? new URL(currentUrl, window.location.href).pathname : '';
+            if (currentUrl) {
+              const parsed = new URL(currentUrl, window.location.href);
+              currentPath = `${parsed.pathname}${parsed.search}`;
+            }
           } catch {
             currentPath = '';
           }
