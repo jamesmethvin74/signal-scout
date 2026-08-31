@@ -5,28 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="FreqBeacon helps radio listeners discover shortwave, medium-wave, longwave, and amateur radio signals, then explore them with live remote SDR spectrum and audio." />
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="manifest" href="manifest.webmanifest?v=4" />
+  <link rel="icon" type="image/webp" sizes="192x192" href="freqbeacon-icon-v3-192.webp?v=4" />
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="freqbeacon-icon-v3-192.webp?v=4" />
+  <link rel="preload" href="freqbeacon-startup-v3.avif?v=4" as="image" type="image/avif" fetchpriority="high" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="lookup.css?v=1" />
   <link rel="stylesheet" href="arctic-slate.css?v=1" />
   <link rel="stylesheet" href="arctic-slate-controls.css?v=1" />
-  <link rel="stylesheet" href="freqbeacon-brand.css?v=2" />
+  <link rel="stylesheet" href="freqbeacon-brand.css?v=5" />
   <title>FREQBEACON — Explore the airwaves.</title>
 </head>
 <body>
   <div class="freqbeacon-splash" aria-hidden="true">
-    <div class="freqbeacon-splash__field"></div>
-    <div class="freqbeacon-splash__content">
-      <img class="freqbeacon-splash__mark" src="freqbeacon-logo.svg" alt="" />
-      <div class="freqbeacon-splash__name">FREQBEACON</div>
-      <div class="freqbeacon-splash__tagline">Explore the airwaves.</div>
-      <div class="freqbeacon-splash__spectrum" aria-hidden="true">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
-    </div>
+    <img class="freqbeacon-splash__art" src="freqbeacon-startup-v3.avif?v=4" alt="" aria-hidden="true" fetchpriority="high" loading="eager" decoding="sync" />
   </div>
 
   <div class="app-shell">
@@ -87,7 +80,7 @@
       <section class="signal-grid" id="signalGrid" aria-live="polite"></section>
 
       <footer class="source-note">
-        Loading full A26 HFCC + EiBi shortwave schedules…
+        Loading current HFCC + EiBi shortwave schedules…
       </footer>
 
       <section class="lookup-view" id="lookupView" hidden aria-labelledby="lookupHeading">
@@ -147,21 +140,27 @@
     </div>
   </nav>
 
-  <script src="freqbeacon-brand.js?v=1"></script>
+  <!-- Deterministic production asset graph. Worker code does not rewrite it. -->
+  <script src="freqbeacon-brand.js?v=5"></script>
   <script src="stations.js"></script>
-  <script src="full-data.js?v=1"></script>
+  <script src="full-data.js?v=4"></script>
   <script src="ham-bands.js?v=1"></script>
   <script src="app.js"></script>
   <script src="band-labels.js?v=2"></script>
+  <script src="ham-activity-guide.js?v=1"></script>
   <script src="ham-ui.js?v=1"></script>
-  <script src="lookup.js?v=1"></script>
+  <script src="lookup.js?v=4"></script>
+
+  <!-- RF v2 captures the native socket first; tuning then observes only SND. -->
   <script>window.__signalScoutNativeWebSocket = window.WebSocket;</script>
-  <script src="sdr-rf-v2.js?v=5"></script>
-  <script src="sdr-health.js?v=2"></script>
-  <script src="sdr-tuning.js?v=1"></script>
-  <script src="sdr-player.js?v=2"></script>
-  <script src="sdr-live-reliability.js?v=1"></script>
-  <script src="sdr-receiver-ui.js?v=3"></script>
+  <script src="sdr-rf-v2.js?v=7"></script>
+  <script src="sdr-tuning-v3.js?v=3"></script>
+  <script src="sdr-health.js?v=4"></script>
+  <script src="sdr-receiver-runtime-v3.js?v=5"></script>
+  <script src="sdr-connection-manager.js?v=2"></script>
+  <script src="sdr-player.js?v=5"></script>
+  <script src="sdr-live-reliability-v2.js?v=3"></script>
+
   <script>
     (() => {
       const descriptions = {
@@ -212,6 +211,17 @@
       decorate();
     })();
   </script>
+
+  <!-- Program-guide runtime formerly injected by Worker wrappers. -->
+  <script src="program-guide-expansion.js?v=1"></script>
+  <script src="program-guide-major.js?v=1"></script>
   <script src="card-collapse.js?v=1"></script>
+  <script src="program-guide.js?v=2"></script>
+  <script src="program-guide-context.js?v=1"></script>
+  <script src="program-guide-authority.js?v=1"></script>
+  <script src="program-guide-exact-final.js?v=1"></script>
+  <script src="program-guide-coverage-v2.js?v=1"></script>
+  <script src="program-guide-source-labels.js?v=1"></script>
+  <script src="program-guide-scheduled-service.js?v=1"></script>
 </body>
 </html>
