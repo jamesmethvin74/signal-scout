@@ -183,8 +183,8 @@ function patchPlayer(response) {
     );
 
     patched = patched.replace(
-      "    sdr.manualStop = false;\n    sdr.fallbackTried.clear();",
-      "    sdr.manualStop = false;\n    sdr.manualReceiverId = null;\n    sdr.fallbackTried.clear();"
+      "    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.fallbackTried.clear();",
+      "    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.manualReceiverId = null;\n    sdr.fallbackTried.clear();"
     );
 
     patched = patched.replace(
