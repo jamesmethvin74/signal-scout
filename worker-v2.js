@@ -121,9 +121,6 @@ function jsonResponse(value, status = 200) {
 }
 
 async function resilientReceiverRecommendations(request, env, ctx) {
-  // Prime the WebSocket resolver directory in parallel with ranking. If either
-  // live lookup cannot produce a trustworthy ReceiverBook catalog, return a
-  // broad bundled catalog instead of collapsing to the three legacy sites.
   const proxyDirectoryPromise = receiverDirectory().catch(() => null);
   const response = await baseWorker.fetch(request, env, ctx);
   const proxyDirectory = await proxyDirectoryPromise;
@@ -200,14 +197,20 @@ async function proxySdrWebSocket(request) {
   // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/${upstreamTimestamp}/${stream}`;
+
+  // Current Kiwi 1.9xx distinguishes normal Kiwi UI WebSockets from the
+  // kiwirecorder/external-API URL form. External API connections can be disabled
+  // independently (ext_api_nchans=0) even while the normal browser UI is fully
+  // available. FREQBEACON is an interactive listening UI, so use the native Kiwi
+  // UI connection class instead of masquerading as kiwirecorder.
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       headers: {
         Upgrade: 'websocket',
         Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
-        'User-Agent': 'SignalScout/1.0'
+        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
       }
     });
     if (!upstreamResponse.webSocket) {
