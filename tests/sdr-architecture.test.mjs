@@ -32,11 +32,13 @@ test('production HTML loads one deterministic SDR runtime graph', () => {
     'sdr-tuning-v3.js?v=3',
     'sdr-health.js?v=4',
     'sdr-receiver-runtime-v3.js?v=6',
-    'sdr-connection-manager.js?v=7',
+    'sdr-direct-connection.js?v=1',
     'sdr-player.js?v=5',
     'sdr-transport-diagnostics.js?v=1',
     'sdr-live-reliability-v2.js?v=3'
   ]) assert.match(index, new RegExp(asset.replace(/[.?]/g, '\\$&')));
+
+  assert.doesNotMatch(index, /sdr-connection-manager\.js/);
 
   for (const obsolete of [
     'sdr-options-fix.js',
