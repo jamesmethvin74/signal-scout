@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-receiver-json-fast.js",
+  "main": "worker-direct-inmemory-ranking.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
