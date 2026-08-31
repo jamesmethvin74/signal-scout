@@ -29,8 +29,8 @@ test('production HTML loads one deterministic SDR runtime graph', () => {
     'sdr-rf-v2.js?v=7',
     'sdr-tuning-v3.js?v=3',
     'sdr-health.js?v=4',
-    'sdr-receiver-runtime-v3.js?v=5',
-    'sdr-connection-manager.js?v=2',
+    'sdr-receiver-runtime-v3.js?v=6',
+    'sdr-connection-manager.js?v=3',
     'sdr-player.js?v=5',
     'sdr-live-reliability-v2.js?v=3'
   ]) assert.match(index, new RegExp(asset.replace(/[.?]/g, '\\$&')));
@@ -55,6 +55,7 @@ test('receiver ranking is local-first and health is not implemented by global fe
   assert.match(runtime, /recommend\(input\)/);
   assert.match(runtime, /refresh\(input/);
   assert.match(runtime, /receiver-runtime-seed/);
+  assert.match(runtime, /bundledSeed/);
   assert.doesNotMatch(health, /window\.fetch\s*=|window\.WebSocket\s*=/);
   assert.doesNotMatch(player, /fetch\([^)]*api\/sdr\/receivers/i);
 });

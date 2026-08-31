@@ -1,8 +1,8 @@
 (() => {
   if (window.FreqBeaconSdrConnectionManager) return;
 
-  const CONNECT_TIMEOUT_MS = 6500;
-  const FIRST_SND_TIMEOUT_MS = 6000;
+  const CONNECT_TIMEOUT_MS = 3500;
+  const FIRST_SND_TIMEOUT_MS = 4000;
   const FAILOVER_DELAY_MS = 100;
   const MAX_AUTO_ATTEMPTS = 5;
   const decoder = new TextDecoder();
@@ -163,7 +163,6 @@
       this.attemptCount += 1;
       this.gotUsefulData = false;
       this.failedAttempt = false;
-      this.onAttempt({ receiver, index, attempt:this.attemptCount, generation, manual:this.manual });
 
       let socket;
       try {
@@ -174,6 +173,12 @@
         return;
       }
       this.socket = socket;
+
+      // Announce the attempt only after the socket exists. The player uses
+      // activeSocket to decide whether the control should say Stop or Play;
+      // doing this before assignment produced the contradictory CONNECTING +
+      // Play state seen on Android.
+      this.onAttempt({ receiver, index, attempt:this.attemptCount, generation, manual:this.manual });
 
       socket.onopen = () => {
         if (!this.isCurrent(socket, generation)) return;
@@ -283,6 +288,15 @@
     }
 
     nextCandidateIndex() {
+      // After the first automatic failure, prefer one bundled receiver that the
+      // Worker can resolve without relying on a fresh ReceiverBook lookup. This
+      // keeps a stale/cooling live-cache endpoint from making Listen Live appear
+      // dead when our deployment-bundled safety catalog is still available.
+      if (!this.manual && this.attemptCount === 1 && !this.activeReceiver?.bundledSeed) {
+        const seedIndex = this.candidates.findIndex((receiver) => receiver?.bundledSeed && !this.attempted.has(receiver.id));
+        if (seedIndex >= 0) return seedIndex;
+      }
+
       for (let offset = 1; offset <= this.candidates.length; offset += 1) {
         const index = (this.currentIndex + offset) % this.candidates.length;
         const receiver = this.candidates[index];

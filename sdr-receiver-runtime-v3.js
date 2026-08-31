@@ -1,7 +1,7 @@
 (() => {
-  if (window.__freqbeaconReceiverRuntime?.version === 'receiver-runtime-v4-source') return;
+  if (window.__freqbeaconReceiverRuntime?.version === 'receiver-runtime-v5-source') return;
 
-  const VERSION = 'receiver-runtime-v4-source';
+  const VERSION = 'receiver-runtime-v5-source';
   const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
   const LIVE_POOL_KEY = 'freqbeacon:sdrLivePool:v3';
   const LEGACY_LIVE_POOL_KEY = 'freqbeacon:sdrLivePool:v2';
@@ -32,6 +32,7 @@
     { id:'n7drd.proxy.kiwisdr.com:8073', name:'0-30 MHz SDR | Ocean Park WA', location:'Ocean Park, Washington', lat:46.4918, lon:-124.0526, minKHz:10, maxKHz:30000 },
     { id:'palomar-1.proxy.kiwisdr.com:8073', name:'K6VZK KiwiSDR #1', location:'Palomar Mountain, California', lat:33.3220, lon:-116.8640, minKHz:10, maxKHz:30000 }
   ];
+  const SEED_IDS = new Set(SEED.map((receiver) => receiver.id.toLowerCase()));
 
   let activeContext = null;
   let livePool = loadLivePool();
@@ -96,7 +97,8 @@
       lon: finite(receiver?.lon),
       minKHz,
       maxKHz,
-      liveEvidence: Boolean(receiver?.liveEvidence || liveEvidence)
+      liveEvidence: Boolean(receiver?.liveEvidence || liveEvidence),
+      bundledSeed: Boolean(receiver?.bundledSeed || SEED_IDS.has(id.toLowerCase()))
     };
   }
 
@@ -390,6 +392,14 @@
         .sort((a, b) => (b.pathSimilarity * 0.72 + b.solar * 0.28) - (a.pathSimilarity * 0.72 + a.solar * 0.28))[0],
       'PROPAGATION ALT', 'Alternate receiver with a similar transmitter path and useful HF propagation geometry.');
     }
+
+    // Always keep one deployment-bundled receiver in the ranked set when one
+    // is available. These IDs can be resolved directly by worker-v2 without a
+    // fresh ReceiverBook lookup, so the connection manager has a deterministic
+    // early recovery path if the live catalog is stale or a public SDR vanished.
+    add(eligible.find((receiver) => receiver.bundledSeed && receiver.id !== best.id),
+      'RELIABLE FALLBACK', 'Deployment-bundled public receiver available as a fast recovery path if the live directory entry fails.');
+
     for (const receiver of eligible) add(receiver, 'ALTERNATE', 'Another currently available public KiwiSDR covering this frequency.');
 
     return picks.map((receiver, index) => ({
@@ -408,7 +418,8 @@
       reason: receiver.reason,
       recommended: index === 0,
       connectionHealth: receiver.recentSuccess ? 'recent-success' : (receiver.cooling ? 'cooldown' : 'unknown'),
-      liveEvidence: Boolean(receiver.liveEvidence)
+      liveEvidence: Boolean(receiver.liveEvidence),
+      bundledSeed: Boolean(receiver.bundledSeed)
     }));
   }
 
