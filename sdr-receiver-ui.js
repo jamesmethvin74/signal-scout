@@ -31,6 +31,11 @@
   `;
   document.head.appendChild(style);
 
+  const lifecycleDiagnostics = document.createElement('script');
+  lifecycleDiagnostics.src = 'sdr-lifecycle-diagnostics-v2.js?v=2';
+  lifecycleDiagnostics.async = false;
+  document.body.appendChild(lifecycleDiagnostics);
+
   const optionsFix = document.createElement('script');
   optionsFix.src = 'sdr-options-fix.js?v=6';
   optionsFix.async = false;
