@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-ranking-evidence-fix.js",
+  "main": "worker-sdr-mainthread-relief.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
@@ -24,6 +24,9 @@
       "/sdr-diagnostics.html",
       "/sdr-runtime-trace.html",
       "/full-data.js",
+      "/app.js",
+      "/band-labels.js",
+      "/card-collapse.js",
       "/sdr-rf-v2.js",
       "/sdr-health.js",
       "/sdr-tuning.js",
