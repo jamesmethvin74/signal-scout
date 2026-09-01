@@ -1,24 +1,16 @@
 import baseWorker from './worker-sdr-reliability-ranking.js';
 
-const MARKER = 'sdr-samepage-control-v2-ar-ok';
-const SCRIPT = 'sdr-samepage-control.js?v=2';
+const MARKER = 'sdr-samepage-control-disabled-v3';
 
 function patchRoot(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
 
   return response.text().then((html) => {
-    const existingPattern = /<script\s+src="\/?sdr-samepage-control\.js\?v=\d+"><\/script>/i;
-    if (existingPattern.test(html)) {
-      html = html.replace(existingPattern, `<script src="${SCRIPT}"></script>`);
-    } else {
-      const lifecyclePattern = /<script\s+src="\/?sdr-lifecycle-diagnostics-v3\.js\?v=\d+"><\/script>/i;
-      if (lifecyclePattern.test(html)) {
-        html = html.replace(lifecyclePattern, (match) => `${match}\n  <script src="${SCRIPT}"></script>`);
-      } else {
-        html = html.replace('</body>', `  <script src="${SCRIPT}"></script>\n</body>`);
-      }
-    }
+    // The same-page probe proved Tipton can deliver SND, but it also opens its
+    // own Kiwi session before the real player. Remove it from production so
+    // Listen Live owns the first/only SND session.
+    html = html.replace(/\s*<script\s+src="\/?sdr-samepage-control\.js\?v=\d+"><\/script>/ig, '');
 
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
