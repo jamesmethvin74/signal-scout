@@ -78,10 +78,12 @@ function patchRoot(response) {
   if (!contentType.includes('text/html')) return response;
   return response.text().then((html) => {
     html = html.replace(/sdr-player\.js\?v=\d+/g, 'sdr-player.js?v=11');
+    html = html.replace(/sdr-lifecycle-diagnostics-v3\.js\?v=\d+/g, 'sdr-lifecycle-diagnostics-v3.js?v=2');
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
     headers.set('x-freqbeacon-km4rt-alias', MARKER);
+    headers.set('x-freqbeacon-sdr-diagnostic-mode', 'passive-addEventListener-only');
     return new Response(html, {
       status: response.status,
       statusText: response.statusText,
