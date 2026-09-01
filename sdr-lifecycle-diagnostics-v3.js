@@ -1,8 +1,8 @@
 (() => {
   if (window.__freqbeaconSdrLifecycleV3?.version) return;
 
-  const VERSION = 'sdr-lifecycle-diagnostics-v3';
-  const STORAGE_KEY = 'freqbeacon:sdr-lifecycle:v3';
+  const VERSION = 'sdr-lifecycle-diagnostics-v3-passive-v1';
+  const STORAGE_KEY = 'freqbeacon:sdr-lifecycle:passive:v1';
   const decoder = new TextDecoder();
   const socketSessions = new WeakMap();
   const pageStarted = performance.now();
@@ -14,7 +14,7 @@
     userAgent: navigator.userAgent,
     standalone: matchMedia('(display-mode: standalone)').matches,
     serviceWorkerControlled: Boolean(navigator.serviceWorker?.controller),
-    captureMode: 'player-snd-created-event',
+    captureMode: 'passive-addEventListener-only',
     assetCheck: null,
     sessions: []
   };
@@ -77,10 +77,10 @@
       stream: meta.stream,
       timestamp: meta.timestamp,
       url: meta.url,
+      observation: 'passive',
       timings: {
         createdMs: elapsed(),
         openMs: null,
-        authSentMs: null,
         sampleRateMs: null,
         firstSndMs: null,
         playerReadyMs: null,
@@ -98,16 +98,6 @@
         lastFrameMs: null,
         lastSndMs: null
       },
-      sends: {
-        auth: 0,
-        compression0: 0,
-        tune: 0,
-        keepalive: 0,
-        audioRateAck: 0,
-        lastTune: null,
-        lastKeepaliveMs: null,
-        lastAudioRateAck: null
-      },
       sampleRate: null,
       audioRate: null,
       serverState: null,
@@ -115,29 +105,8 @@
       playerReady: false,
       playerAudio: false,
       error: null,
-      localClose: null,
       close: null
     };
-  }
-
-  function inspectSend(session, data) {
-    if (typeof data !== 'string') return;
-    const text = data.trim();
-    if (text.startsWith('SET auth ')) {
-      session.sends.auth += 1;
-      if (session.timings.authSentMs == null) session.timings.authSentMs = elapsed();
-    } else if (text === 'SET compression=0') {
-      session.sends.compression0 += 1;
-    } else if (text.startsWith('SET mod=')) {
-      session.sends.tune += 1;
-      session.sends.lastTune = text.slice(0, 220);
-    } else if (text === 'SET keepalive') {
-      session.sends.keepalive += 1;
-      session.sends.lastKeepaliveMs = elapsed();
-    } else if (text.startsWith('SET AR OK')) {
-      session.sends.audioRateAck += 1;
-      session.sends.lastAudioRateAck = text;
-    }
   }
 
   function inspectMessage(session, data) {
@@ -193,32 +162,8 @@
     if (report.sessions.length > 10) report.sessions.splice(0, report.sessions.length - 10);
     socketSessions.set(socket, session);
 
-    const originalSend = socket.send.bind(socket);
-    const originalClose = socket.close.bind(socket);
-
-    socket.send = function diagnosticSend(data) {
-      inspectSend(session, data);
-      return originalSend(data);
-    };
-
-    socket.close = function diagnosticClose(code, reason) {
-      if (!session.localClose) {
-        session.localClose = {
-          at: nowIso(),
-          elapsedMs: elapsed(),
-          code: code ?? null,
-          reason: reason || '',
-          player: playerSnapshot(),
-          stack: (() => {
-            try { return new Error('FREQBEACON local SND close').stack || ''; }
-            catch { return ''; }
-          })()
-        };
-        save();
-      }
-      return originalClose(code, reason);
-    };
-
+    // IMPORTANT: diagnostics are passive. Do not replace socket.send, socket.close,
+    // onopen/onmessage/onerror/onclose, or window.WebSocket.
     socket.addEventListener('open', () => {
       session.timings.openMs = elapsed();
       save();
@@ -250,7 +195,6 @@
         code: event.code || 0,
         reason: event.reason || '',
         wasClean: Boolean(event.wasClean),
-        localCloseAlreadyRecorded: Boolean(session.localClose),
         lastSndAgeMs: session.frames.lastSndMs == null ? null : elapsed() - session.frames.lastSndMs,
         player: playerSnapshot()
       };
@@ -268,14 +212,14 @@
   function sessionSummary(session = lastSession()) {
     if (!session) {
       const marker = report.assetCheck?.nativeSndHeader || 'checking player patch';
-      return `Diagnostic armed · waiting for snd-created · ${marker}`;
+      return `Passive diagnostic armed · waiting for snd-created · ${marker}`;
     }
-    const close = session.localClose
-      ? `LOCAL CLOSE ${session.localClose.code ?? ''} ${session.localClose.reason || ''}`.trim()
-      : session.close
-        ? `REMOTE CLOSE ${session.close.code} ${session.close.reason || ''}`.trim()
-        : 'socket open';
-    return `${session.receiver || '?'} · SND ${session.frames.snd} (${session.frames.pcm} PCM / ${session.frames.compressed} comp) · player audio ${session.playerAudio ? 'yes' : 'no'} · ${close}`;
+    const state = session.close
+      ? `CLOSE ${session.close.code} ${session.close.reason || ''}`.trim()
+      : session.timings.openMs != null
+        ? 'OPEN'
+        : 'PENDING OPEN';
+    return `${session.receiver || '?'} · SND ${session.frames.snd} (${session.frames.pcm} PCM / ${session.frames.compressed} comp) · player audio ${session.playerAudio ? 'yes' : 'no'} · ${state}`;
   }
 
   window.addEventListener('freqbeacon:snd-created', (event) => {
@@ -298,15 +242,25 @@
     save();
   });
 
+  window.addEventListener('freqbeacon:snd-state', (event) => {
+    const session = lastSession();
+    if (!session) return;
+    const receiverId = event.detail?.receiverId || '';
+    if (receiverId && receiverId !== session.receiver) return;
+    if (event.detail?.reason) session.serverState = event.detail.reason;
+    save();
+  });
+
   async function inspectAssets() {
     try {
-      const response = await fetch(`/sdr-player.js?v=10&diagv3=${Date.now()}`, { cache: 'no-store' });
+      const response = await fetch(`/sdr-player.js?v=11&diagpassive=${Date.now()}`, { cache: 'no-store' });
       const text = await response.text();
       report.assetCheck = {
         checkedAt: nowIso(),
         playerStatus: response.status,
         nativeSndHeader: response.headers.get('x-freqbeacon-native-snd') || 'MISSING',
         directRankingHeader: response.headers.get('x-freqbeacon-direct-ranking') || 'MISSING',
+        aliasHeader: response.headers.get('x-freqbeacon-km4rt-alias') || 'MISSING',
         hasNativeCtor: text.includes('window.__signalScoutNativeWebSocket || window.WebSocket'),
         hasNativeSocketConstruction: text.includes('new NativeSocket(socketUrl)'),
         hasSndCreatedEvent: text.includes('freqbeacon:snd-created'),
