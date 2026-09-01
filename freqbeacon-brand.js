@@ -7,7 +7,6 @@
   const SPLASH_HOLD_MS = 1250;
   const SPLASH_FADE_MS = 300;
   const SPLASH_MAX_WAIT_MS = 4000;
-  const PWA_SW_PATH = '/freqbeacon-sw.js';
 
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
@@ -15,41 +14,25 @@
       : value;
   }
 
-  function installPwaServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-
-    (async () => {
-      try {
-        const existing = await navigator.serviceWorker.getRegistration('/');
-        if (existing) {
-          const currentUrl = existing.active?.scriptURL
-            || existing.waiting?.scriptURL
-            || existing.installing?.scriptURL
-            || '';
-          let currentPath = '';
-          try {
-            currentPath = currentUrl ? new URL(currentUrl, window.location.href).pathname : '';
-          } catch {
-            currentPath = '';
-          }
-          if (currentPath && currentPath !== PWA_SW_PATH) {
-            await existing.unregister();
-          }
-        }
-
-        await navigator.serviceWorker.register(PWA_SW_PATH, {
-          scope: '/',
-          updateViaCache: 'none'
-        });
-      } catch {
-        // FREQBEACON remains usable if service-worker registration is unavailable.
-      }
-    })();
-
-    window.addEventListener('beforeinstallprompt', (event) => {
-      window.__freqbeaconInstallPrompt = event;
-      document.documentElement.dataset.freqbeaconInstallable = 'true';
-    });
+  function disablePwaServiceWorker() {
+    // Emergency stability mode: FREQBEACON must not install or re-install a
+    // service worker while Android startup is being stabilized. Existing
+    // registrations/caches are removed best-effort; the normal web app remains
+    // fully usable and live SDR/data requests continue directly to the network.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.allSettled(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+    }
+    if ('caches' in window) {
+      caches.keys()
+        .then((names) => Promise.allSettled(
+          names
+            .filter((name) => /freqbeacon|signal-scout/i.test(name))
+            .map((name) => caches.delete(name))
+        ))
+        .catch(() => {});
+    }
   }
 
   function installLocationReliability() {
@@ -257,7 +240,7 @@
     brandNode(document.body);
   }
 
-  installPwaServiceWorker();
+  disablePwaServiceWorker();
   installLocationReliability();
   installApprovedSplash();
   applyPrimaryBrand();
