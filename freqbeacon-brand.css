@@ -54,11 +54,33 @@
   pointer-events: auto;
   background: #07111f !important;
   transition: opacity 300ms ease;
+  /* Startup must never depend on JavaScript successfully dismissing the splash.
+     The compositor hides it after a hard deadline even if later scripts stall. */
+  animation: freqbeacon-splash-failsafe 350ms ease 2750ms forwards;
 }
 
 .freqbeacon-splash.is-leaving {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+}
+
+@keyframes freqbeacon-splash-failsafe {
+  0% {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  99% {
+    opacity: 0;
+    visibility: visible;
+    pointer-events: none;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 .freqbeacon-splash__art {
