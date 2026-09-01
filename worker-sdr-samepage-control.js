@@ -1,14 +1,17 @@
 import baseWorker from './worker-sdr-reliability-ranking.js';
 
-const MARKER = 'sdr-samepage-control-v1';
-const SCRIPT = 'sdr-samepage-control.js?v=1';
+const MARKER = 'sdr-samepage-control-v2-ar-ok';
+const SCRIPT = 'sdr-samepage-control.js?v=2';
 
 function patchRoot(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
 
   return response.text().then((html) => {
-    if (!html.includes(SCRIPT)) {
+    const existingPattern = /<script\s+src="\/?sdr-samepage-control\.js\?v=\d+"><\/script>/i;
+    if (existingPattern.test(html)) {
+      html = html.replace(existingPattern, `<script src="${SCRIPT}"></script>`);
+    } else {
       const lifecyclePattern = /<script\s+src="\/?sdr-lifecycle-diagnostics-v3\.js\?v=\d+"><\/script>/i;
       if (lifecyclePattern.test(html)) {
         html = html.replace(lifecyclePattern, (match) => `${match}\n  <script src="${SCRIPT}"></script>`);
