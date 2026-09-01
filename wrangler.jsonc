@@ -29,7 +29,7 @@
       "/sdr-tuning.js",
       "/sdr-player.js",
       "/sdr-receiver-ui.js",
-      "/sdr-lifecycle-diagnostics-v2.js",
+      "/sdr-lifecycle-diagnostics-v3.js",
       "/sdr-receiver-runtime-v3.js",
       "/lookup.js"
     ]
