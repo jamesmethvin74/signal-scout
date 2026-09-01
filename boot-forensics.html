@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>FREQBEACON Boot Forensics</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#07111f;color:#eef8ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:18px}.wrap{max-width:760px;margin:0 auto}.title{font-size:22px;font-weight:900;letter-spacing:.08em}.tag{margin-top:4px;color:#68d8ff}.status{margin:18px 0;padding:14px;border:1px solid #26516c;border-radius:14px;background:#0d2134;font-weight:800}.ok{color:#72e69a}.bad{color:#ff7d7d}.warn{color:#ffd36b}.row{padding:10px 0;border-bottom:1px solid #18374d}.row:last-child{border-bottom:0}.k{color:#9fb7c9;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.v{margin-top:3px;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}.card{margin:12px 0;padding:14px;border:1px solid #214662;border-radius:14px;background:#0b1c2d}button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:#174766;color:#fff;font-weight:850}.small{font-size:12px;color:#829caf;line-height:1.5}textarea{width:100%;min-height:240px;margin-top:12px;padding:10px;border-radius:10px;border:1px solid #28516d;background:#06111d;color:#ddecf7;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">FREQBEACON BOOT FORENSICS</div>
+  <div class="tag">Startup incident — isolated from the normal app</div>
+  <div id="status" class="status warn">Page rendered. Capturing startup state…</div>
+  <div id="summary" class="card"></div>
+  <div id="details" class="card"></div>
+  <button id="copy" type="button">Copy full report</button>
+  <textarea id="report" readonly></textarea>
+  <div class="small">This page never registers a service worker and never loads FREQBEACON application or SDR JavaScript. First pass records the current controller, then removes FREQBEACON service-worker/cache state and reloads itself for a clean second pass.</div>
+</div>
+<script>
+(() => {
+  const VERSION = 'freqbeacon-boot-forensics-v1';
+  const TIMEOUT_MS = 5000;
+  const phase = new URL(location.href).searchParams.get('phase') === 'post' ? 'post' : 'pre';
+  const statusEl = document.getElementById('status');
+  const summaryEl = document.getElementById('summary');
+  const detailsEl = document.getElementById('details');
+  const reportEl = document.getElementById('report');
+  const copyEl = document.getElementById('copy');
+
+  const nowIso = () => new Date().toISOString();
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function addRow(parent, key, value, cls='') {
+    const row=document.createElement('div'); row.className='row';
+    const k=document.createElement('div'); k.className='k'; k.textContent=key;
+    const v=document.createElement('div'); v.className='v '+cls; v.textContent=String(value ?? '');
+    row.append(k,v); parent.appendChild(row);
+  }
+
+  async function registrations() {
+    if (!('serviceWorker' in navigator)) return [];
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      return regs.map(r => ({
+        scope:r.scope,
+        updateViaCache:r.updateViaCache,
+        active:r.active?{url:r.active.scriptURL,state:r.active.state}:null,
+        waiting:r.waiting?{url:r.waiting.scriptURL,state:r.waiting.state}:null,
+        installing:r.installing?{url:r.installing.scriptURL,state:r.installing.state}:null
+      }));
+    } catch (e) { return [{error:e.name+': '+e.message}]; }
+  }
+
+  async function cacheNames() {
+    if (!('caches' in window)) return [];
+    try { return await caches.keys(); } catch (e) { return ['ERROR '+e.name+': '+e.message]; }
+  }
+
+  async function probe(path, readText=false) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const started = performance.now();
+    try {
+      const separator = path.includes('?') ? '&' : '?';
+      const url = path + separator + 'bootdiag=' + Date.now() + Math.random().toString(16).slice(2);
+      const response = await fetch(url, {cache:'no-store', signal:controller.signal, redirect:'follow'});
+      const elapsedMs = Math.round(performance.now()-started);
+      const headers = {};
+      for (const name of ['content-type','cache-control','cf-cache-status','server','x-freqbeacon-mainthread-relief','x-freqbeacon-native-snd','x-freqbeacon-km4rt-alias','x-freqbeacon-startup-recovery']) {
+        const value=response.headers.get(name); if(value) headers[name]=value;
+      }
+      let text='';
+      if (readText) {
+        try { text=await response.text(); } catch {}
+      }
+      return {
+        path,
+        ok:response.ok,
+        status:response.status,
+        elapsedMs,
+        finalUrl:response.url,
+        headers,
+        bytes:text.length || null,
+        containsAppShell:text?text.includes('class="app-shell"'):null,
+        containsHtmlSplash:text?text.includes('class="freqbeacon-splash"'):null,
+        containsBrand14:text?text.includes('freqbeacon-brand.js?v=14'):null,
+        containsAppV2:text?text.includes('app.js?v=2'):null,
+        sample:text?text.slice(0,120).replace(/\s+/g,' '):null
+      };
+    } catch (e) {
+      return {path,ok:false,status:null,elapsedMs:Math.round(performance.now()-started),error:e.name+': '+e.message};
+    } finally { clearTimeout(timer); }
+  }
+
+  async function capture(label) {
+    const controller = navigator.serviceWorker?.controller || null;
+    const result = {
+      version:VERSION,
+      label,
+      capturedAt:nowIso(),
+      href:location.href,
+      userAgent:navigator.userAgent,
+      online:navigator.onLine,
+      standalone:Boolean(matchMedia('(display-mode: standalone)').matches || navigator.standalone),
+      secureContext:isSecureContext,
+      controller:controller?{url:controller.scriptURL,state:controller.state}:null,
+      registrations:await registrations(),
+      caches:await cacheNames(),
+      probes:{}
+    };
+    result.probes.marker = await probe('/boot-marker.txt');
+    result.probes.root = await probe('/', true);
+    result.probes.index = await probe('/index.html', true);
+    result.probes.brand = await probe('/freqbeacon-brand.js?v=14');
+    result.probes.app = await probe('/app.js?v=2');
+    result.probes.manifest = await probe('/manifest.json');
+    result.probes.serviceWorker = await probe('/freqbeacon-sw.js');
+    return result;
+  }
+
+  async function cleanup() {
+    const result={startedAt:nowIso(),registrationsRemoved:0,cachesRemoved:0,errors:[]};
+    if ('serviceWorker' in navigator) {
+      try {
+        const regs=await navigator.serviceWorker.getRegistrations();
+        const removed=await Promise.allSettled(regs.map(r=>r.unregister()));
+        result.registrationsRemoved=removed.filter(x=>x.status==='fulfilled'&&x.value).length;
+        removed.filter(x=>x.status==='rejected').forEach(x=>result.errors.push(String(x.reason)));
+      } catch(e){result.errors.push('SW cleanup '+e.name+': '+e.message);}
+    }
+    if ('caches' in window) {
+      try {
+        const names=await caches.keys();
+        const targets=names.filter(n=>/freqbeacon|signal-scout/i.test(n));
+        const removed=await Promise.allSettled(targets.map(n=>caches.delete(n)));
+        result.cachesRemoved=removed.filter(x=>x.status==='fulfilled'&&x.value).length;
+        removed.filter(x=>x.status==='rejected').forEach(x=>result.errors.push(String(x.reason)));
+      } catch(e){result.errors.push('Cache cleanup '+e.name+': '+e.message);}
+    }
+    result.finishedAt=nowIso();
+    return result;
+  }
+
+  function classify(pre, post) {
+    const active=post||pre;
+    const root=active?.probes?.root;
+    const index=active?.probes?.index;
+    if (!root?.ok && !index?.ok) return ['ROOT NETWORK/WORKER FAILURE','bad'];
+    if (root?.ok && root.containsAppShell===false) return ['ROOT RETURNS WRONG HTML','bad'];
+    if (root?.ok && root.containsAppShell && root.elapsedMs>4000) return ['ROOT HEALTHY BUT TOO SLOW','warn'];
+    if (root?.ok && root.containsAppShell && post && !post.controller) return ['ROOT HEALTHY — STALE PWA STATE CLEARED','ok'];
+    if (root?.ok && root.containsAppShell) return ['ROOT HEALTHY — CLIENT CONTROL STILL PRESENT','warn'];
+    return ['INCONCLUSIVE — SEE REPORT','warn'];
+  }
+
+  function render(report) {
+    summaryEl.replaceChildren(); detailsEl.replaceChildren();
+    const [message,cls]=classify(report.pre,report.post);
+    statusEl.textContent=message; statusEl.className='status '+cls;
+    const active=report.post||report.pre;
+    addRow(summaryEl,'Forensics version',VERSION);
+    addRow(summaryEl,'Phase completed',report.post?'post-clean':'pre-clean');
+    addRow(summaryEl,'Controller now',active?.controller?.url||'NONE',active?.controller?'warn':'ok');
+    addRow(summaryEl,'Root probe',active?.probes?.root?.error||`${active?.probes?.root?.status} in ${active?.probes?.root?.elapsedMs} ms`,active?.probes?.root?.ok?'ok':'bad');
+    addRow(summaryEl,'Root contains app shell',String(active?.probes?.root?.containsAppShell),active?.probes?.root?.containsAppShell?'ok':'bad');
+    addRow(summaryEl,'Index probe',active?.probes?.index?.error||`${active?.probes?.index?.status} in ${active?.probes?.index?.elapsedMs} ms`,active?.probes?.index?.ok?'ok':'bad');
+    Object.entries(active?.probes||{}).forEach(([name,p])=>addRow(detailsEl,name,JSON.stringify(p),p.ok?'ok':'bad'));
+    reportEl.value=JSON.stringify(report,null,2);
+  }
+
+  copyEl.addEventListener('click', () => {
+    const text=reportEl.value;
+    reportEl.focus(); reportEl.select();
+    try { document.execCommand('copy'); } catch {}
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(()=>{});
+    copyEl.textContent='Report selected/copied';
+  });
+
+  async function main() {
+    if (phase==='pre') {
+      statusEl.textContent='Page rendered. Capturing pre-clean state…';
+      const pre=await capture('pre-clean');
+      sessionStorage.setItem('freqbeaconBootForensicsPre',JSON.stringify(pre));
+      render({pre,post:null});
+      statusEl.textContent='Pre-clean captured. Removing stale PWA control…'; statusEl.className='status warn';
+      const clean=await cleanup();
+      sessionStorage.setItem('freqbeaconBootForensicsCleanup',JSON.stringify(clean));
+      await sleep(500);
+      location.replace('/boot-forensics.html?phase=post&t='+Date.now());
+      return;
+    }
+    statusEl.textContent='Clean page rendered. Running post-clean probes…';
+    let pre=null,clean=null;
+    try{pre=JSON.parse(sessionStorage.getItem('freqbeaconBootForensicsPre')||'null');}catch{}
+    try{clean=JSON.parse(sessionStorage.getItem('freqbeaconBootForensicsCleanup')||'null');}catch{}
+    const post=await capture('post-clean');
+    const report={version:VERSION,pre,cleanup:clean,post,completedAt:nowIso()};
+    render(report);
+  }
+
+  main().catch(error=>{
+    statusEl.textContent='FORENSICS PAGE ERROR: '+(error?.message||error); statusEl.className='status bad';
+    reportEl.value=JSON.stringify({version:VERSION,error:String(error),stack:error?.stack||null},null,2);
+  });
+})();
+</script>
+</body>
+</html>
