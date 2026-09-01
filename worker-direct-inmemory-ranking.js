@@ -203,11 +203,18 @@ function patchRoot(response) {
     html = html.replace(/sdr-health\.js\?v=\d+/g, 'sdr-health.js?v=10');
     html = html.replace(/sdr-rf-v2\.js\?v=\d+/g, 'sdr-rf-v2.js?v=10');
     html = html.replace(/sdr-tuning\.js\?v=\d+/g, 'sdr-tuning.js?v=2');
+    if (!html.includes('sdr-lifecycle-diagnostics.js')) {
+      html = html.replace(
+        '<script src="sdr-live-reliability.js?v=1"></script>',
+        '<script src="sdr-lifecycle-diagnostics.js?v=1"></script>\n  <script src="sdr-live-reliability.js?v=1"></script>'
+      );
+    }
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
     headers.set('x-freqbeacon-direct-ranking', DIRECT_MARKER);
     headers.set('x-freqbeacon-native-snd', NATIVE_SND_MARKER);
+    headers.set('x-freqbeacon-sdr-lifecycle', 'sdr-lifecycle-diagnostics-v1');
     return new Response(html, { status: response.status, statusText: response.statusText, headers });
   });
 }
