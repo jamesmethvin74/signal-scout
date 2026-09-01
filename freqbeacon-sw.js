@@ -140,7 +140,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(serveNavigation(event));
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      event.respondWith(serveNavigation(event));
+    } else {
+      event.respondWith(fetch(request).catch(() => offlineResponse()));
+    }
     return;
   }
 
