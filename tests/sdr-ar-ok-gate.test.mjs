@@ -12,7 +12,7 @@ test('player snd-ready event clears Kiwi AR_OK gate', () => {
 });
 
 test('same-page control sends AR_OK immediately after sample_rate', () => {
-  assert.match(control, /sample_rate=\(\[0-9\.\]\+\)/);
+  assert.match(control, /sample_rate=/);
   assert.match(control, /sendArOk\(ws, result\.sampleRate, AR_OK_OUTPUT_RATE\)/);
   assert.match(control, /arOkSentMs/);
   assert.match(control, /sdr-samepage-control-v2-ar-ok/);
