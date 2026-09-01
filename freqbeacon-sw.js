@@ -1,114 +1,99 @@
-const SW_VERSION = 'freqbeacon-canonical-v3';
-const SHELL_CACHE = `${SW_VERSION}-shell`;
+const SW_VERSION = 'freqbeacon-safe-shell-v4';
+const SHELL_CACHE = `${SW_VERSION}-cache`;
+const SHELL_KEY = '/__freqbeacon_valid_shell_v4__';
 
-// FREQBEACON is a static app shell with live data layered on top. Cache static
-// assets for fast startup, but never pre-cache the navigation document itself.
-// A broken deployment must not be able to poison the installed PWA's `/` shell.
-const APP_SHELL_URLS = [
-  '/manifest.webmanifest?v=1',
+const STATIC_URLS = [
+  '/manifest.json',
   '/styles.css',
   '/lookup.css?v=1',
   '/arctic-slate.css?v=1',
   '/arctic-slate-controls.css?v=1',
   '/freqbeacon-brand.css?v=5',
-  '/freqbeacon-brand.js?v=13',
+  '/freqbeacon-brand.js?v=15',
   '/freqbeacon-startup-v3.avif',
+  '/freqbeacon-icon-v3-192.webp',
   '/stations.js',
   '/full-data.js?v=1',
   '/ham-bands.js?v=1',
-  '/app.js',
-  '/band-labels.js?v=2',
+  '/app.js?v=2',
+  '/band-labels.js?v=3',
   '/ham-ui.js?v=1',
   '/lookup.js?v=1',
-  '/sdr-rf-v2.js?v=8',
-  '/sdr-health.js?v=3',
-  '/sdr-tuning-v3.js?v=2',
-  '/sdr-player.js?v=2',
-  '/sdr-live-reliability-v2.js?v=1',
-  '/sdr-receiver-ui.js?v=3',
-  '/card-collapse.js?v=1',
-  '/program-guide.js?v=2'
+  '/card-collapse.js?v=2'
 ];
 
-const CACHEABLE_DESTINATIONS = new Set([
-  'style',
-  'script',
-  'image',
-  'font',
-  'manifest'
-]);
+const CACHEABLE_DESTINATIONS = new Set(['style', 'script', 'image', 'font', 'manifest']);
 
-function offlineResponse() {
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07111f"><title>FREQBEACON — Offline</title><style>html,body{margin:0;min-height:100%;background:#07111f;color:#eef8ff;font-family:system-ui,-apple-system,sans-serif}body{display:grid;place-items:center;padding:28px;box-sizing:border-box}.card{max-width:420px;text-align:center}.name{font-weight:900;letter-spacing:.12em;font-size:24px}.tag{margin-top:8px;color:#63d9ff}.note{margin-top:24px;color:#a8bed0;line-height:1.5}</style></head><body><main class="card"><div class="name">FREQBEACON</div><div class="tag">Explore the airwaves.</div><div class="note">You are offline. Reconnect to refresh schedules and live SDR tools.</div></main></body></html>`, {
+async function fetchValidatedShell() {
+  const response = await fetch(`/?freqbeacon-shell=${Date.now()}`, { cache: 'no-store' });
+  if (!response || !response.ok) throw new Error('Shell fetch failed');
+
+  const html = await response.text();
+  const valid = html.includes('class="app-shell"')
+    && html.includes('FREQBEACON')
+    && html.includes('freqbeacon-brand.js?v=15')
+    && html.includes('app.js?v=2');
+  if (!valid) throw new Error('Shell validation failed');
+
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'text/html; charset=utf-8');
+  headers.set('cache-control', 'no-store');
+  return new Response(html, {
     status: 200,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'cache-control': 'no-store'
-    }
+    statusText: 'OK',
+    headers
   });
 }
 
-async function putSuccessful(cache, key, response) {
-  if (!response || !response.ok) return response;
-  try {
-    await cache.put(key, response.clone());
-  } catch {
-    // A cache write failure must never break the live app.
-  }
-  return response;
+async function refreshShell(cache) {
+  const shell = await fetchValidatedShell();
+  await cache.put(SHELL_KEY, shell.clone());
+  return shell;
 }
 
-async function warmShell() {
-  const cache = await caches.open(SHELL_CACHE);
-  await Promise.allSettled(APP_SHELL_URLS.map(async (url) => {
+async function warmStatic(cache) {
+  await Promise.allSettled(STATIC_URLS.map(async (url) => {
     const request = new Request(url, { cache: 'reload' });
     const response = await fetch(request);
-    await putSuccessful(cache, request, response);
+    if (response && response.ok) await cache.put(request, response.clone());
   }));
 }
 
-async function refreshNavigation(request) {
-  const cache = await caches.open(SHELL_CACHE);
-  const response = await fetch(request, { cache: 'no-store' });
-  if (response && response.ok) {
-    // Keep a fallback copy only after a successful live navigation response.
-    await putSuccessful(cache, '/', response);
-  }
-  return response;
-}
-
 async function serveNavigation(event) {
-  // NETWORK FIRST. Never let a stale cached shell mask a healthy production app.
-  try {
-    return await refreshNavigation(event.request);
-  } catch {
-    const cache = await caches.open(SHELL_CACHE);
-    const cached = await cache.match('/');
-    return cached || offlineResponse();
-  }
-}
-
-async function refreshStatic(request) {
   const cache = await caches.open(SHELL_CACHE);
-  const response = await fetch(request);
-  return putSuccessful(cache, request, response);
+  const cached = await cache.match(SHELL_KEY);
+  if (cached) {
+    event.waitUntil(refreshShell(cache).catch(() => undefined));
+    return cached;
+  }
+  return refreshShell(cache);
 }
 
 async function serveStatic(event) {
   const cache = await caches.open(SHELL_CACHE);
   const cached = await cache.match(event.request);
-
   if (cached) {
-    event.waitUntil(refreshStatic(event.request).catch(() => undefined));
+    event.waitUntil((async () => {
+      try {
+        const response = await fetch(event.request);
+        if (response && response.ok) await cache.put(event.request, response.clone());
+      } catch {}
+    })());
     return cached;
   }
 
-  return refreshStatic(event.request);
+  const response = await fetch(event.request);
+  if (response && response.ok) {
+    event.waitUntil(cache.put(event.request, response.clone()).catch(() => undefined));
+  }
+  return response;
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    await warmShell();
+    const cache = await caches.open(SHELL_CACHE);
+    await refreshShell(cache);
+    await warmStatic(cache);
     await self.skipWaiting();
   })());
 });
@@ -117,7 +102,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
     await Promise.all(names
-      .filter((name) => name.startsWith('freqbeacon-canonical-') && name !== SHELL_CACHE)
+      .filter((name) => /freqbeacon|signal-scout/i.test(name) && name !== SHELL_CACHE)
       .map((name) => caches.delete(name)));
     await self.clients.claim();
   })());
@@ -130,17 +115,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (request.mode === 'navigate') {
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      event.respondWith(serveNavigation(event));
-    } else {
-      event.respondWith(fetch(request).catch(() => offlineResponse()));
-    }
+  if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    event.respondWith(serveNavigation(event));
     return;
   }
 
-  // Cache only browser-declared static resources. Requests made by the app's
-  // live radio/data code use destination="" and continue straight to network.
   if (CACHEABLE_DESTINATIONS.has(request.destination)) {
     event.respondWith(serveStatic(event));
   }
