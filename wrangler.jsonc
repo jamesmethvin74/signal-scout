@@ -2,7 +2,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-mainthread-relief.js",
+  "main": "worker-sdr-socket-local-player.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
