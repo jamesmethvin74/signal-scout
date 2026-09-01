@@ -15,7 +15,7 @@
     <div class="tag">Explore the airwaves.</div>
     <div class="status" id="status"><span class="dot"></span>Repairing the Android app cache…</div>
     <div class="detail" id="detail">Removing stale service-worker and cached app-shell state.</div>
-    <a class="button" id="open" href="/">Open FREQBEACON</a>
+    <a class="button" id="open" href="/" target="_blank" rel="noopener">Open a clean FREQBEACON tab</a>
   </main>
   <script>
     (async () => {
@@ -30,18 +30,19 @@
         }
 
         let cacheNames = [];
+        let removedCaches = 0;
         if ('caches' in window) {
           cacheNames = await caches.keys();
           const freqbeaconCaches = cacheNames.filter((name) => /freqbeacon|signal-scout/i.test(name));
-          await Promise.allSettled(freqbeaconCaches.map((name) => caches.delete(name)));
+          const deleted = await Promise.allSettled(freqbeaconCaches.map((name) => caches.delete(name)));
+          removedCaches = deleted.filter((result) => result.status === 'fulfilled' && result.value).length;
         }
 
-        status.textContent = 'Recovery complete.';
-        detail.textContent = `Removed ${registrations.length} service-worker registration${registrations.length === 1 ? '' : 's'} and cleared FREQBEACON caches. Opening a clean copy…`;
         const cleanUrl = `/?recovered=${Date.now()}`;
         open.href = cleanUrl;
         open.classList.add('show');
-        window.setTimeout(() => window.location.replace(cleanUrl), 700);
+        status.textContent = 'Recovery complete.';
+        detail.textContent = `Removed ${registrations.length} service-worker registration${registrations.length === 1 ? '' : 's'} and ${removedCaches} FREQBEACON cache${removedCaches === 1 ? '' : 's'}. Tap the button below to open a fresh tab. This page will stay here.`;
       } catch (error) {
         status.textContent = 'Recovery needs one more tap.';
         detail.textContent = error?.message || 'Android blocked the automatic reset.';
