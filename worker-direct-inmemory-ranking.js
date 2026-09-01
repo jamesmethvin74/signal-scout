@@ -136,12 +136,6 @@ function patchPlayer(response) {
         const arInputRate = Math.max(1, Math.round(Number(sdr.sampleRate) || 12000));
         const arOutputRate = Math.max(1, Math.round(Number(sdr.audioContext?.sampleRate) || 48000));
         sendSocket(\`SET AR OK in=\${arInputRate} out=\${arOutputRate}\`);
-        if (!sdr.sndReadySignaled) {
-          sdr.sndReadySignaled = true;
-          window.dispatchEvent(new CustomEvent('freqbeacon:snd-ready', {
-            detail: { socket: sdr.socket, url: sdr.socketUrl, receiverId: sdr.socketReceiverId }
-          }));
-        }
       }`;
     patched = patched.replace(oldSampleRate, newSampleRate);
 
