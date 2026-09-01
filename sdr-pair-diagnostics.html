@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <title>FREQBEACON SDR Pair Diagnostics</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07111f;--panel:#0b1828;--line:#21415a;--cyan:#32d7ef;--text:#edf7fb;--muted:#91a8b7;--good:#61e786;--bad:#ffbd59}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#17344b 0,#07111f 42%,#040a11 100%);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}.wrap{width:min(860px,100%);margin:0 auto;padding:18px 12px 50px}.brand{font-size:13px;letter-spacing:.18em;color:var(--cyan);font-weight:900}.brand span{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;margin-top:3px}.hero,.card{margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:16px;background:rgba(8,22,36,.9)}h1{margin:0;font-size:23px}p{color:var(--muted)}.controls{display:grid;grid-template-columns:1fr 120px 90px;gap:8px;margin-top:14px}.controls input,.controls select,.controls button,.buttons button{min-height:44px;border:1px solid var(--line);border-radius:9px;background:#07131f;color:var(--text);padding:9px 11px;font:inherit}.controls button,.buttons button{background:rgba(50,215,239,.1);border-color:rgba(50,215,239,.55);color:#bff7ff;font-weight:800}.controls button:disabled{opacity:.5}.verdict{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#06101a;font-weight:850}.verdict.running{color:var(--cyan)}.verdict.good{border-color:rgba(97,231,134,.5);color:var(--good)}.verdict.bad{border-color:rgba(255,189,89,.5);color:var(--bad)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.card{margin-top:0}.card h2{font-size:14px;margin:0 0 9px}.stage{padding:9px;border-radius:8px;background:#07131f;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-word}.stage.good{color:var(--good)}.stage.bad{color:var(--bad)}.buttons{display:flex;gap:8px;margin:10px 0}.raw summary{cursor:pointer;color:var(--cyan);font-weight:800}.raw pre{overflow:auto;max-height:58vh;padding:12px;border:1px solid var(--line);border-radius:10px;background:#03090e;color:#b9d3df;font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}@media(max-width:650px){.controls{grid-template-columns:1fr 110px}.controls button{grid-column:1/-1}.grid{grid-template-columns:1fr}h1{font-size:20px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand">FREQBEACON <span>SDR SND / W-F PAIR ISOLATION</span></div>
+    <section class="hero">
+      <h1>Does the waterfall kill the audio session?</h1>
+      <p>This page bypasses the normal player and wrappers. It first holds a clean SND-only session open, then repeats with a paired W/F session using the same Kiwi timestamp.</p>
+      <div class="controls">
+        <input id="receiver" value="km4rt.ddns.net:8073" aria-label="Receiver ID" />
+        <input id="frequency" value="5990" inputmode="decimal" aria-label="Frequency kHz" />
+        <select id="mode" aria-label="Mode"><option value="am">AM</option><option value="sam">SAM</option><option value="usb">USB</option><option value="lsb">LSB</option></select>
+        <button id="run">Run pair diagnostic</button>
+      </div>
+      <div id="verdict" class="verdict running">Waiting to run…</div>
+    </section>
+    <section class="grid">
+      <article class="card"><h2>1 · SND only · 6-second hold</h2><div id="sndOnlyStage" class="stage">Not run.</div></article>
+      <article class="card"><h2>2 · SND + paired W/F · 6-second hold</h2><div id="pairedStage" class="stage">Not run.</div></article>
+    </section>
+    <div class="buttons"><button id="copy">Copy report</button></div>
+    <details class="raw" open><summary>Full pair diagnostic report</summary><pre id="raw">No report yet.</pre></details>
+  </main>
+  <script src="sdr-pair-diagnostics.js?v=1"></script>
+</body>
+</html>
