@@ -131,6 +131,11 @@ function patchPlayer(response) {
     const newSampleRate = `      if (sampleRate) {
         sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
         configureSdr();
+        // Kiwi requires AR_OK as part of CMD_SND_ALL before audio frames start.
+        // Send it from the real player session immediately after sample_rate.
+        const arInputRate = Math.max(1, Math.round(Number(sdr.sampleRate) || 12000));
+        const arOutputRate = Math.max(1, Math.round(Number(sdr.audioContext?.sampleRate) || 48000));
+        sendSocket(\`SET AR OK in=\${arInputRate} out=\${arOutputRate}\`);
         if (!sdr.sndReadySignaled) {
           sdr.sndReadySignaled = true;
           window.dispatchEvent(new CustomEvent('freqbeacon:snd-ready', {
