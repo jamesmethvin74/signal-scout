@@ -1,12 +1,12 @@
 import baseWorker from './worker-sdr-diagnostic-control-v3.js';
 
-const MARKER = 'freqbeacon-sdr-copy-report-v6';
+const MARKER = 'freqbeacon-sdr-copy-report-v7-instant';
 
 function bootstrap() {
   return `<script>
 (() => {
-  if (window.__freqbeaconSdrCopyReportV6) return;
-  window.__freqbeaconSdrCopyReportV6 = true;
+  if (window.__freqbeaconSdrCopyReportV7) return;
+  window.__freqbeaconSdrCopyReportV7 = true;
 
   function reportText() {
     try {
@@ -57,40 +57,38 @@ function bootstrap() {
     return ok;
   }
 
-  async function copyReport(box, button) {
+  function markCopied(box, button) {
+    button.textContent = 'Copied — paste into ChatGPT';
+    setStatus(box, 'SDR diagnostic copied to clipboard.');
+    setTimeout(() => { button.textContent = 'Copy report'; }, 2200);
+  }
+
+  function copyReport(box, button) {
+    // Snapshot immediately when the user taps. Never await Android clipboard
+    // promises before returning control to the UI.
     const text = reportText();
-    let copied = false;
 
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        copied = true;
-      }
-    } catch {}
-
-    if (!copied) {
-      try {
-        if (navigator.clipboard?.write && window.ClipboardItem) {
-          const item = new ClipboardItem({ 'text/plain': new Blob([text], { type:'text/plain' }) });
-          await navigator.clipboard.write([item]);
-          copied = true;
-        }
-      } catch {}
-    }
-
-    if (!copied) copied = execCopy(text);
-
-    if (copied) {
-      button.textContent = 'Copied — paste into ChatGPT';
-      setStatus(box, 'SDR diagnostic copied to clipboard.');
-      setTimeout(() => { button.textContent = 'Copy report'; }, 2200);
+    if (execCopy(text)) {
+      markCopied(box, button);
       return;
     }
 
+    // If synchronous copy is blocked, expose/select the snapshot immediately.
+    // The async clipboard attempt below is fire-and-forget and cannot delay this UI.
     showSelectedReport(box, text);
-    button.textContent = 'Copy blocked — report selected below';
-    setStatus(box, 'Android blocked automatic copy. The report is selected below; long-press it and tap Copy.');
-    setTimeout(() => { button.textContent = 'Copy report'; }, 2600);
+    button.textContent = 'Report ready — selected below';
+    setStatus(box, 'Report captured instantly. Android blocked synchronous copy; the report is selected below.');
+
+    try {
+      const pending = navigator.clipboard?.writeText?.(text);
+      if (pending?.then) {
+        pending.then(() => markCopied(box, button)).catch(() => {});
+      }
+    } catch {}
+
+    setTimeout(() => {
+      if (button.textContent === 'Report ready — selected below') button.textContent = 'Copy report';
+    }, 2600);
   }
 
   function patchBox() {
