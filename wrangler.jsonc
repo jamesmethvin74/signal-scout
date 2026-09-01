@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-reliability-ranking.js",
+  "main": "worker-sdr-samepage-control.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
@@ -30,6 +30,7 @@
       "/sdr-player.js",
       "/sdr-receiver-ui.js",
       "/sdr-lifecycle-diagnostics-v3.js",
+      "/sdr-samepage-control.js",
       "/sdr-receiver-runtime-v3.js",
       "/lookup.js"
     ]
