@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-km4rt-alias-fix.js",
+  "main": "worker-sdr-reliability-ranking.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
