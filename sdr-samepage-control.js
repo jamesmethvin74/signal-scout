@@ -1,11 +1,14 @@
 (() => {
   if (window.__freqbeaconSamePageControl?.version) return;
 
-  const VERSION = 'sdr-samepage-control-v1';
+  const VERSION = 'sdr-samepage-control-v2-ar-ok';
   const CONTROL_RECEIVER = 'km4rt.ddns.net:8073';
   const CONTROL_FREQUENCY_KHZ = 5990;
   const TIMEOUT_MS = 5000;
+  const AR_OK_INPUT_RATE = 12000;
+  const AR_OK_OUTPUT_RATE = 48000;
   const decoder = new TextDecoder();
+  const arOkSockets = new WeakSet();
 
   const state = {
     version: VERSION,
@@ -52,6 +55,25 @@
     return false;
   }
 
+  function sendArOk(ws, inputRate = AR_OK_INPUT_RATE, outputRate = AR_OK_OUTPUT_RATE) {
+    if (!ws || arOkSockets.has(ws)) return false;
+    const safeIn = Math.max(1, Math.round(Number(inputRate) || AR_OK_INPUT_RATE));
+    const safeOut = Math.max(1, Math.round(Number(outputRate) || AR_OK_OUTPUT_RATE));
+    if (!send(ws, `SET AR OK in=${safeIn} out=${safeOut}`)) return false;
+    arOkSockets.add(ws);
+    return true;
+  }
+
+  // Kiwi's current server requires CMD_AR_OK as part of CMD_SND_ALL before it
+  // will emit SND frames. The player announces snd-ready after sample_rate, so
+  // clear that server-side gate immediately instead of waiting for a later
+  // audio_rate message that is not guaranteed to arrive first.
+  window.addEventListener('freqbeacon:snd-ready', (event) => {
+    const socket = event.detail?.socket;
+    if (!socket) return;
+    sendArOk(socket);
+  });
+
   function configure(ws) {
     [
       'SET ident_user=FREQBEACON same-page control',
@@ -82,6 +104,7 @@
         openMs: null,
         authSentMs: null,
         sampleRateMs: null,
+        arOkSentMs: null,
         firstSndMs: null,
         sampleRate: null,
         sndFrames: 0,
@@ -135,6 +158,9 @@
             if (!configured) {
               configured = true;
               configure(ws);
+            }
+            if (sendArOk(ws, result.sampleRate, AR_OK_OUTPUT_RATE)) {
+              result.arOkSentMs = elapsedFrom(started);
             }
           }
           return;
