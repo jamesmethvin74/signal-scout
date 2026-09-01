@@ -7,44 +7,48 @@ function patchPlayer(response) {
   if (!/javascript|text\/plain/.test(contentType)) return response;
 
   return response.text().then((source) => {
-    const oldWebsocketUrl = `  function websocketUrl(receiverIndex) {
-    const receiver = sdr.receivers[receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];
-    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;
-    return \`${scheme}//${window.location.host}/api/sdr/ws?receiver=\${encodeURIComponent(receiver.id)}&stream=SND&ts=\${timestamp}\`;
-  }`;
+    const oldWebsocketUrl = [
+      '  function websocketUrl(receiverIndex) {',
+      '    const receiver = sdr.receivers[receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];',
+      "    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';",
+      '    const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;',
+      '    return `${scheme}//${window.location.host}/api/sdr/ws?receiver=${encodeURIComponent(receiver.id)}&stream=SND&ts=${timestamp}`;',
+      '  }'
+    ].join('\n');
 
-    const newWebsocketUrl = `  function canonicalReceiverId(value) {
-    const id = String(value || '').trim();
-    if (id.toLowerCase() === '64.22.14.214:8073') return 'km4rt.ddns.net:8073';
-    return id;
-  }
-
-  function normalizeReceiverList(receivers) {
-    const normalized = [];
-    const seen = new Set();
-    for (const receiver of Array.isArray(receivers) ? receivers : []) {
-      const canonicalId = canonicalReceiverId(receiver?.id);
-      if (!canonicalId) continue;
-      const key = canonicalId.toLowerCase();
-      if (seen.has(key)) {
-        const existing = normalized.find((item) => String(item.id || '').toLowerCase() === key);
-        if (existing && receiver?.recommended && !existing.recommended) existing.recommended = true;
-        continue;
-      }
-      seen.add(key);
-      normalized.push({ ...receiver, id: canonicalId, sourceReceiverId: receiver?.id || canonicalId });
-    }
-    return normalized;
-  }
-
-  function websocketUrl(receiverIndex) {
-    const receiver = sdr.receivers[receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];
-    const connectionId = canonicalReceiverId(receiver?.id);
-    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;
-    return \`${scheme}//${window.location.host}/api/sdr/ws?receiver=\${encodeURIComponent(connectionId)}&stream=SND&ts=\${timestamp}\`;
-  }`;
+    const newWebsocketUrl = [
+      '  function canonicalReceiverId(value) {',
+      "    const id = String(value || '').trim();",
+      "    if (id.toLowerCase() === '64.22.14.214:8073') return 'km4rt.ddns.net:8073';",
+      '    return id;',
+      '  }',
+      '',
+      '  function normalizeReceiverList(receivers) {',
+      '    const normalized = [];',
+      '    const seen = new Set();',
+      '    for (const receiver of Array.isArray(receivers) ? receivers : []) {',
+      '      const canonicalId = canonicalReceiverId(receiver?.id);',
+      '      if (!canonicalId) continue;',
+      '      const key = canonicalId.toLowerCase();',
+      '      if (seen.has(key)) {',
+      "        const existing = normalized.find((item) => String(item.id || '').toLowerCase() === key);",
+      '        if (existing && receiver?.recommended && !existing.recommended) existing.recommended = true;',
+      '        continue;',
+      '      }',
+      '      seen.add(key);',
+      '      normalized.push({ ...receiver, id: canonicalId, sourceReceiverId: receiver?.id || canonicalId });',
+      '    }',
+      '    return normalized;',
+      '  }',
+      '',
+      '  function websocketUrl(receiverIndex) {',
+      '    const receiver = sdr.receivers[receiverIndex] || sdr.receivers[0] || LEGACY_RECEIVERS[0];',
+      '    const connectionId = canonicalReceiverId(receiver?.id);',
+      "    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';",
+      '    const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;',
+      '    return `${scheme}//${window.location.host}/api/sdr/ws?receiver=${encodeURIComponent(connectionId)}&stream=SND&ts=${timestamp}`;',
+      '  }'
+    ].join('\n');
 
     let patched = source.replace(oldWebsocketUrl, newWebsocketUrl);
     patched = patched.replace(
@@ -54,7 +58,8 @@ function patchPlayer(response) {
 
     const applied = patched !== source
       && patched.includes("64.22.14.214:8073') return 'km4rt.ddns.net:8073'")
-      && patched.includes('sdr.receivers = normalizeReceiverList(payload.receivers);');
+      && patched.includes('sdr.receivers = normalizeReceiverList(payload.receivers);')
+      && patched.includes('encodeURIComponent(connectionId)');
 
     const headers = new Headers(response.headers);
     headers.set('content-type', 'application/javascript; charset=utf-8');
