@@ -1,7 +1,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-sdr-diagnostic-control-v3.js",
+  "main": "worker-sdr-copy-report-v6.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
