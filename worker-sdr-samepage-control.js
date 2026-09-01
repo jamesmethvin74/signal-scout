@@ -1,23 +1,21 @@
 import baseWorker from './worker-sdr-reliability-ranking.js';
 
-const MARKER = 'sdr-proven-handshake-bridge-v3';
+const MARKER = 'sdr-samepage-control-disabled-v3';
 
 function patchRoot(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
 
-  return response.text().then((source) => {
-    let html = source.replace(/\s*<script\s+src="\/?sdr-samepage-control\.js\?v=\d+"><\/script>/ig, '');
-    html = html.replace(
-      /(<script\s+src="\/?sdr-player\.js\?v=\d+"><\/script>)/i,
-      '$1\n  <script src="sdr-samepage-control.js?v=3"></script>'
-    );
+  return response.text().then((html) => {
+    // The same-page probe proved Tipton can deliver SND, but it also opens its
+    // own Kiwi session before the real player. Remove it from production so
+    // Listen Live owns the first/only SND session.
+    html = html.replace(/\s*<script\s+src="\/?sdr-samepage-control\.js\?v=\d+"><\/script>/ig, '');
 
-    const applied = html !== source && html.includes('sdr-samepage-control.js?v=3');
     const headers = new Headers(response.headers);
     headers.set('content-type', 'text/html; charset=utf-8');
     headers.set('cache-control', 'no-store, max-age=0');
-    headers.set('x-freqbeacon-sdr-handshake-bridge', applied ? MARKER : 'root-patch-miss');
+    headers.set('x-freqbeacon-sdr-samepage-control', MARKER);
     return new Response(html, {
       status: response.status,
       statusText: response.statusText,
@@ -29,7 +27,7 @@ function patchRoot(response) {
 function noStore(response) {
   const headers = new Headers(response.headers);
   headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-handshake-bridge', MARKER);
+  headers.set('x-freqbeacon-sdr-samepage-control', MARKER);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

@@ -1,8 +1,8 @@
-// redeploy marker: 2026-09-01T15:12-05:00
+// redeploy marker: 2026-09-01T10:02-05:00
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-no-splash.js",
+  "main": "worker-sdr-mainthread-relief.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",

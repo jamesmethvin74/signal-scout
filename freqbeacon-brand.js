@@ -14,25 +14,25 @@
       : value;
   }
 
-  function installPwaServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-
-    // Register only after the live app has finished loading. The v4 worker
-    // validates the cached document before it can ever become a startup shell,
-    // so an offline/error response cannot poison future Android launches.
-    window.addEventListener('load', () => {
-      window.setTimeout(() => {
-        navigator.serviceWorker.register('/freqbeacon-sw.js?v=4', {
-          scope: '/',
-          updateViaCache: 'none'
-        }).catch(() => {});
-      }, 750);
-    }, { once: true });
-
-    window.addEventListener('beforeinstallprompt', (event) => {
-      window.__freqbeaconInstallPrompt = event;
-      document.documentElement.dataset.freqbeaconInstallable = 'true';
-    });
+  function disablePwaServiceWorker() {
+    // Emergency stability mode: FREQBEACON must not install or re-install a
+    // service worker while Android startup is being stabilized. Existing
+    // registrations/caches are removed best-effort; the normal web app remains
+    // fully usable and live SDR/data requests continue directly to the network.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.allSettled(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+    }
+    if ('caches' in window) {
+      caches.keys()
+        .then((names) => Promise.allSettled(
+          names
+            .filter((name) => /freqbeacon|signal-scout/i.test(name))
+            .map((name) => caches.delete(name))
+        ))
+        .catch(() => {});
+    }
   }
 
   function installLocationReliability() {
@@ -240,7 +240,7 @@
     brandNode(document.body);
   }
 
-  installPwaServiceWorker();
+  disablePwaServiceWorker();
   installLocationReliability();
   installApprovedSplash();
   applyPrimaryBrand();

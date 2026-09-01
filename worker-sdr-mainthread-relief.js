@@ -91,41 +91,11 @@ async function patchApp(response) {
     appendBatch();`
   );
 
-  patched = patched.replace(
-`      const url = \`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=\${encodeURIComponent(lat)}&lon=\${encodeURIComponent(lon)}&zoom=10\`;
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });`,
-`      const url = \`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=\${encodeURIComponent(lat)}&lon=\${encodeURIComponent(lon)}&zoom=12&addressdetails=1&accept-language=en\`;
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(url, {
-        headers: { Accept: 'application/json' },
-        signal: controller.signal
-      }).finally(() => window.clearTimeout(timer));`
-  );
-
-  patched = patched.replace(
-`    if (permission === 'granted') {
-      if (!saved || !saved.updatedAt || Date.now() - saved.updatedAt >= LOCATION_REFRESH_MS) {
-        requestLocation({ automatic: true, permissionState: permission });
-      }
-      return;
-    }`,
-`    if (permission === 'granted') {
-      const unresolvedLabel = saved && /^-?\\d+(?:\\.\\d+)?\\s*,\\s*-?\\d+/.test(String(saved.label || ''));
-      if (!saved || unresolvedLabel || !saved.updatedAt || Date.now() - saved.updatedAt >= LOCATION_REFRESH_MS) {
-        requestLocation({ automatic: true, permissionState: permission });
-      }
-      return;
-    }`
-  );
-
   const applied = patched !== source
     && patched.includes('let renderGeneration = 0')
     && patched.includes('scheduleFormatterCache')
     && patched.includes('const batchSize = window.innerWidth <= 700 ? 20 : 60')
-    && patched.includes('window.setTimeout(appendBatch, 0)')
-    && patched.includes('addressdetails=1&accept-language=en')
-    && patched.includes('const unresolvedLabel = saved');
+    && patched.includes('window.setTimeout(appendBatch, 0)');
 
   return textResponse(
     response,
@@ -228,7 +198,6 @@ async function patchRoot(response) {
   html = html.replace('<script src="app.js"></script>', '<script src="app.js?v=2"></script>');
   html = html.replace(/band-labels\.js\?v=\d+/g, 'band-labels.js?v=3');
   html = html.replace(/card-collapse\.js\?v=\d+/g, 'card-collapse.js?v=2');
-  html = html.replace(/freqbeacon-brand\.js\?v=\d+/g, 'freqbeacon-brand.js?v=15');
 
   html = html.replace(
 `      function decorate() {
@@ -255,7 +224,6 @@ async function patchRoot(response) {
     && html.includes('app.js?v=2')
     && html.includes('band-labels.js?v=3')
     && html.includes('card-collapse.js?v=2')
-    && html.includes('freqbeacon-brand.js?v=15')
     && html.includes('decorate(root = document)')
     && html.includes("}).observe(grid, { childList: true });");
 
