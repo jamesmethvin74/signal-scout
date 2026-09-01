@@ -1,13 +1,10 @@
-const SW_VERSION = 'freqbeacon-canonical-v2';
+const SW_VERSION = 'freqbeacon-canonical-v3';
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 
-// FREQBEACON is a static app shell with live data layered on top. Keep the
-// shell local so Android can paint the installed app immediately instead of
-// leaving the native PWA loading-progress indicator visible during startup.
-// Live APIs, SDR sockets/audio, spectrum/waterfall traffic, and other fetch()
-// data are intentionally not intercepted by this cache path.
+// FREQBEACON is a static app shell with live data layered on top. Cache static
+// assets for fast startup, but never pre-cache the navigation document itself.
+// A broken deployment must not be able to poison the installed PWA's `/` shell.
 const APP_SHELL_URLS = [
-  '/',
   '/manifest.webmanifest?v=1',
   '/styles.css',
   '/lookup.css?v=1',
@@ -72,28 +69,22 @@ async function warmShell() {
 
 async function refreshNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
-  const response = await fetch(request);
+  const response = await fetch(request, { cache: 'no-store' });
   if (response && response.ok) {
-    // Keep one canonical shell key so start_url, /, and /index.html all share
-    // the freshest Worker-rewritten production HTML.
+    // Keep a fallback copy only after a successful live navigation response.
     await putSuccessful(cache, '/', response);
   }
   return response;
 }
 
 async function serveNavigation(event) {
-  const cache = await caches.open(SHELL_CACHE);
-  const cached = await cache.match('/');
-
-  if (cached) {
-    event.waitUntil(refreshNavigation(event.request).catch(() => undefined));
-    return cached;
-  }
-
+  // NETWORK FIRST. Never let a stale cached shell mask a healthy production app.
   try {
     return await refreshNavigation(event.request);
   } catch {
-    return offlineResponse();
+    const cache = await caches.open(SHELL_CACHE);
+    const cached = await cache.match('/');
+    return cached || offlineResponse();
   }
 }
 
