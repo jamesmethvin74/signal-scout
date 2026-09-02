@@ -2,6 +2,7 @@ import baseWorker from './worker-sdr-mainthread-relief.js';
 
 const MARKER = 'sdr-packet-cadence-v1';
 const AUDIO_CLEANUP_MARKER = 'sdr-audio-node-cleanup-v1';
+const AUDIO_BATCH_MARKER = 'sdr-audio-batching-v1';
 
 function bootstrap() {
   return `<script>
@@ -267,14 +268,60 @@ async function patchPlayerAudioCleanup(response) {
   const newQueuedCleanup = "        try { scheduledSource.stop(); } catch {}\n        try { scheduledSource.disconnect(); } catch {}\n      }\n      sdr.scheduledSources.clear();";
   source = source.replace(oldQueuedCleanup, newQueuedCleanup);
 
+  const decodeAnchor = '  function decodePcm(bytes, littleEndian) {';
+  const batchFunction = `  const AUDIO_BATCH_FRAMES = 8;
+
+  function queueAudioFrame(samples) {
+    if (!samples?.length) return;
+    if (!Array.isArray(sdr.audioFrameQueue)) sdr.audioFrameQueue = [];
+    sdr.audioFrameQueue.push(samples);
+    if (sdr.audioFrameQueue.length < AUDIO_BATCH_FRAMES) return;
+
+    let totalSamples = 0;
+    for (const frame of sdr.audioFrameQueue) totalSamples += frame.length;
+    const merged = new Float32Array(totalSamples);
+    let offset = 0;
+    for (const frame of sdr.audioFrameQueue) {
+      merged.set(frame, offset);
+      offset += frame.length;
+    }
+    sdr.audioFrameQueue.length = 0;
+
+    if (!sdr.audioBatchStarted) {
+      sdr.audioBatchStarted = true;
+      const context = sdr.audioContext;
+      if (context && context.state !== 'closed') {
+        sdr.nextPlayTime = Math.max(Number(sdr.nextPlayTime) || 0, context.currentTime + 0.35);
+      }
+    }
+    scheduleAudio(merged);
+  }
+
+`;
+  if (source.includes(decodeAnchor) && !source.includes('const AUDIO_BATCH_FRAMES = 8;')) {
+    source = source.replace(decodeAnchor, `${batchFunction}${decodeAnchor}`);
+  }
+
+  const oldPcmSchedule = '    scheduleAudio(decodePcm(audioBytes, littleEndian));';
+  const newPcmSchedule = '    queueAudioFrame(decodePcm(audioBytes, littleEndian));';
+  source = source.replace(oldPcmSchedule, newPcmSchedule);
+
+  const oldQueueReset = '    sdr.nextPlayTime = sdr.audioContext?.currentTime || 0;\n    sdr.connected = false;';
+  const newQueueReset = '    sdr.nextPlayTime = sdr.audioContext?.currentTime || 0;\n    sdr.audioFrameQueue = [];\n    sdr.audioBatchStarted = false;\n    sdr.connected = false;';
+  source = source.replace(oldQueueReset, newQueueReset);
+
+  const cleanupApplied = source.includes('try { source.disconnect(); } catch {}')
+    && source.includes('try { scheduledSource.disconnect(); } catch {}');
+  const batchingApplied = source.includes('const AUDIO_BATCH_FRAMES = 8;')
+    && source.includes('queueAudioFrame(decodePcm(audioBytes, littleEndian));')
+    && source.includes('sdr.audioFrameQueue = [];')
+    && source.includes('sdr.audioBatchStarted = false;');
+
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-audio-cleanup',
-    source.includes('try { source.disconnect(); } catch {}')
-    && source.includes('try { scheduledSource.disconnect(); } catch {}')
-      ? AUDIO_CLEANUP_MARKER
-      : 'audio-cleanup-patch-miss');
+  headers.set('x-freqbeacon-sdr-audio-cleanup', cleanupApplied ? AUDIO_CLEANUP_MARKER : 'audio-cleanup-patch-miss');
+  headers.set('x-freqbeacon-sdr-audio-batching', batchingApplied ? AUDIO_BATCH_MARKER : 'audio-batching-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
