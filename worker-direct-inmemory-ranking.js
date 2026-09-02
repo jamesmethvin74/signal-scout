@@ -5,7 +5,7 @@ const NATIVE_SND_MARKER = 'native-snd-ownership-v1';
 const PLAYER_OPEN_TIMEOUT_MS = 10000;
 const PLAYER_AUDIO_TIMEOUT_MS = 10000;
 const PLAYER_AUDIO_LEAD_SECONDS = 0.65;
-const PLAYER_AUDIO_LOW_WATER_SECONDS = 0.10;
+const PLAYER_AUDIO_RECOVERY_SECONDS = 0.035;
 
 function jsResponse(response, source, markerName, markerValue) {
   const headers = new Headers(response.headers);
@@ -135,9 +135,10 @@ function patchPlayer(response) {
     patched = patched.replace(oldAudioSourceCreate, newAudioSourceCreate);
 
     const oldAudioSchedule = '    if (sdr.nextPlayTime < now + 0.035 || sdr.nextPlayTime > now + 0.55) sdr.nextPlayTime = now + 0.055;';
-    const newAudioSchedule = `    // Rebuffer only after a genuine underrun. Never collapse a healthy queued
-    // cushion merely because burst delivery temporarily pushes it past 550 ms.
-    if (sdr.nextPlayTime < now + ${PLAYER_AUDIO_LOW_WATER_SECONDS}) sdr.nextPlayTime = now + ${PLAYER_AUDIO_LEAD_SECONDS};`;
+    const newAudioSchedule = `    // The 650 ms startup cushion is paid only once. If delivery actually drains
+    // the queue later, recover on the next frame instead of inserting another
+    // artificial 650 ms silence between otherwise usable bursts.
+    if (sdr.nextPlayTime < now + ${PLAYER_AUDIO_RECOVERY_SECONDS}) sdr.nextPlayTime = now + ${PLAYER_AUDIO_RECOVERY_SECONDS};`;
     patched = patched.replace(oldAudioSchedule, newAudioSchedule);
 
     const oldSocketOpen = `      socket = new WebSocket(websocketUrl(sdr.receiverIndex));
