@@ -2,7 +2,6 @@
   const HEALTH_KEY = 'signalScout:sdrHealth:v1';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
-  const FAST_FAIL_MS = 5500;
   const NativeFetch = window.fetch.bind(window);
   const NativeWebSocket = window.WebSocket;
   const decoder = new TextDecoder();
@@ -33,16 +32,14 @@
     try {
       window.localStorage?.setItem(HEALTH_KEY, JSON.stringify(health));
     } catch {
-      // Health memory is an optimization only. SDR listening still works if
-      // storage is unavailable or full.
+      // Health history is advisory only.
     }
   }
 
   function failureMinutes(reason, failures) {
     if (reason === 'busy') return Math.min(8, 2 * failures);
     if (reason === 'offline') return 30;
-    const base = reason === 'timeout' ? 8 : 5;
-    return Math.min(30, Math.round(base * Math.pow(1.65, Math.max(0, failures - 1))));
+    return Math.min(30, Math.round(5 * Math.pow(1.65, Math.max(0, failures - 1))));
   }
 
   function markFailure(receiverId, reason = 'error') {
@@ -75,45 +72,26 @@
     saveHealth(health);
   }
 
-  function healthRank(receiver, index, health, timestamp) {
-    const entry = health[receiver?.id] || {};
-    const cooling = Number(entry.cooldownUntil || 0) > timestamp;
-    const recentSuccess = Number(entry.lastSuccess || 0) > timestamp - RECENT_SUCCESS_MS;
-
-    // Preserve the server's propagation/geography order unless we have actual
-    // connection evidence. A receiver in cooldown moves to the back; a recent
-    // success gets only a small nudge so RF relevance still dominates.
-    let score = index;
-    if (cooling) score += 1000 + Number(entry.failures || 0) * 20;
-    else if (recentSuccess) score -= 0.35;
-    return { score, cooling, recentSuccess, entry };
-  }
-
   function applyHealthToRecommendations(receivers) {
     if (!Array.isArray(receivers) || receivers.length < 2) return receivers;
     const health = loadHealth();
     const timestamp = now();
-    const ranked = receivers.map((receiver, index) => ({
-      receiver: { ...receiver },
-      index,
-      health: healthRank(receiver, index, health, timestamp)
-    }));
+    const ranked = receivers.map((receiver, index) => {
+      const entry = health[receiver?.id] || {};
+      const cooling = Number(entry.cooldownUntil || 0) > timestamp;
+      const recentSuccess = Number(entry.lastSuccess || 0) > timestamp - RECENT_SUCCESS_MS;
+      let score = index;
+      if (cooling) score += 1000 + Number(entry.failures || 0) * 20;
+      else if (recentSuccess) score -= 0.35;
+      return { receiver: { ...receiver }, index, cooling, recentSuccess, score };
+    });
 
-    ranked.sort((a, b) => a.health.score - b.health.score || a.index - b.index);
-
-    // The first non-cooling receiver becomes the current best available match.
-    // This lets the existing player start with a receiver that is both RF-relevant
-    // and recently reachable without changing the server-side reception model.
-    const preferred = ranked.find((item) => !item.health.cooling) || ranked[0];
+    ranked.sort((a, b) => a.score - b.score || a.index - b.index);
+    const preferred = ranked.find((item) => !item.cooling) || ranked[0];
     return ranked.map((item) => {
       const receiver = item.receiver;
       receiver.recommended = item === preferred;
-      receiver.connectionHealth = item.health.cooling
-        ? 'cooldown'
-        : (item.health.recentSuccess ? 'recent-success' : 'unknown');
-      if (item === preferred && item.index > 0) {
-        receiver.reason = `${receiver.reason || 'Useful receiver for this frequency.'} Preferred now because a higher-ranked receiver recently failed to connect.`;
-      }
+      receiver.connectionHealth = item.cooling ? 'cooldown' : (item.recentSuccess ? 'recent-success' : 'unknown');
       return receiver;
     });
   }
@@ -123,9 +101,7 @@
       if (typeof input === 'string') return new URL(input, window.location.href);
       if (input instanceof URL) return new URL(input.toString(), window.location.href);
       if (input?.url) return new URL(input.url, window.location.href);
-    } catch {
-      return null;
-    }
+    } catch {}
     return null;
   }
 
@@ -133,18 +109,13 @@
     const response = await NativeFetch(...args);
     const url = requestUrl(args[0]);
     if (!url || url.origin !== window.location.origin || url.pathname !== '/api/sdr/receivers') return response;
-
     try {
       const payload = await response.clone().json();
       if (!Array.isArray(payload?.receivers) || !payload.receivers.length) return response;
-      const adjusted = {
-        ...payload,
-        receivers: applyHealthToRecommendations(payload.receivers)
-      };
       const headers = new Headers(response.headers);
       headers.set('content-type', 'application/json; charset=utf-8');
       headers.set('cache-control', 'private, max-age=0, no-store');
-      return new Response(JSON.stringify(adjusted), {
+      return new Response(JSON.stringify({ ...payload, receivers: applyHealthToRecommendations(payload.receivers) }), {
         status: response.status,
         statusText: response.statusText,
         headers
@@ -154,7 +125,7 @@
     }
   };
 
-  function sdrReceiverId(rawUrl) {
+  function receiverIdFromUrl(rawUrl) {
     try {
       const url = new URL(String(rawUrl), window.location.href);
       if (url.origin !== window.location.origin || url.pathname !== '/api/sdr/ws') return null;
@@ -181,71 +152,55 @@
         if (/too_busy=1/.test(data)) return { audio: false, state: 'busy' };
         if (/down=1/.test(data)) return { audio: false, state: 'offline' };
       }
-    } catch {
-      // Ignore malformed frames; the normal player timeout remains a fallback.
-    }
+    } catch {}
     return { audio: false, state: null };
   }
 
-  function HealthAwareWebSocket(url, protocols) {
+  function PassiveHealthWebSocket(url, protocols) {
     const socket = protocols === undefined
       ? new NativeWebSocket(url)
       : new NativeWebSocket(url, protocols);
-    const receiverId = sdrReceiverId(url);
+    const receiverId = receiverIdFromUrl(url);
     if (!receiverId) return socket;
 
     let gotAudio = false;
-    let failureRecorded = false;
-    let timer = null;
-
-    const clearTimer = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = null;
-    };
-
-    const failOnce = (reason) => {
-      if (failureRecorded || gotAudio) return;
-      failureRecorded = true;
-      markFailure(receiverId, reason);
-    };
+    let explicitFailure = false;
 
     socket.addEventListener('message', (event) => {
       const inspection = inspectKiwiMessage(event.data);
       if (inspection.audio && !gotAudio) {
         gotAudio = true;
-        clearTimer();
         markSuccess(receiverId);
-      } else if (inspection.state) {
-        failOnce(inspection.state);
+      } else if (inspection.state && !explicitFailure && !gotAudio) {
+        explicitFailure = true;
+        markFailure(receiverId, inspection.state);
       }
     });
 
-    socket.addEventListener('error', () => failOnce('error'));
+    socket.addEventListener('error', () => {
+      if (!gotAudio && !explicitFailure) {
+        explicitFailure = true;
+        markFailure(receiverId, 'error');
+      }
+    });
+
     socket.addEventListener('close', () => {
-      clearTimer();
-      if (!gotAudio) failOnce('error');
+      if (!gotAudio && !explicitFailure) markFailure(receiverId, 'error');
     });
 
-    timer = window.setTimeout(() => {
-      if (gotAudio || socket.readyState === NativeWebSocket.CLOSED) return;
-      failOnce('timeout');
-      try {
-        socket.close(4000, 'Signal Scout connection timeout');
-      } catch {
-        // The player's original timeout will still advance to the next SDR.
-      }
-    }, FAST_FAIL_MS);
-
+    // Intentionally no health timeout and no socket.close(). The player owns
+    // connection lifetime. Health is passive evidence only.
     return socket;
   }
 
-  HealthAwareWebSocket.prototype = NativeWebSocket.prototype;
-  Object.defineProperties(HealthAwareWebSocket, {
+  PassiveHealthWebSocket.prototype = NativeWebSocket.prototype;
+  Object.defineProperties(PassiveHealthWebSocket, {
     CONNECTING: { value: NativeWebSocket.CONNECTING },
     OPEN: { value: NativeWebSocket.OPEN },
     CLOSING: { value: NativeWebSocket.CLOSING },
     CLOSED: { value: NativeWebSocket.CLOSED }
   });
 
-  window.WebSocket = HealthAwareWebSocket;
+  window.WebSocket = PassiveHealthWebSocket;
+  window.__freqbeaconSdrHealth = { version: 'passive-health-v2' };
 })();
