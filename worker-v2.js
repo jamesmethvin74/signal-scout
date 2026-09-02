@@ -4,6 +4,7 @@ const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
+const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -142,10 +143,34 @@ async function proxySdrWebSocket(request) {
   }
 }
 
+async function patchSdrPlayerStartup(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/javascript|text\/plain/.test(contentType)) return response;
+
+  let source = await response.text();
+  const oldBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 9000);`;
+  const newBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 30000);`;
+  const applied = source.includes(oldBlock);
+  if (applied) source = source.replace(oldBlock, newBlock);
+
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/javascript; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  headers.set('x-freqbeacon-sdr-player-startup', applied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
+  return new Response(source, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
+    if (url.pathname === '/sdr-player.js') {
+      return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
+    }
     return baseWorker.fetch(request, env, ctx);
   }
 };

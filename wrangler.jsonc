@@ -25,6 +25,7 @@
       "/full-data.js",
       "/sdr-rf-v2.js",
       "/sdr-health.js",
+      "/sdr-player.js",
       "/lookup.js"
     ]
   }
