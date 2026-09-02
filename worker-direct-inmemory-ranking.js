@@ -2,6 +2,10 @@ import baseWorker from './worker-receiver-json-fast.js';
 
 const DIRECT_MARKER = 'receiver-direct-inmemory-recovery-v2';
 const NATIVE_SND_MARKER = 'native-snd-ownership-v1';
+const PLAYER_OPEN_TIMEOUT_MS = 10000;
+const PLAYER_AUDIO_TIMEOUT_MS = 10000;
+const PLAYER_AUDIO_LEAD_SECONDS = 0.65;
+const PLAYER_AUDIO_LOW_WATER_SECONDS = 0.10;
 
 function jsResponse(response, source, markerName, markerValue) {
   const headers = new Headers(response.headers);
@@ -110,6 +114,19 @@ function patchPlayer(response) {
       'window.setTimeout(() => connectSdr(next), 75);'
     );
 
+    const oldAudioLead = '    sdr.nextPlayTime = context.currentTime + 0.08;';
+    const newAudioLead = `    // FREQBEACON mobile playout cushion: the clean diagnostic measured up to
+    // 453 ms of Cloudflare-to-browser SND bunching while upstream Kiwi cadence
+    // remained smooth. Keep enough Web Audio scheduled ahead to ride through it.
+    sdr.nextPlayTime = context.currentTime + ${PLAYER_AUDIO_LEAD_SECONDS};`;
+    patched = patched.replace(oldAudioLead, newAudioLead);
+
+    const oldAudioSchedule = '    if (sdr.nextPlayTime < now + 0.035 || sdr.nextPlayTime > now + 0.55) sdr.nextPlayTime = now + 0.055;';
+    const newAudioSchedule = `    // Rebuffer only after a genuine underrun. Never collapse a healthy queued
+    // cushion merely because burst delivery temporarily pushes it past 550 ms.
+    if (sdr.nextPlayTime < now + ${PLAYER_AUDIO_LOW_WATER_SECONDS}) sdr.nextPlayTime = now + ${PLAYER_AUDIO_LEAD_SECONDS};`;
+    patched = patched.replace(oldAudioSchedule, newAudioSchedule);
+
     const oldSocketOpen = `      socket = new WebSocket(websocketUrl(sdr.receiverIndex));
       socket.binaryType = 'arraybuffer';`;
     const newSocketOpen = `      const socketUrl = websocketUrl(sdr.receiverIndex);
@@ -126,6 +143,23 @@ function patchPlayer(response) {
       }));`;
     patched = patched.replace(oldSocketOpen, newSocketOpen);
 
+    const oldSocketOnOpen = `    socket.onopen = () => {
+      sendSocket('SET auth t=kiwi p=#');
+      sdr.keepaliveTimer = window.setInterval(() => sendSocket('SET keepalive'), 5000);
+    };`;
+    const newSocketOnOpen = `    socket.onopen = () => {
+      // OPEN is real progress. Give this opened Kiwi session its own bounded
+      // window to finish auth/config instead of inheriting time already spent
+      // on the mobile WebSocket upgrade.
+      window.clearTimeout(sdr.connectTimer);
+      sdr.connectTimer = window.setTimeout(() => {
+        if (!sdr.gotAudio) failCurrentReceiver('Receiver opened but audio did not start. Trying the next ranked receiver…');
+      }, ${PLAYER_AUDIO_TIMEOUT_MS});
+      sendSocket('SET auth t=kiwi p=#');
+      sdr.keepaliveTimer = window.setInterval(() => sendSocket('SET keepalive'), 5000);
+    };`;
+    patched = patched.replace(oldSocketOnOpen, newSocketOnOpen);
+
     const oldSampleRate = `      if (sampleRate) {
         sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
         configureSdr();
@@ -133,6 +167,12 @@ function patchPlayer(response) {
     const newSampleRate = `      if (sampleRate) {
         sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
         configureSdr();
+        // sample_rate is another positive handshake milestone. Refresh the
+        // bounded audio-start window before clearing Kiwi's AR_OK gate.
+        window.clearTimeout(sdr.connectTimer);
+        sdr.connectTimer = window.setTimeout(() => {
+          if (!sdr.gotAudio) failCurrentReceiver('Receiver configured but audio did not start. Trying the next ranked receiver…');
+        }, ${PLAYER_AUDIO_TIMEOUT_MS});
         // Kiwi requires AR_OK as part of CMD_SND_ALL before audio frames start.
         // Send it from the real player session immediately after sample_rate.
         const arInputRate = Math.max(1, Math.round(Number(sdr.sampleRate) || 12000));
@@ -184,11 +224,26 @@ function patchPlayer(response) {
     sdr.sndReadySignaled = false;`;
     patched = patched.replace(oldDisconnectReset, newDisconnectReset);
 
+    const oldConnectTimeout = `    sdr.connectTimer = window.setTimeout(() => {
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');
+    }, 9000);`;
+    const newConnectTimeout = `    // Initial deadline covers only the WebSocket OPEN phase. Once OPEN or
+    // sample_rate arrives, those handlers refresh the deadline because the
+    // receiver is demonstrably progressing.
+    sdr.connectTimer = window.setTimeout(() => {
+      if (!sdr.gotAudio) failCurrentReceiver('Receiver did not open in time. Trying the next ranked receiver…');
+    }, ${PLAYER_OPEN_TIMEOUT_MS});`;
+    patched = patched.replace(oldConnectTimeout, newConnectTimeout);
+
     const patchesApplied = [
+      oldAudioLead,
+      oldAudioSchedule,
       oldSocketOpen,
+      oldSocketOnOpen,
       oldSampleRate,
       oldSndGate,
-      oldGotAudio
+      oldGotAudio,
+      oldConnectTimeout
     ].every((needle) => source.includes(needle));
 
     return jsResponse(response, patched, 'x-freqbeacon-native-snd', patchesApplied ? NATIVE_SND_MARKER : 'player-patch-miss');
