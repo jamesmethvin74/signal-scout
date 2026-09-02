@@ -7,8 +7,9 @@ const PASSBANDS = {
 
 const HTTP_TIMEOUT_MS = 2500;
 const WS_HANDSHAKE_TIMEOUT_MS = 3500;
-const SESSION_TIMEOUT_MS = 5500;
-const DIAG_VERSION = 'sdr-deep-diagnostics-v1';
+const SESSION_STARTUP_TIMEOUT_MS = 5500;
+const CADENCE_SAMPLE_MS = 10000;
+const DIAG_VERSION = 'sdr-deep-diagnostics-v2';
 
 function elapsed(start) {
   return Math.max(0, Math.round(performance.now() - start));
@@ -84,12 +85,12 @@ function decodeKiwiFrame(data) {
     if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
     else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     else if (typeof data === 'string') bytes = new TextEncoder().encode(data);
-    if (!bytes || bytes.length < 3) return { tag:'', text:'', bytes:bytes?.length || 0 };
+    if (!bytes || bytes.length < 3) return { tag:'', text:'', bytes:bytes?.length || 0, flags:0 };
     const tag = String.fromCharCode(bytes[0], bytes[1], bytes[2]);
     const text = tag === 'MSG' && bytes.length > 4 ? new TextDecoder().decode(bytes.subarray(4)) : '';
-    return { tag, text, bytes:bytes.length };
+    return { tag, text, bytes:bytes.length, flags:bytes.length >= 4 ? bytes[3] : 0 };
   } catch (error) {
-    return { tag:'', text:'', bytes:0, error:error?.message || String(error) };
+    return { tag:'', text:'', bytes:0, flags:0, error:error?.message || String(error) };
   }
 }
 
@@ -124,16 +125,37 @@ function inspectSession(ws, { frequency, mode, started }) {
       sampleRate:null,
       audioRate:null,
       firstSndBytes:null,
+      sndFrames:0,
+      cadenceSampleMs:0,
+      expectedFrameMs:null,
+      maxSndGapMs:0,
+      gapsOver70Ms:0,
+      gapsOver100Ms:0,
+      averageSndGapMs:null,
       serverMessages:[],
       close:null,
       error:null
     };
-    const state = { configured:false, finished:false };
+    const state = {
+      configured:false,
+      finished:false,
+      firstSndPerf:null,
+      lastSndPerf:null,
+      gapTotal:0,
+      gapCount:0
+    };
+    let startupTimer = null;
+    let cadenceTimer = null;
+    let keepaliveTimer = null;
 
     const finish = (patch = {}) => {
       if (state.finished) return;
       state.finished = true;
-      clearTimeout(timer);
+      clearTimeout(startupTimer);
+      clearTimeout(cadenceTimer);
+      clearInterval(keepaliveTimer);
+      if (state.gapCount) result.averageSndGapMs = Number((state.gapTotal / state.gapCount).toFixed(1));
+      if (state.firstSndPerf != null) result.cadenceSampleMs = Math.round(performance.now() - state.firstSndPerf);
       Object.assign(result, patch, { elapsedMs:elapsed(started) });
       safeClose(ws);
       resolve(result);
@@ -174,10 +196,34 @@ function inspectSession(ws, { frequency, mode, started }) {
         return;
       }
 
-      if (frame.tag === 'SND' && frame.bytes >= 10) {
+      if (frame.tag !== 'SND' || frame.bytes < 10) return;
+
+      const now = performance.now();
+      result.sndFrames += 1;
+
+      if (!(frame.flags & 0x10) && Number(result.sampleRate) > 1000) {
+        const audioBytes = Math.max(0, frame.bytes - 10);
+        const samples = Math.floor(audioBytes / 2);
+        if (samples > 0) result.expectedFrameMs = Number((samples / result.sampleRate * 1000).toFixed(1));
+      }
+
+      if (state.lastSndPerf != null) {
+        const gap = now - state.lastSndPerf;
+        state.gapTotal += gap;
+        state.gapCount += 1;
+        result.maxSndGapMs = Math.max(result.maxSndGapMs, gap);
+        if (gap >= 70) result.gapsOver70Ms += 1;
+        if (gap >= 100) result.gapsOver100Ms += 1;
+      }
+      state.lastSndPerf = now;
+
+      if (state.firstSndPerf == null) {
+        state.firstSndPerf = now;
         result.firstSndMs = elapsed(started);
         result.firstSndBytes = frame.bytes;
-        finish({ ok:true, stage:'first-snd-received' });
+        result.stage = 'sampling-snd-cadence';
+        clearTimeout(startupTimer);
+        cadenceTimer = setTimeout(() => finish({ ok:true, stage:'snd-cadence-sampled' }), CADENCE_SAMPLE_MS);
       }
     };
 
@@ -187,19 +233,25 @@ function inspectSession(ws, { frequency, mode, started }) {
     });
     ws.addEventListener('close', (event) => {
       result.close = { code:event?.code || 0, reason:event?.reason || '', wasClean:Boolean(event?.wasClean) };
-      if (!state.finished) finish({ stage:'socket-closed-before-snd', error:result.error || event?.reason || `closed ${event?.code || 0}` });
+      if (!state.finished) finish({
+        stage:state.firstSndPerf == null ? 'socket-closed-before-snd' : 'socket-closed-before-cadence-sample-complete',
+        error:result.error || event?.reason || `closed ${event?.code || 0}`
+      });
     });
 
-    const timer = setTimeout(() => {
+    startupTimer = setTimeout(() => {
       const stage = result.sampleRateMs == null ? 'no-sample-rate' : 'no-snd-after-config';
-      finish({ stage, error:`No usable SND frame within ${SESSION_TIMEOUT_MS} ms` });
-    }, SESSION_TIMEOUT_MS);
+      finish({ stage, error:`No usable SND frame within ${SESSION_STARTUP_TIMEOUT_MS} ms` });
+    }, SESSION_STARTUP_TIMEOUT_MS);
 
     try {
       ws.send('SET auth t=kiwi p=#');
       result.authSentMs = elapsed(started);
       result.stage = 'auth-sent';
       ws.send('SET keepalive');
+      keepaliveTimer = setInterval(() => {
+        try { ws.send('SET keepalive'); } catch {}
+      }, 2500);
     } catch (error) {
       finish({ stage:'auth-send-failed', error:error?.message || String(error) });
     }
@@ -369,7 +421,7 @@ export async function handleSdrDiagnostic(request, { resolveReceiver, proxySafeT
     upstreamTimestamp:timestamp,
     stages:{ http, nativeUi, waterfall, externalApi, legacyUi },
     verdict: ok
-      ? 'Cloudflare Worker reached Kiwi, authenticated, and received SND audio.'
+      ? `Cloudflare sampled ${nativeUi.sndFrames || 0} upstream Kiwi SND frames for about ${nativeUi.cadenceSampleMs || 0} ms.`
       : `Cloudflare Worker failed at ${nativeUi.stage || 'unknown-stage'}.`,
     totalElapsedMs:elapsed(requestStarted)
   });
