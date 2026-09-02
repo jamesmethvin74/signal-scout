@@ -2,6 +2,7 @@ import baseWorker from './worker-sdr-ranking-evidence-fix.js';
 
 const MARKER = 'sdr-mainthread-relief-v1';
 const AUDIO_ONLY_MARKER = 'sdr-audio-only-ab-v1';
+const COMMAND_TRACE_MARKER = 'sdr-command-trace-v1';
 
 function textResponse(response, source, contentType, headerName, headerValue) {
   const headers = new Headers(response.headers);
@@ -190,7 +191,89 @@ async function patchCardCollapse(response) {
   );
 }
 
-async function patchRoot(response, { audioOnly = false } = {}) {
+async function patchPlayerTrace(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/javascript|text\/plain/.test(contentType)) return response;
+  const source = await response.text();
+  let patched = source;
+
+  const oldSendSocket = `  function sendSocket(message) {
+    if (sdr.socket?.readyState === WebSocket.OPEN) sdr.socket.send(message);
+  }`;
+  const tracedSendSocket = `  function sendSocket(message) {
+    if (sdr.socket?.readyState !== WebSocket.OPEN) return;
+    // Passive diagnostic only: announce the command without wrapping send(),
+    // changing its value, delaying it, or changing socket ownership.
+    window.dispatchEvent(new CustomEvent('freqbeacon:snd-command', {
+      detail: { message: String(message || '') }
+    }));
+    sdr.socket.send(message);
+  }`;
+  patched = patched.replace(oldSendSocket, tracedSendSocket);
+
+  const oldAudioRateGate = `      if (audioRate && sdr.audioContext) {
+        sendSocket(\`SET AR OK in=\${Number(audioRate)} out=\${Math.round(sdr.audioContext.sampleRate)}\`);
+      }`;
+  const tracedAudioRateGate = `      if (audioRate) {
+        window.dispatchEvent(new CustomEvent('freqbeacon:snd-audio-rate', {
+          detail: { value: Number(audioRate) }
+        }));
+      }
+      if (audioRate && sdr.audioContext) {
+        sendSocket(\`SET AR OK in=\${Number(audioRate)} out=\${Math.round(sdr.audioContext.sampleRate)}\`);
+      }`;
+  patched = patched.replace(oldAudioRateGate, tracedAudioRateGate);
+
+  const applied = patched !== source
+    && patched.includes("freqbeacon:snd-command")
+    && patched.includes("freqbeacon:snd-audio-rate");
+
+  return textResponse(
+    response,
+    patched,
+    'application/javascript; charset=utf-8',
+    'x-freqbeacon-snd-command-trace',
+    applied ? COMMAND_TRACE_MARKER : 'command-trace-patch-miss'
+  );
+}
+
+function commandTraceBootstrap() {
+  return `<script>
+    (() => {
+      const started = performance.now();
+      const trace = { version: '${COMMAND_TRACE_MARKER}', events: [] };
+      const record = (type, detail = {}) => {
+        trace.events.push({
+          type,
+          elapsedMs: Math.round(performance.now() - started),
+          ...detail
+        });
+        if (trace.events.length > 80) trace.events.shift();
+      };
+      window.addEventListener('freqbeacon:snd-command', (event) => {
+        record('send', { message: String(event.detail?.message || '') });
+      });
+      window.addEventListener('freqbeacon:snd-audio-rate', (event) => {
+        record('audio-rate', { value: Number(event.detail?.value || 0) });
+      });
+      const api = window.__freqbeaconSdrLifecycleV3;
+      if (api?.getReport && !api.__commandTraceWrapped) {
+        const baseGetReport = api.getReport.bind(api);
+        api.getReport = () => ({
+          ...baseGetReport(),
+          commandTrace: {
+            version: trace.version,
+            events: [...trace.events]
+          }
+        });
+        api.__commandTraceWrapped = true;
+      }
+      window.__freqbeaconSndCommandTrace = trace;
+    })();
+  </script>`;
+}
+
+async function patchRoot(response, { audioOnly = false, commandTrace = false } = {}) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   const source = await response.text();
@@ -204,6 +287,13 @@ async function patchRoot(response, { audioOnly = false } = {}) {
     // Diagnostic A/B only: suppress the RF/W/F client while preserving the exact
     // normal receiver ranking, SND player, health, reliability and proxy path.
     html = html.replace(/\s*<script[^>]+src=["'](?:\.\/)?sdr-rf-v2\.js(?:\?[^"']*)?["'][^>]*><\/script>\s*/gi, '\n');
+  }
+
+  if (commandTrace) {
+    // The special test URL asks the browser to fetch the already-effective player
+    // through this top-level passive trace. Normal player URLs are untouched.
+    html = html.replace(/sdr-player\.js\?v=(\d+)(?![^"']*sndtrace)/g, 'sdr-player.js?v=$1&sndtrace=1');
+    html = html.replace('</body>', `${commandTraceBootstrap()}\n</body>`);
   }
 
   html = html.replace(
@@ -239,6 +329,7 @@ async function patchRoot(response, { audioOnly = false } = {}) {
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('x-freqbeacon-mainthread-relief', applied ? MARKER : 'root-patch-miss');
   if (audioOnly) headers.set('x-freqbeacon-sdr-audio-only', AUDIO_ONLY_MARKER);
+  if (commandTrace) headers.set('x-freqbeacon-snd-command-trace', COMMAND_TRACE_MARKER);
   return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -250,8 +341,15 @@ export default {
     if (request.method === 'GET' && url.pathname === '/app.js') return patchApp(response);
     if (request.method === 'GET' && url.pathname === '/band-labels.js') return patchBandLabels(response);
     if (request.method === 'GET' && url.pathname === '/card-collapse.js') return patchCardCollapse(response);
+    if (request.method === 'GET' && url.pathname === '/sdr-player.js' && url.searchParams.get('sndtrace') === '1') {
+      return patchPlayerTrace(response);
+    }
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      return patchRoot(response, { audioOnly: url.searchParams.get('sdraudio') === '1' });
+      const sdrAudioMode = url.searchParams.get('sdraudio');
+      return patchRoot(response, {
+        audioOnly: sdrAudioMode === '1' || sdrAudioMode === '2',
+        commandTrace: sdrAudioMode === '2'
+      });
     }
     return response;
   },
