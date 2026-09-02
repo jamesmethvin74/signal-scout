@@ -2,6 +2,8 @@
   const HEALTH_KEY = 'signalScout:sdrHealth:v2';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
+  const SND_PREFILL_FRAMES = 11;
+  const SND_PREFILL_TIMEOUT_MS = 1200;
   const NativeFetch = window.fetch.bind(window);
   const NativeWebSocket = window.WebSocket;
   const decoder = new TextDecoder();
@@ -146,11 +148,14 @@
     }
   };
 
-  function sdrReceiverId(rawUrl) {
+  function sdrSocketMeta(rawUrl) {
     try {
       const url = new URL(String(rawUrl), window.location.href);
       if (url.origin !== window.location.origin || url.pathname !== '/api/sdr/ws') return null;
-      return url.searchParams.get('receiver') || null;
+      return {
+        receiverId: url.searchParams.get('receiver') || null,
+        stream: url.searchParams.get('stream') || 'SND'
+      };
     } catch {
       return null;
     }
@@ -179,12 +184,125 @@
     return { audio: false, state: null };
   }
 
+  function isSndAudioFrame(data) {
+    try {
+      if (data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(data);
+        return bytes.length >= 10
+          && bytes[0] === 83
+          && bytes[1] === 78
+          && bytes[2] === 68;
+      }
+      if (typeof data === 'string') return data.startsWith('SND');
+    } catch {
+      // Unknown frame types pass through immediately.
+    }
+    return false;
+  }
+
+  function installSndPlaybackPrefill(socket) {
+    const nativeAddEventListener = socket.addEventListener.bind(socket);
+    const nativeRemoveEventListener = socket.removeEventListener.bind(socket);
+    const downstreamMessageListeners = new Map();
+    let downstreamOnMessage = null;
+    let prefillActive = true;
+    let prefillTimer = null;
+    let queuedSnd = [];
+
+    const reportAsyncError = (error) => {
+      window.setTimeout(() => { throw error; }, 0);
+    };
+
+    const callListener = (listener, event) => {
+      try {
+        if (typeof listener === 'function') listener.call(socket, event);
+        else listener?.handleEvent?.(event);
+      } catch (error) {
+        reportAsyncError(error);
+      }
+    };
+
+    const deliver = (event) => {
+      if (downstreamOnMessage) callListener(downstreamOnMessage, event);
+      for (const [listener, options] of [...downstreamMessageListeners.entries()]) {
+        callListener(listener, event);
+        if (options.once) downstreamMessageListeners.delete(listener);
+      }
+    };
+
+    const releasePrefill = () => {
+      if (!prefillActive) return;
+      prefillActive = false;
+      window.clearTimeout(prefillTimer);
+      prefillTimer = null;
+      const release = queuedSnd;
+      queuedSnd = [];
+      for (const event of release) deliver(event);
+    };
+
+    nativeAddEventListener('message', (event) => {
+      if (prefillActive && isSndAudioFrame(event.data)) {
+        queuedSnd.push(event);
+        if (queuedSnd.length === 1) {
+          prefillTimer = window.setTimeout(releasePrefill, SND_PREFILL_TIMEOUT_MS);
+        }
+        if (queuedSnd.length >= SND_PREFILL_FRAMES) releasePrefill();
+        return;
+      }
+      deliver(event);
+    });
+
+    nativeAddEventListener('close', () => {
+      window.clearTimeout(prefillTimer);
+      prefillTimer = null;
+      queuedSnd = [];
+      downstreamMessageListeners.clear();
+      downstreamOnMessage = null;
+    }, { once: true });
+
+    socket.addEventListener = function addEventListener(type, listener, options) {
+      if (type !== 'message') return nativeAddEventListener(type, listener, options);
+      if (!listener || downstreamMessageListeners.has(listener)) return;
+      const normalized = typeof options === 'object' && options !== null
+        ? { once: Boolean(options.once), signal: options.signal || null }
+        : { once: false, signal: null };
+      downstreamMessageListeners.set(listener, normalized);
+      if (normalized.signal) {
+        if (normalized.signal.aborted) downstreamMessageListeners.delete(listener);
+        else normalized.signal.addEventListener('abort', () => downstreamMessageListeners.delete(listener), { once: true });
+      }
+    };
+
+    socket.removeEventListener = function removeEventListener(type, listener, options) {
+      if (type !== 'message') return nativeRemoveEventListener(type, listener, options);
+      downstreamMessageListeners.delete(listener);
+    };
+
+    try {
+      Object.defineProperty(socket, 'onmessage', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          return downstreamOnMessage;
+        },
+        set(listener) {
+          downstreamOnMessage = typeof listener === 'function' || listener?.handleEvent ? listener : null;
+        }
+      });
+    } catch {
+      // WebSocket instances are extensible in the browsers FREQBEACON supports.
+      // If a browser refuses the own property, release immediately rather than
+      // risking a connection that cannot deliver audio to its normal handler.
+      releasePrefill();
+    }
+  }
+
   function HealthAwareWebSocket(url, protocols) {
     const socket = protocols === undefined
       ? new NativeWebSocket(url)
       : new NativeWebSocket(url, protocols);
-    const receiverId = sdrReceiverId(url);
-    if (!receiverId) return socket;
+    const meta = sdrSocketMeta(url);
+    if (!meta?.receiverId) return socket;
 
     let gotAudio = false;
     let confirmedFailure = false;
@@ -192,14 +310,14 @@
     const failOnce = (reason) => {
       if (confirmedFailure || gotAudio) return;
       confirmedFailure = true;
-      markFailure(receiverId, reason);
+      markFailure(meta.receiverId, reason);
     };
 
     socket.addEventListener('message', (event) => {
       const inspection = inspectKiwiMessage(event.data);
       if (inspection.audio && !gotAudio) {
         gotAudio = true;
-        markSuccess(receiverId);
+        markSuccess(meta.receiverId);
       } else if (inspection.state) {
         // Only receiver-confirmed busy/offline states influence ranking.
         // Browser/proxy errors and timeouts are not evidence that the remote
@@ -208,8 +326,17 @@
       }
     });
 
-    // Observation only: this wrapper never closes a WebSocket and never starts
-    // an independent connection timeout. sdr-player.js is the sole owner of
+    // RF/W/F observers attached inside the underlying WebSocket constructor keep
+    // seeing the raw stream. Only the downstream normal-player SND handlers are
+    // prefetched, giving Web Audio enough scheduled material to absorb the
+    // Cloudflare-to-mobile burst jitter measured by the clean diagnostic.
+    if (meta.stream === 'SND') {
+      try { socket.binaryType = 'arraybuffer'; } catch {}
+      installSndPlaybackPrefill(socket);
+    }
+
+    // Receiver-health observation never closes a WebSocket and never starts an
+    // independent connection timeout. sdr-player.js remains the sole owner of
     // connection lifetime and failover.
     return socket;
   }
