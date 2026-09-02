@@ -5,9 +5,6 @@ const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
-const PLAYER_DIAGNOSTIC_MARKER = 'sdr-normal-player-events-v1';
-const RF_DIAGNOSTIC_MARKER = 'sdr-normal-rf-events-v1';
-const NORMAL_DIAGNOSTIC_SCRIPT = 'sdr-normal-session-diagnostics.js?v=1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -153,69 +150,14 @@ async function patchSdrPlayerStartup(response) {
   let source = await response.text();
   const oldBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 9000);`;
   const newBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 30000);`;
-  const startupApplied = source.includes(oldBlock);
-  if (startupApplied) source = source.replace(oldBlock, newBlock);
-
-  const socketAnchor = `    sdr.socket = socket;\n\n    socket.onopen = () => {`;
-  const socketReplacement = `    sdr.socket = socket;\n    try {\n      window.dispatchEvent(new CustomEvent('freqbeacon:snd-created', {\n        detail: { socket, url: socket.url || websocketUrl(sdr.receiverIndex), receiverId: currentReceiver()?.id || '' }\n      }));\n    } catch {}\n\n    socket.onopen = () => {`;
-  const socketEventApplied = source.includes(socketAnchor);
-  if (socketEventApplied) source = source.replace(socketAnchor, socketReplacement);
-
-  const readyAnchor = `    sendSocket('SET de_emp=0');\n  }`;
-  const readyReplacement = `    sendSocket('SET de_emp=0');\n    try {\n      window.dispatchEvent(new CustomEvent('freqbeacon:snd-ready', {\n        detail: { socket: sdr.socket, receiverId: currentReceiver()?.id || '', sampleRate: sdr.sampleRate }\n      }));\n    } catch {}\n  }`;
-  const readyEventApplied = source.includes(readyAnchor);
-  if (readyEventApplied) source = source.replace(readyAnchor, readyReplacement);
-
-  const audioAnchor = `      sdr.gotAudio = true;\n      sdr.connected = true;`;
-  const audioReplacement = `      sdr.gotAudio = true;\n      sdr.connected = true;\n      try {\n        window.dispatchEvent(new CustomEvent('freqbeacon:snd-audio', {\n          detail: {\n            socket: sdr.socket,\n            receiverId: currentReceiver()?.id || '',\n            audioContextState: sdr.audioContext?.state || null,\n            audioContextCurrentTime: sdr.audioContext?.currentTime ?? null,\n            sampleRate: sdr.sampleRate,\n            nextPlayTime: sdr.nextPlayTime\n          }\n        }));\n      } catch {}`;
-  const audioEventApplied = source.includes(audioAnchor);
-  if (audioEventApplied) source = source.replace(audioAnchor, audioReplacement);
-
-  const diagnosticApplied = socketEventApplied && readyEventApplied && audioEventApplied;
-  const headers = new Headers(response.headers);
-  headers.set('content-type', 'application/javascript; charset=utf-8');
-  headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-player-startup', startupApplied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
-  headers.set('x-freqbeacon-sdr-normal-diagnostics', diagnosticApplied ? PLAYER_DIAGNOSTIC_MARKER : 'normal-player-diagnostic-patch-miss');
-  return new Response(source, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
-
-async function patchRfDiagnostics(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!/javascript|text\/plain/.test(contentType)) return response;
-  let source = await response.text();
-
-  const anchor = `  function setStage(stage, title, detail = '', error = false) {\n    state.lastStage = stage;\n    state.lastError = error ? detail || title : '';`;
-  const replacement = `  function setStage(stage, title, detail = '', error = false) {\n    state.lastStage = stage;\n    state.lastError = error ? detail || title : '';\n    try {\n      window.dispatchEvent(new CustomEvent('freqbeacon:rf-stage', {\n        detail: {\n          stage, title, detail, error,\n          receiverId: state.receiverId, timestamp: state.timestamp,\n          frameCount: state.frameCount, binaryCount: state.binaryCount, msgCount: state.msgCount,\n          unsupportedFrames: state.unsupportedFrames, lastFrameBytes: state.lastFrameBytes,\n          wfSetupSeen: state.wfSetupSeen, configured: state.configured, hasFrame: state.hasFrame\n        }\n      }));\n    } catch {}`;
-  const applied = source.includes(anchor);
-  if (applied) source = source.replace(anchor, replacement);
+  const applied = source.includes(oldBlock);
+  if (applied) source = source.replace(oldBlock, newBlock);
 
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-rf-normal-diagnostics', applied ? RF_DIAGNOSTIC_MARKER : 'normal-rf-diagnostic-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-startup', applied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
   return new Response(source, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
-
-async function injectNormalDiagnostics(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!contentType.includes('text/html')) return response;
-  let html = await response.text();
-  const tag = `<script src="${NORMAL_DIAGNOSTIC_SCRIPT}"></script>`;
-  if (!html.includes('sdr-normal-session-diagnostics.js')) html = html.replace('</body>', `${tag}\n</body>`);
-  const headers = new Headers(response.headers);
-  headers.set('content-type', 'text/html; charset=utf-8');
-  headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-normal-diagnostics', 'normal-session-diagnostics-v1');
-  return new Response(html, {
     status: response.status,
     statusText: response.statusText,
     headers
@@ -228,12 +170,6 @@ export default {
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
-    }
-    if (url.pathname === '/sdr-rf-v2.js') {
-      return patchRfDiagnostics(await baseWorker.fetch(request, env, ctx));
-    }
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      return injectNormalDiagnostics(await baseWorker.fetch(request, env, ctx));
     }
     return baseWorker.fetch(request, env, ctx);
   }
