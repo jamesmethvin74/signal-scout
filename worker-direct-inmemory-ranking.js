@@ -121,6 +121,19 @@ function patchPlayer(response) {
     sdr.nextPlayTime = context.currentTime + ${PLAYER_AUDIO_LEAD_SECONDS};`;
     patched = patched.replace(oldAudioLead, newAudioLead);
 
+    const oldAudioSourceCreate = `    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(sdr.analyser);`;
+    const newAudioSourceCreate = `    const source = context.createBufferSource();
+    source.buffer = buffer;
+    // Track scheduled chunks so a receiver switch can stop queued audio from the
+    // old receiver instead of letting the larger jitter cushion bleed across.
+    if (!sdr.scheduledSources) sdr.scheduledSources = new Set();
+    sdr.scheduledSources.add(source);
+    source.addEventListener('ended', () => sdr.scheduledSources?.delete(source), { once: true });
+    source.connect(sdr.analyser);`;
+    patched = patched.replace(oldAudioSourceCreate, newAudioSourceCreate);
+
     const oldAudioSchedule = '    if (sdr.nextPlayTime < now + 0.035 || sdr.nextPlayTime > now + 0.55) sdr.nextPlayTime = now + 0.055;';
     const newAudioSchedule = `    // Rebuffer only after a genuine underrun. Never collapse a healthy queued
     // cushion merely because burst delivery temporarily pushes it past 550 ms.
@@ -216,7 +229,14 @@ function patchPlayer(response) {
     const oldDisconnectReset = `    sdr.connected = false;
     sdr.configured = false;
     sdr.gotAudio = false;`;
-    const newDisconnectReset = `    sdr.connected = false;
+    const newDisconnectReset = `    if (sdr.scheduledSources) {
+      for (const scheduledSource of sdr.scheduledSources) {
+        try { scheduledSource.stop(); } catch {}
+      }
+      sdr.scheduledSources.clear();
+    }
+    sdr.nextPlayTime = sdr.audioContext?.currentTime || 0;
+    sdr.connected = false;
     sdr.configured = false;
     sdr.gotAudio = false;
     sdr.socketUrl = null;
@@ -237,12 +257,14 @@ function patchPlayer(response) {
 
     const patchesApplied = [
       oldAudioLead,
+      oldAudioSourceCreate,
       oldAudioSchedule,
       oldSocketOpen,
       oldSocketOnOpen,
       oldSampleRate,
       oldSndGate,
       oldGotAudio,
+      oldDisconnectReset,
       oldConnectTimeout
     ].every((needle) => source.includes(needle));
 
