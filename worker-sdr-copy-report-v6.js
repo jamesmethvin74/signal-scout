@@ -1,12 +1,12 @@
 import baseWorker from './worker-sdr-diagnostic-control-v3.js';
 
-const MARKER = 'freqbeacon-sdr-copy-report-v6';
+const MARKER = 'freqbeacon-sdr-copy-report-v7';
 
 function bootstrap() {
   return `<script>
 (() => {
-  if (window.__freqbeaconSdrCopyReportV6) return;
-  window.__freqbeaconSdrCopyReportV6 = true;
+  if (window.__freqbeaconSdrCopyReportV7) return;
+  window.__freqbeaconSdrCopyReportV7 = true;
 
   function reportText() {
     try {
@@ -59,14 +59,20 @@ function bootstrap() {
 
   async function copyReport(box, button) {
     const text = reportText();
-    let copied = false;
 
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        copied = true;
-      }
-    } catch {}
+    // Android Chrome is much more reliable when the legacy copy operation is
+    // attempted synchronously inside the original tap. Waiting on a rejected
+    // Clipboard API promise can consume the user-activation window first.
+    let copied = execCopy(text);
+
+    if (!copied) {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch {}
+    }
 
     if (!copied) {
       try {
@@ -77,8 +83,6 @@ function bootstrap() {
         }
       } catch {}
     }
-
-    if (!copied) copied = execCopy(text);
 
     if (copied) {
       button.textContent = 'Copied — paste into ChatGPT';
@@ -103,11 +107,12 @@ function bootstrap() {
     const actions = box.querySelector('[data-sdr-diagnostic-actions-v5]');
     if (!actions) return false;
 
-    let copy = box.querySelector('[data-sdr-diagnostic-copy-v6]');
+    let copy = box.querySelector('[data-sdr-diagnostic-copy-v7]');
     if (!copy) {
+      box.querySelector('[data-sdr-diagnostic-copy-v6]')?.remove();
       copy = document.createElement('button');
       copy.type = 'button';
-      copy.dataset.sdrDiagnosticCopyV6 = '1';
+      copy.dataset.sdrDiagnosticCopyV7 = '1';
       copy.textContent = 'Copy report';
       copy.addEventListener('click', () => copyReport(box, copy));
       actions.prepend(copy);
@@ -115,13 +120,29 @@ function bootstrap() {
     return true;
   }
 
-  patchBox();
-  const timer = setInterval(patchBox, 250);
-  window.addEventListener('pagehide', () => clearInterval(timer), { once:true });
-  window.addEventListener('freqbeacon:snd-created', patchBox);
-  window.addEventListener('freqbeacon:snd-ready', patchBox);
-  window.addEventListener('freqbeacon:snd-audio', patchBox);
-  window.addEventListener('freqbeacon:sdr-diagnostic-updated', patchBox);
+  let timer = null;
+  const arm = () => {
+    if (patchBox()) {
+      if (timer) clearInterval(timer);
+      timer = null;
+      return;
+    }
+    if (!timer) {
+      timer = setInterval(() => {
+        if (patchBox()) {
+          clearInterval(timer);
+          timer = null;
+        }
+      }, 250);
+    }
+  };
+
+  arm();
+  window.addEventListener('pagehide', () => { if (timer) clearInterval(timer); }, { once:true });
+  window.addEventListener('freqbeacon:snd-created', arm);
+  window.addEventListener('freqbeacon:snd-ready', arm);
+  window.addEventListener('freqbeacon:snd-audio', arm);
+  window.addEventListener('freqbeacon:sdr-diagnostic-updated', arm);
 })();
 </script>`;
 }

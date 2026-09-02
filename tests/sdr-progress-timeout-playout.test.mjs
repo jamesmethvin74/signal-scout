@@ -13,11 +13,12 @@ test('normal SDR connection deadlines refresh on real handshake progress', () =>
   assert.match(source, /window\.clearTimeout\(sdr\.connectTimer\)/);
 });
 
-test('normal SDR Web Audio keeps a mobile jitter cushion', () => {
+test('normal SDR Web Audio keeps a startup jitter cushion without repeated dead air', () => {
   assert.match(source, /PLAYER_AUDIO_LEAD_SECONDS = 0\.65/);
-  assert.match(source, /PLAYER_AUDIO_LOW_WATER_SECONDS = 0\.10/);
+  assert.match(source, /PLAYER_AUDIO_RECOVERY_SECONDS = 0\.035/);
   assert.match(source, /Cloudflare-to-browser SND bunching/);
-  assert.match(source, /Never collapse a healthy queued/);
+  assert.match(source, /startup cushion is paid only once/);
+  assert.doesNotMatch(source, /PLAYER_AUDIO_LOW_WATER_SECONDS/);
   assert.doesNotMatch(source, /newAudioSchedule = .*0\.55.*0\.055/);
 });
 
