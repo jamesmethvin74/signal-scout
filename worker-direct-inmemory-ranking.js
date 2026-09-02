@@ -182,16 +182,13 @@ function patchPlayer(response) {
         sdr.sampleRate = Number(sampleRate) || sdr.sampleRate;
         configureSdr();
         // sample_rate is another positive handshake milestone. Refresh the
-        // bounded audio-start window before clearing Kiwi's AR_OK gate.
+        // bounded audio-start window while waiting for Kiwi's explicit
+        // audio_rate message. Do not synthesize AR_OK from sample_rate: the
+        // raw player already acknowledges the real audio_rate value below.
         window.clearTimeout(sdr.connectTimer);
         sdr.connectTimer = window.setTimeout(() => {
           if (!sdr.gotAudio) failCurrentReceiver('Receiver configured but audio did not start. Trying the next ranked receiver…');
         }, ${PLAYER_AUDIO_TIMEOUT_MS});
-        // Kiwi requires AR_OK as part of CMD_SND_ALL before audio frames start.
-        // Send it from the real player session immediately after sample_rate.
-        const arInputRate = Math.max(1, Math.round(Number(sdr.sampleRate) || 12000));
-        const arOutputRate = Math.max(1, Math.round(Number(sdr.audioContext?.sampleRate) || 48000));
-        sendSocket(\`SET AR OK in=\${arInputRate} out=\${arOutputRate}\`);
       }`;
     patched = patched.replace(oldSampleRate, newSampleRate);
 
