@@ -1,6 +1,7 @@
 import baseWorker from './worker-sdr-ranking-evidence-fix.js';
 
 const MARKER = 'sdr-mainthread-relief-v1';
+const AUDIO_ONLY_MARKER = 'sdr-audio-only-ab-v1';
 
 function textResponse(response, source, contentType, headerName, headerValue) {
   const headers = new Headers(response.headers);
@@ -189,7 +190,7 @@ async function patchCardCollapse(response) {
   );
 }
 
-async function patchRoot(response) {
+async function patchRoot(response, { audioOnly = false } = {}) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!contentType.includes('text/html')) return response;
   const source = await response.text();
@@ -198,6 +199,12 @@ async function patchRoot(response) {
   html = html.replace('<script src="app.js"></script>', '<script src="app.js?v=2"></script>');
   html = html.replace(/band-labels\.js\?v=\d+/g, 'band-labels.js?v=3');
   html = html.replace(/card-collapse\.js\?v=\d+/g, 'card-collapse.js?v=2');
+
+  if (audioOnly) {
+    // Diagnostic A/B only: suppress the RF/W/F client while preserving the exact
+    // normal receiver ranking, SND player, health, reliability and proxy path.
+    html = html.replace(/\s*<script[^>]+src=["'](?:\.\/)?sdr-rf-v2\.js(?:\?[^"']*)?["'][^>]*><\/script>\s*/gi, '\n');
+  }
 
   html = html.replace(
 `      function decorate() {
@@ -227,13 +234,12 @@ async function patchRoot(response) {
     && html.includes('decorate(root = document)')
     && html.includes("}).observe(grid, { childList: true });");
 
-  return textResponse(
-    response,
-    html,
-    'text/html; charset=utf-8',
-    'x-freqbeacon-mainthread-relief',
-    applied ? MARKER : 'root-patch-miss'
-  );
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'text/html; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  headers.set('x-freqbeacon-mainthread-relief', applied ? MARKER : 'root-patch-miss');
+  if (audioOnly) headers.set('x-freqbeacon-sdr-audio-only', AUDIO_ONLY_MARKER);
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
 export default {
@@ -244,7 +250,9 @@ export default {
     if (request.method === 'GET' && url.pathname === '/app.js') return patchApp(response);
     if (request.method === 'GET' && url.pathname === '/band-labels.js') return patchBandLabels(response);
     if (request.method === 'GET' && url.pathname === '/card-collapse.js') return patchCardCollapse(response);
-    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return patchRoot(response);
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      return patchRoot(response, { audioOnly: url.searchParams.get('sdraudio') === '1' });
+    }
     return response;
   },
 
