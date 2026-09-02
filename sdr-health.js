@@ -1,7 +1,8 @@
 (() => {
-  const HEALTH_KEY = 'signalScout:sdrHealth:v2';
+  const HEALTH_KEY = 'signalScout:sdrHealth:v1';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
+  const FAST_FAIL_MS = 5500;
   const NativeFetch = window.fetch.bind(window);
   const NativeWebSocket = window.WebSocket;
   const decoder = new TextDecoder();
@@ -40,7 +41,8 @@
   function failureMinutes(reason, failures) {
     if (reason === 'busy') return Math.min(8, 2 * failures);
     if (reason === 'offline') return 30;
-    return Math.min(30, 5 * failures);
+    const base = reason === 'timeout' ? 8 : 5;
+    return Math.min(30, Math.round(base * Math.pow(1.65, Math.max(0, failures - 1))));
   }
 
   function markFailure(receiverId, reason = 'error') {
@@ -78,6 +80,9 @@
     const cooling = Number(entry.cooldownUntil || 0) > timestamp;
     const recentSuccess = Number(entry.lastSuccess || 0) > timestamp - RECENT_SUCCESS_MS;
 
+    // Preserve the server's propagation/geography order unless we have actual
+    // connection evidence. A receiver in cooldown moves to the back; a recent
+    // success gets only a small nudge so RF relevance still dominates.
     let score = index;
     if (cooling) score += 1000 + Number(entry.failures || 0) * 20;
     else if (recentSuccess) score -= 0.35;
@@ -96,6 +101,9 @@
 
     ranked.sort((a, b) => a.health.score - b.health.score || a.index - b.index);
 
+    // The first non-cooling receiver becomes the current best available match.
+    // This lets the existing player start with a receiver that is both RF-relevant
+    // and recently reachable without changing the server-side reception model.
     const preferred = ranked.find((item) => !item.health.cooling) || ranked[0];
     return ranked.map((item) => {
       const receiver = item.receiver;
@@ -104,7 +112,7 @@
         ? 'cooldown'
         : (item.health.recentSuccess ? 'recent-success' : 'unknown');
       if (item === preferred && item.index > 0) {
-        receiver.reason = `${receiver.reason || 'Useful receiver for this frequency.'} Preferred now because a higher-ranked receiver reported that it was unavailable.`;
+        receiver.reason = `${receiver.reason || 'Useful receiver for this frequency.'} Preferred now because a higher-ranked receiver recently failed to connect.`;
       }
       return receiver;
     });
@@ -174,7 +182,7 @@
         if (/down=1/.test(data)) return { audio: false, state: 'offline' };
       }
     } catch {
-      // Malformed frames do not affect receiver health.
+      // Ignore malformed frames; the normal player timeout remains a fallback.
     }
     return { audio: false, state: null };
   }
@@ -187,11 +195,17 @@
     if (!receiverId) return socket;
 
     let gotAudio = false;
-    let confirmedFailure = false;
+    let failureRecorded = false;
+    let timer = null;
+
+    const clearTimer = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = null;
+    };
 
     const failOnce = (reason) => {
-      if (confirmedFailure || gotAudio) return;
-      confirmedFailure = true;
+      if (failureRecorded || gotAudio) return;
+      failureRecorded = true;
       markFailure(receiverId, reason);
     };
 
@@ -199,18 +213,29 @@
       const inspection = inspectKiwiMessage(event.data);
       if (inspection.audio && !gotAudio) {
         gotAudio = true;
+        clearTimer();
         markSuccess(receiverId);
       } else if (inspection.state) {
-        // Only receiver-confirmed busy/offline states influence ranking.
-        // Browser/proxy errors and timeouts are not evidence that the remote
-        // receiver itself is unhealthy.
         failOnce(inspection.state);
       }
     });
 
-    // Observation only: this wrapper never closes a WebSocket and never starts
-    // an independent connection timeout. sdr-player.js is the sole owner of
-    // connection lifetime and failover.
+    socket.addEventListener('error', () => failOnce('error'));
+    socket.addEventListener('close', () => {
+      clearTimer();
+      if (!gotAudio) failOnce('error');
+    });
+
+    timer = window.setTimeout(() => {
+      if (gotAudio || socket.readyState === NativeWebSocket.CLOSED) return;
+      failOnce('timeout');
+      try {
+        socket.close(4000, 'Signal Scout connection timeout');
+      } catch {
+        // The player's original timeout will still advance to the next SDR.
+      }
+    }, FAST_FAIL_MS);
+
     return socket;
   }
 
