@@ -1,10 +1,7 @@
 import baseWorker from './worker-base.js';
-import { SDR_DIRECTORY_SEED, SDR_DIRECTORY_SEED_VERSION, rankSeedReceivers } from './sdr-directory-seed.js';
-import { handleSdrDiagnostic } from './sdr-diagnostics-worker.js';
 
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
-const DIRECTORY_FETCH_TIMEOUT_MS = 4500;
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 
@@ -46,17 +43,6 @@ function normalizeReceiverUrl(rawUrl) {
   };
 }
 
-function seedDirectory() {
-  const byId = new Map();
-  for (const seed of SDR_DIRECTORY_SEED) {
-    const receiver = normalizeReceiverUrl(seed.url);
-    if (receiver && receiver.id === seed.id && !byId.has(receiver.id)) byId.set(receiver.id, receiver);
-  }
-  return byId;
-}
-
-const SEED_DIRECTORY = seedDirectory();
-
 function parseReceiverBook(html) {
   const match = String(html || '').match(/var\s+receivers\s*=\s*(\[[\s\S]*?\]);/);
   if (!match) throw new Error('Receiver directory format was not recognized');
@@ -80,88 +66,24 @@ async function receiverDirectory() {
   const now = Date.now();
   if (directoryMemory && now - directoryMemoryAt < DIRECTORY_MEMORY_TTL_MS) return directoryMemory;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DIRECTORY_FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(DIRECTORY_URL, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'SignalScout/1.0 (+public SDR receiver discovery)'
-      },
-      signal: controller.signal,
-      cf: { cacheTtl: 15 * 60, cacheEverything: true }
-    });
-    if (!response.ok) throw new Error(`Receiver directory HTTP ${response.status}`);
-    directoryMemory = parseReceiverBook(await response.text());
-    directoryMemoryAt = now;
-    return directoryMemory;
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetch(DIRECTORY_URL, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'User-Agent': 'SignalScout/1.0 (+public SDR receiver discovery)'
+    },
+    cf: { cacheTtl: 15 * 60, cacheEverything: true }
+  });
+  if (!response.ok) throw new Error(`Receiver directory HTTP ${response.status}`);
+  directoryMemory = parseReceiverBook(await response.text());
+  directoryMemoryAt = now;
+  return directoryMemory;
 }
 
 async function resolveReceiver(receiverId) {
   const legacyUrl = LEGACY_RECEIVERS[receiverId];
   if (legacyUrl) return normalizeReceiverUrl(legacyUrl);
-
-  const seed = SEED_DIRECTORY.get(receiverId);
-  if (seed) return seed;
-
   const directory = await receiverDirectory();
   return directory.get(receiverId) || null;
-}
-
-function jsonResponse(value, status = 200) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'private, max-age=0, no-store'
-    }
-  });
-}
-
-async function resilientReceiverRecommendations(request, env, ctx) {
-  const proxyDirectoryPromise = receiverDirectory().catch(() => null);
-  const response = await baseWorker.fetch(request, env, ctx);
-  const proxyDirectory = await proxyDirectoryPromise;
-
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!contentType.includes('application/json')) return response;
-
-  let payload;
-  try {
-    payload = await response.clone().json();
-  } catch {
-    return response;
-  }
-
-  const liveReceivers = Array.isArray(payload?.receivers) ? payload.receivers : [];
-  const liveDirectoryReady = payload?.source === 'receiverbook'
-    && liveReceivers.length > 3
-    && proxyDirectory instanceof Map
-    && proxyDirectory.size > 3
-    && liveReceivers.every((receiver) => proxyDirectory.has(receiver?.id));
-
-  if (liveDirectoryReady) return response;
-
-  const url = new URL(request.url);
-  const ranked = rankSeedReceivers({
-    frequencyKHz: url.searchParams.get('frequency'),
-    userLat: url.searchParams.get('lat'),
-    userLon: url.searchParams.get('lon'),
-    txLat: url.searchParams.get('txLat'),
-    txLon: url.searchParams.get('txLon')
-  });
-  if (!ranked.length) return response;
-
-  return jsonResponse({
-    ...payload,
-    receivers: ranked,
-    source: 'bundled-seed',
-    warning: `Live receiver directory unavailable; using FREQBEACON built-in catalog ${SDR_DIRECTORY_SEED_VERSION}.`,
-    generatedAt: new Date().toISOString()
-  }, response.status);
 }
 
 function proxySafeTimestamp(timestamp) {
@@ -192,16 +114,20 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
+  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
+  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
+  // source IPs. This matters behind Cloudflare because two outbound WebSockets
+  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/${upstreamTimestamp}/${stream}`;
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       headers: {
         Upgrade: 'websocket',
         Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
-        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
+        'User-Agent': 'SignalScout/1.0'
       }
     });
     if (!upstreamResponse.webSocket) {
@@ -216,11 +142,7 @@ async function proxySdrWebSocket(request) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/sdr/diagnostics') {
-      return handleSdrDiagnostic(request, { resolveReceiver, proxySafeTimestamp });
-    }
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
-    if (url.pathname === '/api/sdr/receivers') return resilientReceiverRecommendations(request, env, ctx);
     return baseWorker.fetch(request, env, ctx);
   }
 };
