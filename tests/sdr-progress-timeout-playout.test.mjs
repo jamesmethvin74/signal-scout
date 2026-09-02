@@ -20,3 +20,11 @@ test('normal SDR Web Audio keeps a mobile jitter cushion', () => {
   assert.match(source, /Never collapse a healthy queued/);
   assert.doesNotMatch(source, /newAudioSchedule = .*0\.55.*0\.055/);
 });
+
+test('receiver changes flush already scheduled audio from the old SDR', () => {
+  assert.match(source, /sdr\.scheduledSources = new Set\(\)/);
+  assert.match(source, /sdr\.scheduledSources\.add\(source\)/);
+  assert.match(source, /scheduledSource\.stop\(\)/);
+  assert.match(source, /sdr\.scheduledSources\.clear\(\)/);
+  assert.match(source, /sdr\.nextPlayTime = sdr\.audioContext\?\.currentTime \|\| 0/);
+});
