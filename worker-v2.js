@@ -120,14 +120,17 @@ async function proxySdrWebSocket(request) {
   // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/${upstreamTimestamp}/${stream}`;
+  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
+  // the external/kiwirecorder form. Use the native UI route so receivers with
+  // external API channels disabled can still serve normal interactive SND/W/F.
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       headers: {
         Upgrade: 'websocket',
         Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
-        'User-Agent': 'SignalScout/1.0'
+        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
       }
     });
     if (!upstreamResponse.webSocket) {
