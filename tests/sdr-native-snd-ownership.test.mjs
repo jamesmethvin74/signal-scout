@@ -5,9 +5,10 @@ import fs from 'node:fs';
 const worker = fs.readFileSync(new URL('../worker-direct-inmemory-ranking.js', import.meta.url), 'utf8');
 const wrangler = fs.readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
 
-test('player SND socket uses captured native browser WebSocket', () => {
-  assert.match(worker, /const NativeSocket = window\.__signalScoutNativeWebSocket \|\| window\.WebSocket/);
-  assert.match(worker, /socket = new NativeSocket\(socketUrl\)/);
+test('player SND socket uses the current page WebSocket constructor', () => {
+  assert.doesNotMatch(worker, /const NativeSocket = window\.__signalScoutNativeWebSocket \|\| window\.WebSocket/);
+  assert.doesNotMatch(worker, /socket = new NativeSocket\(socketUrl\)/);
+  assert.match(worker, /socket = new WebSocket\(socketUrl\)/);
   assert.match(worker, /freqbeacon:snd-created/);
   assert.match(worker, /freqbeacon:snd-ready/);
   assert.match(worker, /freqbeacon:snd-audio/);

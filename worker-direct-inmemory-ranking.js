@@ -113,8 +113,10 @@ function patchPlayer(response) {
     const oldSocketOpen = `      socket = new WebSocket(websocketUrl(sdr.receiverIndex));
       socket.binaryType = 'arraybuffer';`;
     const newSocketOpen = `      const socketUrl = websocketUrl(sdr.receiverIndex);
-      const NativeSocket = window.__signalScoutNativeWebSocket || window.WebSocket;
-      socket = new NativeSocket(socketUrl);
+      // The clean transport probe and the normal-app diagnostic both proved the
+      // current page WebSocket constructor opens Kiwi SND reliably. The older
+      // captured-constructor escape hatch can stall before OPEN on Android.
+      socket = new WebSocket(socketUrl);
       socket.binaryType = 'arraybuffer';
       sdr.socketUrl = socketUrl;
       sdr.socketReceiverId = receiver?.id || null;
