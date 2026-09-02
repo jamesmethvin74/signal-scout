@@ -1,6 +1,7 @@
 import baseWorker from './worker-sdr-mainthread-relief.js';
 
 const MARKER = 'sdr-packet-cadence-v1';
+const AUDIO_CLEANUP_MARKER = 'sdr-audio-node-cleanup-v1';
 
 function bootstrap() {
   return `<script>
@@ -253,10 +254,41 @@ async function patchRoot(response) {
   });
 }
 
+async function patchPlayerAudioCleanup(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/javascript|text\/plain/.test(contentType)) return response;
+  let source = await response.text();
+
+  const oldEnded = "    source.addEventListener('ended', () => sdr.scheduledSources?.delete(source), { once: true });\n    source.connect(sdr.analyser);";
+  const newEnded = "    source.addEventListener('ended', () => {\n      try { source.disconnect(); } catch {}\n      sdr.scheduledSources?.delete(source);\n    }, { once: true });\n    source.connect(sdr.analyser);";
+  source = source.replace(oldEnded, newEnded);
+
+  const oldQueuedCleanup = "        try { scheduledSource.stop(); } catch {}\n      }\n      sdr.scheduledSources.clear();";
+  const newQueuedCleanup = "        try { scheduledSource.stop(); } catch {}\n        try { scheduledSource.disconnect(); } catch {}\n      }\n      sdr.scheduledSources.clear();";
+  source = source.replace(oldQueuedCleanup, newQueuedCleanup);
+
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/javascript; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  headers.set('x-freqbeacon-sdr-audio-cleanup',
+    source.includes('try { source.disconnect(); } catch {}')
+    && source.includes('try { scheduledSource.disconnect(); } catch {}')
+      ? AUDIO_CLEANUP_MARKER
+      : 'audio-cleanup-patch-miss');
+  return new Response(source, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const response = await baseWorker.fetch(request, env, ctx);
+    if (request.method === 'GET' && url.pathname === '/sdr-player.js') {
+      return patchPlayerAudioCleanup(response);
+    }
     if (
       request.method === 'GET'
       && (url.pathname === '/' || url.pathname === '/index.html')
