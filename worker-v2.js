@@ -5,6 +5,7 @@ const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
+const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -148,15 +149,32 @@ async function patchSdrPlayerStartup(response) {
   if (!/javascript|text\/plain/.test(contentType)) return response;
 
   let source = await response.text();
-  const oldBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 9000);`;
-  const newBlock = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 30000);`;
-  const applied = source.includes(oldBlock);
-  if (applied) source = source.replace(oldBlock, newBlock);
+  const oldTimeout = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 9000);`;
+  const newTimeout = `    sdr.connectTimer = window.setTimeout(() => {\n      if (!sdr.gotAudio) failCurrentReceiver('Receiver timed out. Trying the next ranked receiver…');\n    }, 30000);`;
+  const startupApplied = source.includes(oldTimeout);
+  if (startupApplied) source = source.replace(oldTimeout, newTimeout);
 
+  const oldSchedule = `  function scheduleAudio(samples) {\n    const context = sdr.audioContext;\n    if (!context || context.state === 'closed' || !samples?.length) return;\n    const sampleRate = Number.isFinite(sdr.sampleRate) && sdr.sampleRate > 1000 ? sdr.sampleRate : 12000;\n    const buffer = context.createBuffer(1, samples.length, sampleRate);\n    buffer.copyToChannel(samples, 0);\n    const source = context.createBufferSource();\n    source.buffer = buffer;\n    source.connect(sdr.analyser);\n    const now = context.currentTime;\n    if (sdr.nextPlayTime < now + 0.035 || sdr.nextPlayTime > now + 0.55) sdr.nextPlayTime = now + 0.055;\n    source.start(sdr.nextPlayTime);\n    sdr.nextPlayTime += samples.length / sampleRate;\n  }`;
+  const newSchedule = `  const AUDIO_BATCH_FRAMES = 8;\n  const AUDIO_TARGET_LEAD_SECONDS = 0.18;\n\n  function scheduleAudio(samples) {\n    const context = sdr.audioContext;\n    if (!context || context.state === 'closed' || !samples?.length) return;\n    const sampleRate = Number.isFinite(sdr.sampleRate) && sdr.sampleRate > 1000 ? sdr.sampleRate : 12000;\n    const buffer = context.createBuffer(1, samples.length, sampleRate);\n    buffer.copyToChannel(samples, 0);\n    const source = context.createBufferSource();\n    source.buffer = buffer;\n    source.connect(sdr.analyser);\n    source.addEventListener('ended', () => {\n      try { source.disconnect(); } catch {}\n    }, { once: true });\n    const now = context.currentTime;\n    if (sdr.nextPlayTime < now + 0.05 || sdr.nextPlayTime > now + 1.5) sdr.nextPlayTime = now + AUDIO_TARGET_LEAD_SECONDS;\n    source.start(sdr.nextPlayTime);\n    sdr.nextPlayTime += samples.length / sampleRate;\n  }\n\n  function queueAudio(samples) {\n    if (!samples?.length) return;\n    if (!Array.isArray(sdr.audioFrameQueue)) sdr.audioFrameQueue = [];\n    sdr.audioFrameQueue.push(samples);\n    if (sdr.audioFrameQueue.length < AUDIO_BATCH_FRAMES) return;\n\n    let totalSamples = 0;\n    for (const frame of sdr.audioFrameQueue) totalSamples += frame.length;\n    const merged = new Float32Array(totalSamples);\n    let offset = 0;\n    for (const frame of sdr.audioFrameQueue) {\n      merged.set(frame, offset);\n      offset += frame.length;\n    }\n    sdr.audioFrameQueue.length = 0;\n    scheduleAudio(merged);\n  }`;
+  const scheduleApplied = source.includes(oldSchedule);
+  if (scheduleApplied) source = source.replace(oldSchedule, newSchedule);
+
+  const oldPcmCall = `    scheduleAudio(decodePcm(audioBytes, littleEndian));`;
+  const newPcmCall = `    queueAudio(decodePcm(audioBytes, littleEndian));`;
+  const pcmApplied = source.includes(oldPcmCall);
+  if (pcmApplied) source = source.replace(oldPcmCall, newPcmCall);
+
+  const oldDisconnect = `    const socket = sdr.socket;\n    sdr.socket = null;\n    if (socket) {`;
+  const newDisconnect = `    const socket = sdr.socket;\n    sdr.socket = null;\n    sdr.audioFrameQueue = [];\n    if (sdr.audioContext && sdr.audioContext.state !== 'closed') sdr.nextPlayTime = sdr.audioContext.currentTime;\n    if (socket) {`;
+  const disconnectApplied = source.includes(oldDisconnect);
+  if (disconnectApplied) source = source.replace(oldDisconnect, newDisconnect);
+
+  const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-player-startup', applied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-startup', startupApplied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
