@@ -6,6 +6,7 @@ const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
+const DUAL_STREAM_TRACE_MARKER = 'sdr-dual-stream-trace-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -116,15 +117,8 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
-  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
-  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
-  // source IPs. This matters behind Cloudflare because two outbound WebSockets
-  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
-  // the external/kiwirecorder form. Use the native UI route so receivers with
-  // external API channels disabled can still serve normal interactive SND/W/F.
   const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
@@ -182,12 +176,46 @@ async function patchSdrPlayerStartup(response) {
   });
 }
 
+async function patchTracePage(response) {
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!contentType.includes('text/html')) return response;
+
+  let html = await response.text();
+  const scriptTag = '<script src="sdr-dual-stream-trace.js?v=1"></script>';
+  let applied = html.includes(scriptTag);
+  if (!applied) {
+    const anchor = '<script src="sdr-rf-v2.js';
+    const index = html.indexOf(anchor);
+    if (index >= 0) {
+      html = `${html.slice(0, index)}${scriptTag}\n  ${html.slice(index)}`;
+      applied = true;
+    }
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'text/html; charset=utf-8');
+  headers.set('cache-control', 'no-store, max-age=0');
+  headers.set('x-freqbeacon-sdr-dual-trace', applied ? DUAL_STREAM_TRACE_MARKER : 'dual-stream-trace-patch-miss');
+  return new Response(html, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
+    }
+    if (
+      request.method === 'GET'
+      && (url.pathname === '/' || url.pathname === '/index.html')
+      && url.searchParams.get('sdrtrace') === '1'
+    ) {
+      return patchTracePage(await baseWorker.fetch(request, env, ctx));
     }
     return baseWorker.fetch(request, env, ctx);
   }
