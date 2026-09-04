@@ -6,8 +6,6 @@ const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
-const DUAL_STREAM_TRACE_MARKER = 'sdr-dual-stream-trace-v1';
-const MAINTHREAD_MARKER = 'sdr-mainthread-relief-v2';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -17,18 +15,6 @@ const LEGACY_RECEIVERS = {
 
 let directoryMemory = null;
 let directoryMemoryAt = 0;
-
-function textResponse(response, source, contentType, headerName, headerValue) {
-  const headers = new Headers(response.headers);
-  headers.set('content-type', contentType);
-  headers.set('cache-control', 'no-store, max-age=0');
-  headers.set(headerName, headerValue);
-  return new Response(source, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
 
 function isBlockedHost(hostname) {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
@@ -130,8 +116,15 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
+  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
+  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
+  // source IPs. This matters behind Cloudflare because two outbound WebSockets
+  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
+  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
+  // the external/kiwirecorder form. Use the native UI route so receivers with
+  // external API channels disabled can still serve normal interactive SND/W/F.
   const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
@@ -189,271 +182,12 @@ async function patchSdrPlayerStartup(response) {
   });
 }
 
-async function patchAppMainThread(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!/javascript|text\/plain/.test(contentType)) return response;
-  const source = await response.text();
-  let patched = source;
-
-  patched = patched.replace(
-    '  let locationRequestInFlight = false;',
-    '  let locationRequestInFlight = false;\n  let renderGeneration = 0;\n  const scheduleFormatterCache = new Map();'
-  );
-
-  patched = patched.replace(
-`      const timeFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-      const zoneFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        timeZoneName: 'short'
-      });`,
-`      let formatters = scheduleFormatterCache.get(timeZone);
-      if (!formatters) {
-        formatters = {
-          timeFormatter: new Intl.DateTimeFormat('en-US', {
-            timeZone,
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-          }),
-          zoneFormatter: new Intl.DateTimeFormat('en-US', {
-            timeZone,
-            timeZoneName: 'short'
-          })
-        };
-        scheduleFormatterCache.set(timeZone, formatters);
-      }
-      const { timeFormatter, zoneFormatter } = formatters;`
-  );
-
-  patched = patched.replace(
-    "    const language = $('#languageFilter').value;",
-    "    const language = $('#languageFilter').value;\n    const generation = ++renderGeneration;"
-  );
-
-  patched = patched.replace(
-`    $('#signalGrid').innerHTML = results.length
-      ? results.map(({ station, scored }) => renderCard(station, scored, date)).join('')
-      : '<div class="empty-state">Nothing in the starter dataset matches those filters at this time. Try another hour, language, or band.</div>';`,
-`    const grid = $('#signalGrid');
-    if (!results.length) {
-      grid.innerHTML = '<div class="empty-state">Nothing in the starter dataset matches those filters at this time. Try another hour, language, or band.</div>';
-      return;
-    }
-
-    grid.innerHTML = '';
-    const batchSize = window.innerWidth <= 700 ? 20 : 60;
-    let cursor = 0;
-
-    const appendBatch = () => {
-      if (generation !== renderGeneration) return;
-      const end = Math.min(results.length, cursor + batchSize);
-      const html = results.slice(cursor, end)
-        .map(({ station, scored }) => renderCard(station, scored, date))
-        .join('');
-      grid.insertAdjacentHTML('beforeend', html);
-      cursor = end;
-      if (cursor < results.length) window.setTimeout(appendBatch, 0);
-    };
-
-    appendBatch();`
-  );
-
-  const applied = patched !== source
-    && patched.includes('let renderGeneration = 0')
-    && patched.includes('scheduleFormatterCache')
-    && patched.includes('const batchSize = window.innerWidth <= 700 ? 20 : 60')
-    && patched.includes('window.setTimeout(appendBatch, 0)');
-
-  return textResponse(
-    response,
-    patched,
-    'application/javascript; charset=utf-8',
-    'x-freqbeacon-mainthread-relief',
-    applied ? MAINTHREAD_MARKER : 'app-patch-miss'
-  );
-}
-
-async function patchBandLabelsMainThread(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!/javascript|text\/plain/.test(contentType)) return response;
-  const source = await response.text();
-  let patched = source;
-
-  patched = patched.replace(
-    '    if (count) count.textContent = `${visible} signal${visible === 1 ? \'\' : \'s\'}`;',
-    '    if (count && selectedMeterBand !== \'all\') count.textContent = `${visible} signal${visible === 1 ? \'\' : \'s\'}`;'
-  );
-
-  patched = patched.replace(
-`  const observer = new MutationObserver(decorateCards);
-  observer.observe(grid, { childList: true, subtree: true });
-  decorateCards();`,
-`  const observer = new MutationObserver((mutations) => {
-    const cards = new Set();
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (!(node instanceof Element)) return;
-        if (node.matches('.signal-card')) cards.add(node);
-        node.querySelectorAll?.('.signal-card').forEach((card) => cards.add(card));
-      });
-    });
-    if (!cards.size) return;
-    cards.forEach(decorateCard);
-    applyBandFilter();
-  });
-  observer.observe(grid, { childList: true });
-  decorateCards();`
-  );
-
-  const applied = patched !== source
-    && !patched.includes('observer.observe(grid, { childList: true, subtree: true })')
-    && patched.includes('observer.observe(grid, { childList: true })');
-
-  return textResponse(
-    response,
-    patched,
-    'application/javascript; charset=utf-8',
-    'x-freqbeacon-mainthread-relief',
-    applied ? MAINTHREAD_MARKER : 'band-labels-patch-miss'
-  );
-}
-
-async function patchCardCollapseMainThread(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!/javascript|text\/plain/.test(contentType)) return response;
-  const source = await response.text();
-  let patched = source;
-
-  patched = patched.replace(
-`  new MutationObserver(() => window.requestAnimationFrame(decorateCards)).observe(grid, { childList: true, subtree: true });
-  decorateCards();`,
-`  new MutationObserver((mutations) => {
-    const cards = new Set();
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (!(node instanceof Element)) return;
-        if (node.matches('.signal-card')) cards.add(node);
-        node.querySelectorAll?.('.signal-card').forEach((card) => cards.add(card));
-      });
-    });
-    if (!cards.size) return;
-    window.requestAnimationFrame(() => cards.forEach(decorateCard));
-  }).observe(grid, { childList: true });
-  decorateCards();`
-  );
-
-  const applied = patched !== source
-    && patched.includes("window.requestAnimationFrame(() => cards.forEach(decorateCard))")
-    && !patched.includes('{ childList: true, subtree: true }');
-
-  return textResponse(
-    response,
-    patched,
-    'application/javascript; charset=utf-8',
-    'x-freqbeacon-mainthread-relief',
-    applied ? MAINTHREAD_MARKER : 'card-collapse-patch-miss'
-  );
-}
-
-async function patchRootMainThread(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!contentType.includes('text/html')) return response;
-  const source = await response.text();
-  let html = source;
-
-  html = html.replace('<script src="app.js"></script>', '<script src="app.js?v=3"></script>');
-  html = html.replace(/band-labels\.js\?v=\d+/g, 'band-labels.js?v=4');
-  html = html.replace(/card-collapse\.js\?v=\d+/g, 'card-collapse.js?v=3');
-
-  html = html.replace(
-`      function decorate() {
-        document.querySelectorAll('.signal-card').forEach((card) => {`,
-`      function decorate(root = document) {
-        const cards = root.matches?.('.signal-card') ? [root] : root.querySelectorAll('.signal-card');
-        cards.forEach((card) => {`
-  );
-
-  html = html.replace(
-`      new MutationObserver(decorate).observe(grid, { childList: true, subtree: true });
-      decorate();`,
-`      new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node instanceof Element) decorate(node);
-          });
-        });
-      }).observe(grid, { childList: true });
-      decorate(grid);`
-  );
-
-  const applied = html !== source
-    && html.includes('app.js?v=3')
-    && html.includes('band-labels.js?v=4')
-    && html.includes('card-collapse.js?v=3')
-    && html.includes('decorate(root = document)')
-    && html.includes("}).observe(grid, { childList: true });");
-
-  return textResponse(
-    response,
-    html,
-    'text/html; charset=utf-8',
-    'x-freqbeacon-mainthread-relief',
-    applied ? MAINTHREAD_MARKER : 'root-patch-miss'
-  );
-}
-
-async function patchTracePage(response) {
-  const contentType = String(response.headers.get('content-type') || '');
-  if (!contentType.includes('text/html')) return response;
-
-  let html = await response.text();
-  const scriptTag = '<script src="sdr-dual-stream-trace.js?v=1"></script>';
-  let applied = html.includes(scriptTag);
-  if (!applied) {
-    const anchor = '<script src="sdr-rf-v2.js';
-    const index = html.indexOf(anchor);
-    if (index >= 0) {
-      html = `${html.slice(0, index)}${scriptTag}\n  ${html.slice(index)}`;
-      applied = true;
-    }
-  }
-
-  const headers = new Headers(response.headers);
-  headers.set('content-type', 'text/html; charset=utf-8');
-  headers.set('cache-control', 'no-store, max-age=0');
-  headers.set('x-freqbeacon-sdr-dual-trace', applied ? DUAL_STREAM_TRACE_MARKER : 'dual-stream-trace-patch-miss');
-  return new Response(html, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
-    }
-    if (request.method === 'GET' && url.pathname === '/app.js') {
-      return patchAppMainThread(await baseWorker.fetch(request, env, ctx));
-    }
-    if (request.method === 'GET' && url.pathname === '/band-labels.js') {
-      return patchBandLabelsMainThread(await baseWorker.fetch(request, env, ctx));
-    }
-    if (request.method === 'GET' && url.pathname === '/card-collapse.js') {
-      return patchCardCollapseMainThread(await baseWorker.fetch(request, env, ctx));
-    }
-    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      let response = await patchRootMainThread(await baseWorker.fetch(request, env, ctx));
-      if (url.searchParams.get('sdrtrace') === '1') response = await patchTracePage(response);
-      return response;
     }
     return baseWorker.fetch(request, env, ctx);
   }
