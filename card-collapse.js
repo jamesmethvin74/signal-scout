@@ -89,13 +89,36 @@
     }
   }
 
-  function decorateCards() {
-    document.querySelectorAll('.signal-card').forEach(decorateCard);
+  function decorateCards(root = document) {
+    if (root?.matches?.('.signal-card')) decorateCard(root);
+    root?.querySelectorAll?.('.signal-card').forEach(decorateCard);
+  }
+
+  function decorateAddedCards(records) {
+    const added = new Set();
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (node.matches?.('.signal-card')) added.add(node);
+        node.querySelectorAll?.('.signal-card').forEach((card) => added.add(card));
+      }
+    }
+    if (!added.size) return;
+    window.requestAnimationFrame(() => {
+      for (const card of added) {
+        if (card.isConnected) decorateCard(card);
+      }
+    });
   }
 
   const style = document.createElement('style');
   style.id = 'signal-scout-collapse-styles';
   style.textContent = `
+    .signal-card {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 320px;
+    }
+
     .transmitter-summary {
       margin-top: 2px;
       color: #b7c8da;
@@ -195,8 +218,8 @@
 
   const grid = document.getElementById('signalGrid');
   if (!grid) return;
-  new MutationObserver(() => window.requestAnimationFrame(decorateCards)).observe(grid, { childList: true, subtree: true });
-  decorateCards();
+  new MutationObserver(decorateAddedCards).observe(grid, { childList: true, subtree: false });
+  decorateCards(grid);
 })();
 
 (() => {
