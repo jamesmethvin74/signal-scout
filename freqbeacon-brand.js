@@ -237,6 +237,10 @@
       mark.removeAttribute('aria-hidden');
     }
 
+    // Current production markup is already FREQBEACON-branded. Keep one
+    // compatibility pass for any stale static text, but do not continuously
+    // walk every dynamically-added subtree. The old page-wide observer made
+    // normal card/player rendering pay an unnecessary recursive DOM-scan cost.
     brandNode(document.body);
   }
 
@@ -244,11 +248,4 @@
   installLocationReliability();
   installApprovedSplash();
   applyPrimaryBrand();
-
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) brandNode(node);
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
 })();
