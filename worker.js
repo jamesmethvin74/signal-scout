@@ -1,7 +1,7 @@
 import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
-const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js']);
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js', '/sdr-live-reliability-v2.js']);
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -171,7 +171,7 @@ export default {
         .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=8')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
-        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
+        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=2');
       html = applyFreqBeaconBrand(html);
       html = applySdrTraceRuntime(html, url);
       html = applyProgramGuideRuntime(html);
