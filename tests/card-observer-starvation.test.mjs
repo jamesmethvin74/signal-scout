@@ -10,6 +10,8 @@ assert.match(bandLabels, /observe\(grid, \{ childList: true, subtree: false \}\)
 assert.match(collapse, /observe\(grid, \{ childList: true, subtree: false \}\)/);
 assert.match(guide, /observe\(grid,\{childList:true,subtree:false\}\)/);
 assert.match(index, /new MutationObserver\(decorate\)\.observe\(grid, \{ childList: true, subtree: false \}\)/);
+assert.match(bandLabels, /decorateAddedCards/);
+assert.match(collapse, /decorateAddedCards/);
 assert.match(collapse, /content-visibility:\s*auto/);
 assert.match(collapse, /contain-intrinsic-size:\s*auto 320px/);
 assert.doesNotMatch(bandLabels, /observe\(grid, \{ childList: true, subtree: true \}\)/);
