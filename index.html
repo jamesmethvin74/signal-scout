@@ -208,7 +208,7 @@
 
       const grid = document.getElementById('signalGrid');
       if (!grid) return;
-      new MutationObserver(decorate).observe(grid, { childList: true, subtree: true });
+      new MutationObserver(decorate).observe(grid, { childList: true, subtree: false });
       decorate();
     })();
   </script>
