@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <title>FREQBEACON SDR Trace</title>
+  <script>
+    (() => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/index.html?source=sdr-trace-v1', false);
+        xhr.send(null);
+        if (xhr.status < 200 || xhr.status >= 300) throw new Error(`HTTP ${xhr.status}`);
+        window.__freqbeaconTraceIndexSource = xhr.responseText;
+      } catch (error) {
+        window.__freqbeaconTraceBootstrapError = error?.message || String(error);
+      }
+    })();
+  </script>
+  <script src="sdr-early-trace.js?v=1"></script>
+  <script>
+    (() => {
+      const source = window.__freqbeaconTraceIndexSource;
+      if (!source) {
+        document.write('</head><body style="background:#07111f;color:#d9f7ff;font-family:system-ui;padding:24px"><h1>SDR trace could not start</h1><p>'
+          + String(window.__freqbeaconTraceBootstrapError || 'index.html was unavailable')
+          + '</p></body>');
+        return;
+      }
+
+      const headOpen = source.indexOf('<head>');
+      const headClose = source.indexOf('</head>');
+      const bodyOpen = source.indexOf('<body>');
+      const bodyClose = source.lastIndexOf('</body>');
+      if (headOpen < 0 || headClose < 0 || bodyOpen < 0 || bodyClose < 0) {
+        document.write('</head><body style="background:#07111f;color:#d9f7ff;font-family:system-ui;padding:24px"><h1>SDR trace could not start</h1><p>index.html structure was not recognized.</p></body>');
+        return;
+      }
+
+      const head = source.slice(headOpen + '<head>'.length, headClose);
+      const body = source.slice(bodyOpen + '<body>'.length, bodyClose);
+      document.write(`${head}</head><body>${body}</body>`);
+    })();
+  </script>
+</head>
+</html>
