@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <title>FREQBEACON SDR Trace v2</title>
+  <script>
+    (() => {
+      const request = new XMLHttpRequest();
+      request.open('GET', `/index.html?traceBootstrap=v2&ts=${Date.now()}`, false);
+      try {
+        request.send(null);
+      } catch (error) {
+        document.addEventListener('DOMContentLoaded', () => {
+          document.body.innerHTML = '<p style="padding:24px;color:#d9f7ff;font-family:system-ui">Could not open the FREQBEACON trace bootstrap.</p>';
+        });
+        return;
+      }
+
+      if (request.status < 200 || request.status >= 300 || !request.responseText) {
+        document.addEventListener('DOMContentLoaded', () => {
+          document.body.innerHTML = '<p style="padding:24px;color:#d9f7ff;font-family:system-ui">Could not load the FREQBEACON app for tracing.</p>';
+        });
+        return;
+      }
+
+      const traceScripts = [
+        '<script src="/sdr-early-trace.js?traceBootstrap=20260907c"><\\/script>',
+        '<script src="/sdr-trace-socket-fix-v2.js?traceBootstrap=20260907c"><\\/script>'
+      ].join('');
+
+      let html = request.responseText;
+      html = html.replace('<head>', `<head><base href="/">${traceScripts}`);
+      document.open();
+      document.write(html);
+      document.close();
+    })();
+  </script>
+</head>
+<body style="background:#07111f;color:#d9f7ff;font-family:system-ui;padding:24px">
+  <p>Opening FREQBEACON SDR trace v2…</p>
+</body>
+</html>
