@@ -247,9 +247,28 @@
     updateFilterVisibility();
   }
 
-  function decorateCards() {
-    document.querySelectorAll('.signal-card').forEach(decorateCard);
+  function decorateCards(root = document) {
+    if (root?.matches?.('.signal-card')) decorateCard(root);
+    root?.querySelectorAll?.('.signal-card').forEach(decorateCard);
     applyBandFilter();
+  }
+
+  function decorateAddedCards(records) {
+    let changed = false;
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (node.matches?.('.signal-card')) {
+          decorateCard(node);
+          changed = true;
+        }
+        node.querySelectorAll?.('.signal-card').forEach((card) => {
+          decorateCard(card);
+          changed = true;
+        });
+      }
+    }
+    if (changed) applyBandFilter();
   }
 
   installStyles();
@@ -258,7 +277,7 @@
   const grid = document.getElementById('signalGrid');
   if (!grid) return;
 
-  const observer = new MutationObserver(decorateCards);
-  observer.observe(grid, { childList: true, subtree: true });
-  decorateCards();
+  const observer = new MutationObserver(decorateAddedCards);
+  observer.observe(grid, { childList: true, subtree: false });
+  decorateCards(grid);
 })();
