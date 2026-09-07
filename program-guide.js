@@ -274,7 +274,7 @@
   `;
   document.head.appendChild(style);
 
-  if (grid) new MutationObserver(() => requestAnimationFrame(() => decorateAll(grid))).observe(grid,{childList:true,subtree:true});
-  if (lookupResults) new MutationObserver(() => requestAnimationFrame(() => decorateAll(lookupResults))).observe(lookupResults,{childList:true,subtree:true});
+  if (grid) new MutationObserver(() => requestAnimationFrame(() => decorateAll(grid))).observe(grid,{childList:true,subtree:false});
+  if (lookupResults) new MutationObserver(() => requestAnimationFrame(() => decorateAll(lookupResults))).observe(lookupResults,{childList:true,subtree:false});
   decorateAll();
 })();
