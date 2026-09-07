@@ -557,7 +557,6 @@
 
   async function initializeLocation() {
     const saved = restoreStoredLocation();
-    if (saved) render();
 
     if (!navigator.geolocation) {
       if (!saved) $('#locationMeta').textContent = 'Geolocation is not available in this browser.';
@@ -619,7 +618,7 @@
 
   updateClock();
   window.setInterval(updateClock, 30000);
-  render();
   initializeLocation();
+  render();
   window.setInterval(refreshGrantedLocation, LOCATION_REFRESH_MS);
 })();

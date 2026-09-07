@@ -65,7 +65,8 @@
   }
 
   function decorateCard(card) {
-    if (!card.classList.contains('signal-card')) return;
+    if (!card?.isConnected || !card.classList.contains('signal-card') || card.dataset.cardDecorated === 'true') return;
+    card.dataset.cardDecorated = 'true';
     markSummaryDetails(card);
     addTransmitterSummary(card);
     decorateReceptionMeter(card);
@@ -89,26 +90,65 @@
     }
   }
 
-  function decorateCards(root = document) {
-    if (root?.matches?.('.signal-card')) decorateCard(root);
-    root?.querySelectorAll?.('.signal-card').forEach(decorateCard);
+  const pendingCards = [];
+  let fallbackScheduled = false;
+
+  function processFallbackChunk(deadline) {
+    fallbackScheduled = false;
+    let processed = 0;
+    while (pendingCards.length && processed < 10 && (!deadline || deadline.timeRemaining() > 2)) {
+      decorateCard(pendingCards.shift());
+      processed += 1;
+    }
+    if (pendingCards.length) scheduleFallbackChunk();
   }
 
-  function decorateAddedCards(records) {
-    const added = new Set();
+  function scheduleFallbackChunk() {
+    if (fallbackScheduled) return;
+    fallbackScheduled = true;
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(processFallbackChunk, { timeout: 120 });
+    } else {
+      window.setTimeout(() => processFallbackChunk(null), 16);
+    }
+  }
+
+  const cardObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          cardObserver.unobserve(entry.target);
+          decorateCard(entry.target);
+        }
+      }, { rootMargin: '900px 0px' })
+    : null;
+
+  function queueCard(card) {
+    if (!card?.classList?.contains('signal-card') || card.dataset.cardDecorated === 'true') return;
+    if (!card.classList.contains('card-expanded') && !card.classList.contains('card-collapsed')) {
+      card.classList.add('card-collapsed');
+    }
+    if (cardObserver) {
+      cardObserver.observe(card);
+    } else {
+      pendingCards.push(card);
+      scheduleFallbackChunk();
+    }
+  }
+
+  function queueCards(root = document) {
+    if (root?.matches?.('.signal-card')) queueCard(root);
+    root?.querySelectorAll?.('.signal-card').forEach(queueCard);
+  }
+
+  function queueAddedCards(records) {
     for (const record of records) {
       for (const node of record.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        if (node.matches?.('.signal-card')) added.add(node);
-        node.querySelectorAll?.('.signal-card').forEach((card) => added.add(card));
+        if (node.matches?.('.signal-card')) queueCard(node);
+        node.querySelectorAll?.('.signal-card').forEach(queueCard);
       }
     }
-    if (!added.size) return;
-    window.requestAnimationFrame(() => {
-      for (const card of added) {
-        if (card.isConnected) decorateCard(card);
-      }
-    });
   }
 
   const style = document.createElement('style');
@@ -218,8 +258,8 @@
 
   const grid = document.getElementById('signalGrid');
   if (!grid) return;
-  new MutationObserver(decorateAddedCards).observe(grid, { childList: true, subtree: false });
-  decorateCards(grid);
+  new MutationObserver(queueAddedCards).observe(grid, { childList: true, subtree: false });
+  queueCards(grid);
 })();
 
 (() => {
