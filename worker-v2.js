@@ -181,6 +181,79 @@ async function proxySdrWebSocket(request) {
   }
 }
 
+async function probeSdrReceiver(request) {
+  const url = new URL(request.url);
+  const receiverId = url.searchParams.get('receiver') || '';
+  const stream = url.searchParams.get('stream') || 'SND';
+  const result = {
+    probe: 'direct-worker-upstream-websocket-v1',
+    receiverId,
+    stream,
+    resolved: false,
+    upstreamHost: null,
+    upstreamProtocol: null,
+    upstreamStatus: null,
+    webSocketAccepted: false,
+    elapsedMs: null,
+    error: null
+  };
+  const respond = () => new Response(JSON.stringify(result, null, 2), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store, max-age=0'
+    }
+  });
+
+  if (!receiverId || receiverId.length > 180 || !['SND', 'W/F'].includes(stream)) {
+    result.error = 'invalid probe request';
+    return respond();
+  }
+
+  let receiver;
+  try {
+    receiver = await resolveReceiver(request, receiverId);
+  } catch (error) {
+    result.error = `directory: ${error?.message || 'lookup failed'}`;
+    return respond();
+  }
+  if (!receiver?.upstreamHost || isBlockedHost(receiver.hostname)) {
+    result.error = 'receiver did not resolve to a permitted upstream host';
+    return respond();
+  }
+
+  result.resolved = true;
+  result.upstreamHost = receiver.upstreamHost;
+  result.upstreamProtocol = receiver.protocol;
+
+  const timestamp = String(Math.floor(Date.now() / 1000) % 10000000000);
+  const upstreamTimestamp = proxySafeTimestamp(timestamp);
+  const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
+  const started = Date.now();
+  try {
+    const upstreamResponse = await fetch(upstreamUrl, {
+      headers: {
+        Upgrade: 'websocket',
+        Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
+        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
+      }
+    });
+    result.elapsedMs = Date.now() - started;
+    result.upstreamStatus = upstreamResponse.status;
+    result.webSocketAccepted = Boolean(upstreamResponse.webSocket);
+    if (!upstreamResponse.webSocket) {
+      result.error = `upstream refused WebSocket (${upstreamResponse.status})`;
+    } else {
+      try { upstreamResponse.webSocket.close(1000, 'FREQBEACON diagnostic probe complete'); } catch {}
+    }
+  } catch (error) {
+    result.elapsedMs = Date.now() - started;
+    result.error = `upstream fetch: ${error?.message || 'connection failed'}`;
+  }
+  return respond();
+}
+
 async function patchSdrPlayerStartup(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!/javascript|text\/plain/.test(contentType)) return response;
@@ -239,6 +312,7 @@ async function patchSdrPlayerStartup(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request);
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
