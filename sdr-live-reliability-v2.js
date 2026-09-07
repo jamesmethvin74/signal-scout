@@ -107,23 +107,23 @@
   function cachedProbe(receiverId) {
     const entry = probeCache.get(receiverId);
     if (!entry) return null;
-    const maxAge = entry.ok ? PROBE_SUCCESS_CACHE_MS : PROBE_FAILURE_CACHE_MS;
+    const maxAge = entry.status === 'ok' ? PROBE_SUCCESS_CACHE_MS : PROBE_FAILURE_CACHE_MS;
     if (Date.now() - entry.at > maxAge) {
       probeCache.delete(receiverId);
       return null;
     }
-    return entry.ok;
+    return entry.status;
   }
 
   async function probeReceiver(receiver) {
     const receiverId = receiver?.id;
-    if (!receiverId) return { receiverId, ok: false };
+    if (!receiverId) return { receiverId, status: 'unavailable' };
     const cached = cachedProbe(receiverId);
-    if (cached !== null) return { receiverId, ok: cached };
+    if (cached !== null) return { receiverId, status: cached };
 
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-    let ok = false;
+    let status = 'unavailable';
     try {
       const probeUrl = `/api/sdr/probe?receiver=${encodeURIComponent(receiverId)}&stream=SND&_=${Date.now()}`;
       const response = await PreviousFetch(probeUrl, {
@@ -132,15 +132,15 @@
       });
       if (response.ok) {
         const payload = await response.json();
-        ok = Boolean(payload?.resolved && payload?.webSocketAccepted);
+        status = payload?.resolved && payload?.webSocketAccepted ? 'ok' : 'failed';
       }
     } catch {
-      ok = false;
+      status = 'unavailable';
     } finally {
       window.clearTimeout(timer);
     }
-    probeCache.set(receiverId, { ok, at: Date.now() });
-    return { receiverId, ok };
+    if (status !== 'unavailable') probeCache.set(receiverId, { status, at: Date.now() });
+    return { receiverId, status };
   }
 
   async function preferReachableReceivers(receivers, hamMode) {
@@ -155,29 +155,33 @@
     if (!candidates.length) return receivers;
 
     const results = await Promise.all(candidates.map(probeReceiver));
-    const probed = new Set(results.map((result) => result.receiverId).filter(Boolean));
-    const reachable = new Set(results.filter((result) => result.ok).map((result) => result.receiverId));
+    const reachable = new Set(results.filter((result) => result.status === 'ok').map((result) => result.receiverId));
+    const failed = new Set(results.filter((result) => result.status === 'failed').map((result) => result.receiverId));
+    const unavailable = new Set(results.filter((result) => result.status === 'unavailable').map((result) => result.receiverId));
 
-    // If the probe service itself is unavailable, do not destroy the existing
-    // ranking. Only reorder when at least one candidate positively accepted a
-    // native Kiwi WebSocket handshake.
-    if (!reachable.size) {
+    // Preserve the existing order only when the probe system itself could not
+    // verify any candidate. A definite upstream refusal/failure is real evidence
+    // and should demote that receiver below unverified choices immediately.
+    if (!reachable.size && !failed.size) {
       return receivers.map((receiver, index) => ({
         ...receiver,
         recommended: index === 0,
-        connectionHealth: probed.has(receiver.id) ? 'preflight-unverified' : receiver.connectionHealth
+        connectionHealth: unavailable.has(receiver.id) ? 'preflight-unverified' : receiver.connectionHealth
       }));
     }
 
     const verified = receivers.filter((receiver) => reachable.has(receiver.id));
-    const remainder = receivers.filter((receiver) => !reachable.has(receiver.id));
-    const ordered = [...verified, ...remainder];
+    const neutral = receivers.filter((receiver) => !reachable.has(receiver.id) && !failed.has(receiver.id));
+    const definiteFailures = receivers.filter((receiver) => failed.has(receiver.id));
+    const ordered = [...verified, ...neutral, ...definiteFailures];
     return ordered.map((receiver, index) => ({
       ...receiver,
       recommended: index === 0,
       connectionHealth: reachable.has(receiver.id)
         ? 'preflight-ok'
-        : (probed.has(receiver.id) ? 'preflight-failed' : receiver.connectionHealth)
+        : (failed.has(receiver.id)
+          ? 'preflight-failed'
+          : (unavailable.has(receiver.id) ? 'preflight-unverified' : receiver.connectionHealth))
     }));
   }
 
