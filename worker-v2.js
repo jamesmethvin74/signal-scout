@@ -153,8 +153,15 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
+  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
+  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
+  // source IPs. This matters behind Cloudflare because two outbound WebSockets
+  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
+  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
+  // the external/kiwirecorder form. Use the native UI route so receivers with
+  // external API channels disabled can still serve normal interactive SND/W/F.
   const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
