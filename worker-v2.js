@@ -2,6 +2,10 @@ import baseWorker from './worker-base.js';
 
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
+const SHARED_DIRECTORY_CACHE_PATHS = [
+  '/__cache/sdr-directory-v4-fresh',
+  '/__cache/sdr-directory-v4-last-good'
+];
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
@@ -82,9 +86,40 @@ async function receiverDirectory() {
   return directoryMemory;
 }
 
-async function resolveReceiver(receiverId) {
+function normalizedCachedReceiver(receiver) {
+  if (!receiver || typeof receiver !== 'object') return null;
+  const rawUrl = receiver.url
+    || (receiver.upstreamHost ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.upstreamHost}` : '')
+    || (receiver.host ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.host}` : '');
+  return normalizeReceiverUrl(rawUrl);
+}
+
+async function resolveReceiverFromSharedCache(request, receiverId) {
+  const cache = caches.default;
+  for (const path of SHARED_DIRECTORY_CACHE_PATHS) {
+    try {
+      const key = new Request(new URL(path, request.url).toString(), { method: 'GET' });
+      const cached = await cache.match(key);
+      if (!cached) continue;
+      const payload = await cached.json();
+      if (!Array.isArray(payload?.receivers)) continue;
+      const match = payload.receivers.find((receiver) => receiver?.id === receiverId || receiver?.host === receiverId);
+      const normalized = normalizedCachedReceiver(match);
+      if (normalized?.id === receiverId) return normalized;
+    } catch {
+      // The shared cache is advisory. Fall through to live ReceiverBook lookup.
+    }
+  }
+  return null;
+}
+
+async function resolveReceiver(request, receiverId) {
   const legacyUrl = LEGACY_RECEIVERS[receiverId];
   if (legacyUrl) return normalizeReceiverUrl(legacyUrl);
+
+  const shared = await resolveReceiverFromSharedCache(request, receiverId);
+  if (shared) return shared;
+
   const directory = await receiverDirectory();
   return directory.get(receiverId) || null;
 }
@@ -109,7 +144,7 @@ async function proxySdrWebSocket(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(receiverId);
+    receiver = await resolveReceiver(request, receiverId);
   } catch (error) {
     return new Response(`Receiver directory unavailable: ${error?.message || 'lookup failed'}`, { status: 502 });
   }
