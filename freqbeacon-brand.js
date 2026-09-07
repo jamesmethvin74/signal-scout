@@ -8,6 +8,13 @@
   const SPLASH_FADE_MS = 300;
   const SPLASH_MAX_WAIT_MS = 4000;
 
+  // Diagnostic-only hook. The normal app does not load or execute the SDR
+  // tracer. When explicitly requested, insert it synchronously at this parser
+  // position so it captures the native WebSocket before RF/health/player wrap it.
+  if (new URLSearchParams(window.location.search).get('sdrTrace') === '1') {
+    document.write('<script src="sdr-early-trace.js?v=2"><\/script>');
+  }
+
   function replaceString(value) {
     return typeof value === 'string' && value.includes(OLD_NAME)
       ? value.replaceAll(OLD_NAME, NEW_NAME)
