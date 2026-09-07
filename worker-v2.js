@@ -11,6 +11,7 @@ const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
+const PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -152,15 +153,8 @@ async function proxySdrWebSocket(request) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
 
-  // KiwiSDR links SND and W/F by timestamp. Current Kiwi firmware reserves bit
-  // 62 as NEW_TSTAMP_SPACE: when set, paired streams may arrive from different
-  // source IPs. This matters behind Cloudflare because two outbound WebSockets
-  // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
-  // the external/kiwirecorder form. Use the native UI route so receivers with
-  // external API channels disabled can still serve normal interactive SND/W/F.
   const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
 
   try {
@@ -215,6 +209,11 @@ async function patchSdrPlayerStartup(response) {
     source = source.replace(oldDrawStart, newDrawStart);
   }
 
+  const oldLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        disconnectSocket();\n        setStatus('Disconnected', false);\n        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);\n        playerEl('[data-sdr-toggle]').textContent = 'Play';\n      }\n    };`;
+  const newLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        failCurrentReceiver('The public receiver disconnected. Trying the next ranked receiver…');\n      }\n    };`;
+  const liveFailoverApplied = source.includes(oldLiveClose);
+  if (liveFailoverApplied) source = source.replace(oldLiveClose, newLiveClose);
+
   const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
@@ -222,6 +221,7 @@ async function patchSdrPlayerStartup(response) {
   headers.set('x-freqbeacon-sdr-player-startup', startupApplied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
   headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
   headers.set('x-freqbeacon-sdr-player-visualizer', visualizerApplied ? PLAYER_VISUALIZER_MARKER : 'legacy-spectrum-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-failover', liveFailoverApplied ? PLAYER_LIVE_FAILOVER_MARKER : 'live-failover-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
