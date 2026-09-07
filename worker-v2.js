@@ -6,6 +6,7 @@ const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
+const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -169,12 +170,23 @@ async function patchSdrPlayerStartup(response) {
   const disconnectApplied = source.includes(oldDisconnect);
   if (disconnectApplied) source = source.replace(oldDisconnect, newDisconnect);
 
+  const oldVisualizerStart = `  function startSpectrumAnimation() {\n    if (sdr.animationFrame) cancelAnimationFrame(sdr.animationFrame);\n    const canvas = playerEl('[data-sdr-canvas]');`;
+  const newVisualizerStart = `  function startSpectrumAnimation() {\n    if (sdr.animationFrame) cancelAnimationFrame(sdr.animationFrame);\n    if (document.querySelector('[data-sdr-rf-v2-canvas]')) {\n      sdr.animationFrame = null;\n      return;\n    }\n    const canvas = playerEl('[data-sdr-canvas]');`;
+  const oldDrawStart = `    const draw = () => {\n      if (!sdr.analyser || !sdr.audioContext || sdr.audioContext.state === 'closed') return;\n      const rect = canvas.getBoundingClientRect();`;
+  const newDrawStart = `    const draw = () => {\n      if (!sdr.analyser || !sdr.audioContext || sdr.audioContext.state === 'closed') return;\n      if (document.querySelector('[data-sdr-rf-v2-canvas]')) {\n        sdr.animationFrame = null;\n        return;\n      }\n      const rect = canvas.getBoundingClientRect();`;
+  const visualizerApplied = source.includes(oldVisualizerStart) && source.includes(oldDrawStart);
+  if (visualizerApplied) {
+    source = source.replace(oldVisualizerStart, newVisualizerStart);
+    source = source.replace(oldDrawStart, newDrawStart);
+  }
+
   const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('x-freqbeacon-sdr-player-startup', startupApplied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
   headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-visualizer', visualizerApplied ? PLAYER_VISUALIZER_MARKER : 'legacy-spectrum-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
