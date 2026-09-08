@@ -193,6 +193,25 @@
     }) || seedShortwave.find((seed) => Math.abs(Number(seed.frequency) - frequencyKHz) <= 0.01);
   }
 
+  function transmitterCity(value) {
+    return normalize(String(value || '').split(',')[0]);
+  }
+
+  function seedSiteMatch(displayName, ...siteValues) {
+    const normalizedName = normalize(displayName);
+    const siteCities = new Set(siteValues.map(transmitterCity).filter(Boolean));
+    if (!normalizedName || !siteCities.size) return null;
+
+    return seedShortwave.find((seed) => {
+      const seedName = normalize(seed.name);
+      const sameStation = seedName && (normalizedName.includes(seedName) || seedName.includes(normalizedName));
+      if (!sameStation || !siteCities.has(transmitterCity(seed.transmitter))) return false;
+      const lat = Number(seed.lat);
+      const lon = Number(seed.lon);
+      return Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0);
+    }) || null;
+  }
+
   function formatType(mode, stationName) {
     const upperMode = String(mode || 'AM').toUpperCase();
     if (upperMode.includes('DRM')) return 'DRM digital broadcast';
@@ -220,9 +239,11 @@
       const frequencyKHz = technical.frequencyHz / 1000;
       const displayName = friendlyStation(display.station || technical.station);
       const exact = seedMatch(frequencyKHz, displayName);
+      const siteCoordinateSeed = seedSiteMatch(displayName, technical.site, display.site);
+      const coordinateSeed = exact || siteCoordinateSeed;
       const centroid = centroidFor(technical, countries) || centroidFor(display, countries);
-      const location = exact && Number.isFinite(exact.lat) && Number.isFinite(exact.lon)
-        ? { lat: exact.lat, lon: exact.lon, approximate: false }
+      const location = coordinateSeed && Number.isFinite(Number(coordinateSeed.lat)) && Number.isFinite(Number(coordinateSeed.lon))
+        ? { lat: Number(coordinateSeed.lat), lon: Number(coordinateSeed.lon), approximate: false }
         : centroid
           ? { lat: centroid.lat, lon: centroid.lon, approximate: true }
           : { lat: 0, lon: 0, approximate: true };
