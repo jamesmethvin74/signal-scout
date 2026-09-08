@@ -2,10 +2,7 @@ import WebSocket from 'ws';
 import { writeFileSync } from 'node:fs';
 
 const candidates = [
-  { name: 'K1VL Vermont', host: 'sdr.k1vl.com:8073', frequency: 6160 },
-  { name: 'Sutton Massachusetts', host: 'kiwisdr.njctech.com:8073', frequency: 6160 },
-  { name: 'KM3T Amherst New Hampshire', host: 'kiwisdr.km3t.net:8073', frequency: 6160 },
-  { name: 'W1NT Newton New Hampshire', host: 'w1nt.onthewifi.com:8073', frequency: 6160 }
+  { name: 'Sutton Massachusetts', host: 'kiwisdr.njctech.com:8073', frequency: 6160 }
 ];
 
 function kiwiMessageText(data) {
