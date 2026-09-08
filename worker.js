@@ -1,7 +1,7 @@
 import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
-const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js', '/sdr-live-reliability-v2.js']);
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js', '/sdr-live-path-trace.js', '/sdr-live-reliability-v2.js']);
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -120,10 +120,10 @@ function applyFreqBeaconBrand(html) {
 }
 
 function applySdrTraceRuntime(html, url) {
-  if (url.searchParams.get('sdrTrace') !== '1' || html.includes('sdr-early-trace.js?v=3')) return html;
+  if (url.searchParams.get('sdrTrace') !== '1' || html.includes('sdr-live-path-trace.js?v=1')) return html;
   return html.replace(
     '<script src="freqbeacon-brand.js?v=13"></script>',
-    '<script src="sdr-early-trace.js?v=3"></script>\n  <script src="freqbeacon-brand.js?v=13"></script>'
+    '<script src="sdr-early-trace.js?v=4"></script>\n  <script src="sdr-live-path-trace.js?v=1"></script>\n  <script src="freqbeacon-brand.js?v=13"></script>'
   );
 }
 
@@ -158,6 +158,7 @@ export default {
       headers.set('x-freqbeacon-brand', 'v1');
       if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
       if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
+      if (url.pathname === '/sdr-live-path-trace.js') headers.set('x-freqbeacon-sdr-live-path-trace', 'v1');
       return new Response(patched, {
         status: response.status,
         statusText: response.statusText,
@@ -180,7 +181,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v2');
-      if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
+      if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
         status: response.status,
         statusText: response.statusText,
