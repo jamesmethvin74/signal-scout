@@ -131,7 +131,7 @@ function applyProgramGuideRuntime(html) {
   if (html.includes('program-guide.js')) return html;
   return html.replace(
     '</body>',
-    '  <script src="program-guide.js?v=2"></script>\n</body>'
+    '  <script src="program-guide.js?v=3"></script>\n</body>'
   );
 }
 
@@ -180,7 +180,7 @@ export default {
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
-      headers.set('x-freqbeacon-program-guide', 'v2');
+      headers.set('x-freqbeacon-program-guide', 'v3');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
@@ -213,3 +213,4 @@ export default {
 // Deployment marker: converge every PWA manifest and service-worker path on one canonical identity.
 // Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.
 // Deployment marker: restore the known-good server-ranked Listen Live control plane and remove client-side receiver automation.
+// Deployment marker: publish WBCQ official-schedule authority and keep card Receiver Options on server ranking.
