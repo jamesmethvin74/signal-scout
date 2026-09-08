@@ -7,7 +7,7 @@ const worker = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8')
 
 test('dynamic ReceiverBook response is authoritative and built-in catalog is fallback only', () => {
   assert.match(options, /const upstreamFetch = window\.fetch\.bind\(window\)/);
-  assert.match(options, /const DYNAMIC_TIMEOUT_MS = 3000/);
+  assert.match(options, /const DYNAMIC_TIMEOUT_MS = 5200/);
   assert.match(options, /const dynamic = upstreamFetch\(input, init\)/);
   assert.match(options, /Promise\.race\(\[dynamic, timeout\]\)/);
   assert.match(options, /fallbackResponse\(url\)/);
@@ -30,6 +30,8 @@ test('weak AM static is not treated as a successful listening receiver', () => {
   assert.match(options, /const MAX_WEAK_SWITCHES = 4/);
   assert.match(options, /frequency < 2000 \|\| !\['am', 'sam'\]\.includes\(mode\)/);
   assert.match(options, /switchFromWeakReceiver\(receiverName, rssi\)/);
+  assert.match(options, /addEventListener\('pointerdown'/);
+  assert.match(options, /resetQuality\(\{ clearManual: true \}\)/);
   assert.match(options, /event\.isTrusted && event\.target\.closest\('\[data-sdr-choice-index\]'\)/);
   assert.match(options, /quality\.manualOverride = true/);
 });
