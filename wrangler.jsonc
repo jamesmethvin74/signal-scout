@@ -2,7 +2,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-live-smoke-gate.js",
+  "main": "worker-program-v15.js",
   "routes": [
     {
       "pattern": "freqbeacon.methvindigitalworks.com",
