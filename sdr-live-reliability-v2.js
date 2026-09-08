@@ -3,11 +3,6 @@
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
   const PreviousFetch = window.fetch.bind(window);
   const MAX_RF_FALLBACKS = 4;
-  const PROBE_LIMIT = 3;
-  const PROBE_TIMEOUT_MS = 1800;
-  const PROBE_SUCCESS_CACHE_MS = 90 * 1000;
-  const PROBE_FAILURE_CACHE_MS = 5 * 60 * 1000;
-  const probeCache = new Map();
 
   const rfFallback = {
     attempted: new Set(),
@@ -104,87 +99,6 @@
     });
   }
 
-  function cachedProbe(receiverId) {
-    const entry = probeCache.get(receiverId);
-    if (!entry) return null;
-    const maxAge = entry.status === 'ok' ? PROBE_SUCCESS_CACHE_MS : PROBE_FAILURE_CACHE_MS;
-    if (Date.now() - entry.at > maxAge) {
-      probeCache.delete(receiverId);
-      return null;
-    }
-    return entry.status;
-  }
-
-  async function probeReceiver(receiver) {
-    const receiverId = receiver?.id;
-    if (!receiverId) return { receiverId, status: 'unavailable' };
-    const cached = cachedProbe(receiverId);
-    if (cached !== null) return { receiverId, status: cached };
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-    let status = 'unavailable';
-    try {
-      const probeUrl = `/api/sdr/probe?receiver=${encodeURIComponent(receiverId)}&stream=SND&_=${Date.now()}`;
-      const response = await PreviousFetch(probeUrl, {
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        status = payload?.resolved && payload?.webSocketAccepted ? 'ok' : 'failed';
-      }
-    } catch {
-      status = 'unavailable';
-    } finally {
-      window.clearTimeout(timer);
-    }
-    if (status !== 'unavailable') probeCache.set(receiverId, { status, at: Date.now() });
-    return { receiverId, status };
-  }
-
-  async function preferReachableReceivers(receivers, hamMode) {
-    if (!Array.isArray(receivers) || receivers.length < 2) return receivers;
-
-    let candidates = receivers;
-    if (hamMode) {
-      const regional = receivers.filter((receiver) => distanceMiles(receiver) <= 1800);
-      if (regional.length) candidates = regional;
-    }
-    candidates = candidates.slice(0, PROBE_LIMIT);
-    if (!candidates.length) return receivers;
-
-    const results = await Promise.all(candidates.map(probeReceiver));
-    const reachable = new Set(results.filter((result) => result.status === 'ok').map((result) => result.receiverId));
-    const failed = new Set(results.filter((result) => result.status === 'failed').map((result) => result.receiverId));
-    const unavailable = new Set(results.filter((result) => result.status === 'unavailable').map((result) => result.receiverId));
-
-    // Preserve the existing order only when the probe system itself could not
-    // verify any candidate. A definite upstream refusal/failure is real evidence
-    // and should demote that receiver below unverified choices immediately.
-    if (!reachable.size && !failed.size) {
-      return receivers.map((receiver, index) => ({
-        ...receiver,
-        recommended: index === 0,
-        connectionHealth: unavailable.has(receiver.id) ? 'preflight-unverified' : receiver.connectionHealth
-      }));
-    }
-
-    const verified = receivers.filter((receiver) => reachable.has(receiver.id));
-    const neutral = receivers.filter((receiver) => !reachable.has(receiver.id) && !failed.has(receiver.id));
-    const definiteFailures = receivers.filter((receiver) => failed.has(receiver.id));
-    const ordered = [...verified, ...neutral, ...definiteFailures];
-    return ordered.map((receiver, index) => ({
-      ...receiver,
-      recommended: index === 0,
-      connectionHealth: reachable.has(receiver.id)
-        ? 'preflight-ok'
-        : (failed.has(receiver.id)
-          ? 'preflight-failed'
-          : (unavailable.has(receiver.id) ? 'preflight-unverified' : receiver.connectionHealth))
-    }));
-  }
-
   // Preserve the existing hard cooldown behavior for normal broadcast listening.
   // Amateur quick-tunes are different: a distant SDR is not a useful proxy just
   // because every nearby receiver has a temporary health penalty. Ham requests
@@ -198,9 +112,8 @@
       const payload = await response.clone().json();
       if (!Array.isArray(payload?.receivers) || !payload.receivers.length) return response;
 
-      const hamMode = hamViewActive();
       let receivers;
-      if (hamMode) {
+      if (hamViewActive()) {
         receivers = rankHamReceivers(payload.receivers);
       } else {
         const health = loadHealth();
@@ -210,10 +123,9 @@
           return Number(entry.cooldownUntil || 0) <= now;
         });
         receivers = available.length ? available : payload.receivers;
+        if (receivers === payload.receivers) return response;
         receivers = receivers.map((receiver, index) => ({ ...receiver, recommended: index === 0 }));
       }
-
-      receivers = await preferReachableReceivers(receivers, hamMode);
 
       const headers = new Headers(response.headers);
       headers.set('content-type', 'application/json; charset=utf-8');
