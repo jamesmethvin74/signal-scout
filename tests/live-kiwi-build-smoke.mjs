@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { writeFileSync } from 'node:fs';
 
 const candidates = [
   { name: 'K1VL Vermont', host: 'sdr.k1vl.com:8073', frequency: 6160 },
@@ -143,5 +144,14 @@ if (!passed) {
   console.error(JSON.stringify(attempts, null, 2));
   process.exit(1);
 }
+
+const proof = {
+  ...passed,
+  provedAt: new Date().toISOString()
+};
+writeFileSync(
+  new URL('../.live-kiwi-build-smoke-proof.js', import.meta.url),
+  `export const LIVE_KIWI_BUILD_SMOKE = ${JSON.stringify(proof)};\n`
+);
 
 console.log(`FREQBEACON LIVE KIWI PASS: ${passed.name} delivered ${passed.sndFrames} uncompressed SND frames / ${passed.pcmSamples} PCM samples, RSSI ${passed.bestRssi.toFixed(1)} dB, max RMS ${passed.maxRms.toFixed(4)}, sample_rate=${passed.sampleRate}, audio_rate=${passed.audioRate}`);
