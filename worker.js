@@ -72,6 +72,128 @@ function patchRfSpectrumPersistence(source) {
   return patched;
 }
 
+function patchRfCarrierSignal(source) {
+  if (!source.includes('function renderRfFrame(rawBins)') || source.includes('freqbeacon:rf-carrier')) return source;
+
+  let patched = source.replace(
+    '  function renderRfFrame(rawBins) {',
+    `  function publishCarrierUnavailable(reason) {
+    const mode = currentMode();
+    if (mode !== 'am' && mode !== 'sam') return;
+    if (!Number.isFinite(state.targetKHz)) return;
+    const detail = {
+      version: 'carrier-v1',
+      receiverId: state.receiverId || '',
+      targetKHz: state.targetKHz,
+      prominenceDb: null,
+      peakOffsetKHz: null,
+      carrierPresent: false,
+      stable: true,
+      unavailable: true,
+      reason: String(reason || 'RF waterfall unavailable'),
+      at: Date.now()
+    };
+    window.__freqbeaconRfCarrier = detail;
+    window.dispatchEvent(new CustomEvent('freqbeacon:rf-carrier', { detail }));
+  }
+
+  function publishCarrierSignal(dbValues) {
+    const mode = currentMode();
+    if ((mode !== 'am' && mode !== 'sam') || !dbValues?.length || !Number.isFinite(state.targetKHz)) return;
+    const span = state.spanKHz || (state.fullBandwidthKHz / (2 ** state.zoom));
+    const center = state.centerKHz ?? state.targetKHz;
+    if (!Number.isFinite(span) || span <= 0 || !Number.isFinite(center)) return;
+
+    const startKHz = center - span / 2;
+    const binKHz = span / Math.max(1, dbValues.length - 1);
+    if (!Number.isFinite(binKHz) || binKHz <= 0) return;
+    const targetIndex = clamp(Math.round(((state.targetKHz - startKHz) / span) * (dbValues.length - 1)), 0, dbValues.length - 1);
+    const carrierRadiusBins = Math.max(2, Math.round(0.35 / binKHz));
+    const guardBins = Math.max(carrierRadiusBins + 2, Math.round(0.9 / binKHz));
+    const noiseRadiusBins = Math.max(guardBins + 8, Math.round(4.0 / binKHz));
+
+    let peakDb = -Infinity;
+    let peakIndex = targetIndex;
+    const carrierStart = Math.max(0, targetIndex - carrierRadiusBins);
+    const carrierStop = Math.min(dbValues.length - 1, targetIndex + carrierRadiusBins);
+    for (let i = carrierStart; i <= carrierStop; i += 1) {
+      if (Number.isFinite(dbValues[i]) && dbValues[i] > peakDb) {
+        peakDb = dbValues[i];
+        peakIndex = i;
+      }
+    }
+
+    const noise = [];
+    const noiseStart = Math.max(0, targetIndex - noiseRadiusBins);
+    const noiseStop = Math.min(dbValues.length - 1, targetIndex + noiseRadiusBins);
+    for (let i = noiseStart; i <= noiseStop; i += 1) {
+      if (Math.abs(i - targetIndex) <= guardBins) continue;
+      if (Number.isFinite(dbValues[i])) noise.push(dbValues[i]);
+    }
+    if (noise.length < 16) {
+      for (let i = 0; i < dbValues.length; i += 1) {
+        if (Math.abs(i - targetIndex) <= guardBins) continue;
+        if (Number.isFinite(dbValues[i])) noise.push(dbValues[i]);
+      }
+    }
+    noise.sort((a, b) => a - b);
+    const floorDb = percentile(noise, 0.50) ?? -120;
+    const prominenceDb = Number.isFinite(peakDb) ? peakDb - floorDb : 0;
+    const peakOffsetKHz = (peakIndex - targetIndex) * binKHz;
+    const framePresent = prominenceDb >= 4.5 && Math.abs(peakOffsetKHz) <= 0.35;
+
+    const key = (state.receiverId || '') + '|' + state.targetKHz.toFixed(3) + '|' + span.toFixed(3) + '|' + mode;
+    if (state.carrierHistoryKey !== key) {
+      state.carrierHistoryKey = key;
+      state.carrierHistory = [];
+    }
+    state.carrierHistory.push({ prominenceDb, peakOffsetKHz, present: framePresent });
+    if (state.carrierHistory.length > 8) state.carrierHistory.shift();
+
+    const stable = state.carrierHistory.length >= 6;
+    const presentVotes = state.carrierHistory.filter((sample) => sample.present).length;
+    const prominenceSamples = state.carrierHistory.map((sample) => sample.prominenceDb).sort((a, b) => a - b);
+    const stableProminenceDb = percentile(prominenceSamples, 0.50) ?? prominenceDb;
+    const carrierPresent = stable
+      ? presentVotes >= Math.ceil(state.carrierHistory.length * 0.60)
+      : null;
+    const detail = {
+      version: 'carrier-v1',
+      receiverId: state.receiverId || '',
+      targetKHz: state.targetKHz,
+      prominenceDb: Math.round(stableProminenceDb * 10) / 10,
+      peakOffsetKHz: Math.round(peakOffsetKHz * 1000) / 1000,
+      carrierPresent,
+      stable,
+      unavailable: false,
+      sampleCount: state.carrierHistory.length,
+      at: Date.now()
+    };
+    window.__freqbeaconRfCarrier = detail;
+    window.dispatchEvent(new CustomEvent('freqbeacon:rf-carrier', { detail }));
+  }
+
+  function renderRfFrame(rawBins) {`
+  );
+
+  patched = patched.replace(
+    '    const spectrumDb = persistentSpectrumDb(smoothSpectrumDb(db));\n',
+    '    const spectrumDb = persistentSpectrumDb(smoothSpectrumDb(db));\n    publishCarrierSignal(spectrumDb);\n'
+  );
+
+  patched = patched.replace(
+    '    if (playerAudioIsLive()) {\n      const prefix = error ? \'Actual receiver audio is live. \' : \'Actual receiver audio is live · \';',
+    '    if (error && !state.hasFrame) publishCarrierUnavailable(detail || title);\n    if (playerAudioIsLive()) {\n      const prefix = error ? \'Actual receiver audio is live. \' : \'Actual receiver audio is live · \';'
+  );
+
+  patched = patched.replace(
+    '    state.spectrumHistory = [];\n    state.spectrumHistoryMeta = \'\';\n    if (ensureCanvas()) drawStage(reason);',
+    '    state.spectrumHistory = [];\n    state.spectrumHistoryMeta = \'\';\n    state.carrierHistory = [];\n    state.carrierHistoryKey = \'\';\n    if (ensureCanvas()) drawStage(reason);'
+  );
+
+  return patched;
+}
+
 function applyFreqBeaconBrand(html) {
   let branded = html
     .replaceAll('Signal Scout', 'FreqBeacon')
@@ -148,7 +270,10 @@ export default {
     if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
       const source = await response.text();
       let patched = patchSdrOriginChecks(source);
-      if (url.pathname === '/sdr-rf-v2.js') patched = patchRfSpectrumPersistence(patched);
+      if (url.pathname === '/sdr-rf-v2.js') {
+        patched = patchRfSpectrumPersistence(patched);
+        patched = patchRfCarrierSignal(patched);
+      }
       if (url.pathname === '/sdr-early-trace.js') {
         patched = patched.replace("version: 'early-stream-timing-v1'", "version: 'early-stream-timing-v2'");
       }
@@ -156,7 +281,7 @@ export default {
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
-      if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
+      if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence+carrier-v1');
       if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       if (url.pathname === '/sdr-live-path-trace.js') headers.set('x-freqbeacon-sdr-live-path-trace', 'v1');
       return new Response(patched, {
@@ -181,7 +306,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v3');
-      headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
+      headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-carrier-aware-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
         status: response.status,
@@ -214,3 +339,4 @@ export default {
 // Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.
 // Deployment marker: restore the known-good server-ranked Listen Live control plane and remove client-side receiver automation.
 // Deployment marker: publish WBCQ official-schedule authority and keep card Receiver Options on server ranking.
+// Deployment marker: require live center-frequency carrier evidence before accepting an automatic HF listening receiver.

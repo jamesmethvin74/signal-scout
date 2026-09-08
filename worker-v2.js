@@ -10,6 +10,7 @@ const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
+const PLAYER_CARRIER_MARKER = 'sdr-player-carrier-aware-failover-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -282,13 +283,55 @@ async function patchSdrPlayerRuntime(response) {
     source = source.replace(oldDrawStart, newDrawStart);
   }
 
+  const oldFailCurrent = `  function failCurrentReceiver(message) {\n    if (sdr.manualStop) return;\n    disconnectSocket();\n    setMessage(message, true);\n    const next = nextFallbackReceiver();\n    if (next == null) {\n      setStatus('Unavailable', false);\n      setMessage('The ranked public receivers did not answer. Tap Retry or choose another receiver.', true);\n      playerEl('[data-sdr-toggle]').textContent = 'Retry';\n      drawIdleSpectrum('NO RECEIVER');\n      return;\n    }\n    sdr.fallbackTried.add(next);\n    window.setTimeout(() => connectSdr(next), 450);\n  }`;
+  const newFailCurrent = `  function failCurrentReceiver(\n    message,\n    finalMessage = 'The ranked public receivers did not answer. Tap Retry or choose another receiver.',\n    finalStatus = 'Unavailable'\n  ) {\n    if (sdr.manualStop) return;\n    disconnectSocket();\n    setMessage(message, true);\n    const next = nextFallbackReceiver();\n    if (next == null) {\n      setStatus(finalStatus, false);\n      setMessage(finalMessage, true);\n      playerEl('[data-sdr-toggle]').textContent = 'Retry';\n      drawIdleSpectrum(finalStatus === 'No signal' ? 'NO SIGNAL' : 'NO RECEIVER');\n      return;\n    }\n    sdr.fallbackTried.add(next);\n    window.setTimeout(() => connectSdr(next), 450);\n  }`;
+  const failCurrentApplied = source.includes(oldFailCurrent);
+  if (failCurrentApplied) source = source.replace(oldFailCurrent, newFailCurrent);
+
+  const oldChooseReceiver = `  function chooseReceiver(index) {\n    if (!sdr.receivers[index]) return;\n    sdr.receiverIndex = index;`;
+  const newChooseReceiver = `  function chooseReceiver(index) {\n    if (!sdr.receivers[index]) return;\n    sdr.carrierAuto = false;\n    sdr.carrierMisses = 0;\n    sdr.receiverIndex = index;`;
+  const chooseReceiverApplied = source.includes(oldChooseReceiver);
+  if (chooseReceiverApplied) source = source.replace(oldChooseReceiver, newChooseReceiver);
+
+  const oldStartPlayer = `    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.fallbackTried.clear();`;
+  const newStartPlayer = `    sdr.mode = PASSBANDS[mode] ? mode : 'am';\n    sdr.manualStop = false;\n    sdr.carrierAuto = true;\n    sdr.carrierMisses = 0;\n    sdr.carrierReceiverId = '';\n    sdr.fallbackTried.clear();`;
+  const startPlayerApplied = source.includes(oldStartPlayer);
+  if (startPlayerApplied) source = source.replace(oldStartPlayer, newStartPlayer);
+
+  const oldConnectStart = `    sdr.receiverIndex = sdr.receivers[receiverIndex] ? receiverIndex : 0;\n    sdr.fallbackTried.add(sdr.receiverIndex);`;
+  const newConnectStart = `    sdr.receiverIndex = sdr.receivers[receiverIndex] ? receiverIndex : 0;\n    sdr.carrierMisses = 0;\n    sdr.carrierReceiverId = currentReceiver()?.id || '';\n    sdr.fallbackTried.add(sdr.receiverIndex);`;
+  const connectStartApplied = source.includes(oldConnectStart);
+  if (connectStartApplied) source = source.replace(oldConnectStart, newConnectStart);
+
+  const oldFirstAudio = `      setStatus('Live RF', true);\n      setMessage('Actual receiver audio · spectrum and waterfall are generated from the live audio stream.');`;
+  const newFirstAudio = `      if (sdr.carrierAuto && ['am', 'sam'].includes(sdr.mode)) {\n        setStatus('Checking RF', false);\n        setMessage('Receiver audio connected. Checking for a carrier at the exact tuned frequency…');\n      } else {\n        setStatus('Live RF', true);\n        setMessage('Actual receiver audio · spectrum and waterfall are generated from the live audio stream.');\n      }`;
+  const firstAudioApplied = source.includes(oldFirstAudio);
+  if (firstAudioApplied) source = source.replace(oldFirstAudio, newFirstAudio);
+
+  const carrierHandlerAnchor = `  function websocketUrl(receiverIndex) {`;
+  const carrierHandler = `  function carrierAutoAllowed(detail) {\n    if (!sdr.carrierAuto || sdr.manualStop || !sdr.gotAudio) return false;\n    if (!['am', 'sam'].includes(sdr.mode)) return false;\n    const stationText = String(document.querySelector('[data-sdr-station]')?.textContent || '').trim().toLowerCase();\n    if (stationText === 'manual tuning') return false;\n    const receiver = currentReceiver();\n    if (detail?.receiverId && receiver?.id && detail.receiverId !== receiver.id) return false;\n    const target = Number(detail?.targetKHz);\n    if (Number.isFinite(target) && Number.isFinite(sdr.frequency) && Math.abs(target - sdr.frequency) > 0.4) return false;\n    return true;\n  }\n\n  function handleRfCarrier(event) {\n    const detail = event?.detail || {};\n    if (!carrierAutoAllowed(detail)) return;\n    const receiverId = currentReceiver()?.id || '';\n    if (sdr.carrierReceiverId !== receiverId) {\n      sdr.carrierReceiverId = receiverId;\n      sdr.carrierMisses = 0;\n    }\n    if (detail.carrierPresent === true) {\n      sdr.carrierMisses = 0;\n      setStatus('Live RF', true);\n      return;\n    }\n    if (detail.carrierPresent !== false) return;\n    sdr.carrierMisses = detail.unavailable ? 2 : Number(sdr.carrierMisses || 0) + 1;\n    if (sdr.carrierMisses < 2) return;\n    sdr.carrierMisses = 0;\n    const prominence = Number(detail.prominenceDb);\n    const suffix = Number.isFinite(prominence) ? ' (center carrier ' + prominence.toFixed(1) + ' dB above the local floor)' : '';\n    failCurrentReceiver(\n      'No usable carrier at ' + formatFrequency(sdr.frequency) + ' on this receiver' + suffix + '. Trying the next ranked receiver…',\n      'No usable carrier was heard at the tuned frequency on the available ranked receivers. The broadcast may be off air or below the remote receivers’ noise floor.',\n      'No signal'\n    );\n  }\n\n  window.addEventListener('freqbeacon:rf-carrier', handleRfCarrier);\n\n  function websocketUrl(receiverIndex) {`;
+  const carrierHandlerApplied = source.includes(carrierHandlerAnchor) && !source.includes("window.addEventListener('freqbeacon:rf-carrier'");
+  if (carrierHandlerApplied) source = source.replace(carrierHandlerAnchor, carrierHandler);
+
+  const oldLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        disconnectSocket();\n        setStatus('Disconnected', false);\n        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);\n        playerEl('[data-sdr-toggle]').textContent = 'Play';\n      }\n    };`;
+  const newLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        failCurrentReceiver('The public receiver disconnected. Trying the next ranked receiver…');\n      }\n    };`;
+  const liveCloseApplied = source.includes(oldLiveClose);
+  if (liveCloseApplied) source = source.replace(oldLiveClose, newLiveClose);
+
   const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
+  const carrierApplied = failCurrentApplied
+    && chooseReceiverApplied
+    && startPlayerApplied
+    && connectStartApplied
+    && firstAudioApplied
+    && carrierHandlerApplied
+    && liveCloseApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
   headers.set('x-freqbeacon-sdr-player-visualizer', visualizerApplied ? PLAYER_VISUALIZER_MARKER : 'legacy-spectrum-patch-miss');
-  headers.set('x-freqbeacon-sdr-player-control', 'known-good-connect-lifecycle-v1');
+  headers.set('x-freqbeacon-sdr-player-control', carrierApplied ? PLAYER_CARRIER_MARKER : 'carrier-aware-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
