@@ -120,10 +120,10 @@ function applyFreqBeaconBrand(html) {
 }
 
 function applySdrReliabilityFetchOrder(html) {
-  if (html.includes('sdr-options-fix.js?v=3')) return html;
+  if (html.includes('sdr-options-fix-v4.js?v=1')) return html;
   return html.replace(
     '<script src="sdr-live-reliability-v2.js?v=2"></script>',
-    '<script src="sdr-options-fix.js?v=3"></script>\n  <script src="sdr-live-reliability-v2.js?v=2"></script>'
+    '<script src="sdr-options-fix-v4.js?v=1"></script>\n  <script src="sdr-live-reliability-v2.js?v=2"></script>'
   );
 }
 
@@ -190,7 +190,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v2');
-      headers.set('x-freqbeacon-sdr-reliability-order', 'options-before-reliability-v1');
+      headers.set('x-freqbeacon-sdr-reliability-order', 'dynamic-options-v4-before-reliability');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
         status: response.status,
@@ -221,4 +221,4 @@ export default {
 // Deployment marker: lazy-load program-guide network work so Chrome reaches network idle and installability can settle.
 // Deployment marker: converge every PWA manifest and service-worker path on one canonical identity.
 // Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.
-// Deployment marker: keep instant receiver ranking inside the reliability cooldown/preflight chain.
+// Deployment marker: replace the hard-coded receiver-only path with dynamic ReceiverBook ranking and weak-signal failover.
