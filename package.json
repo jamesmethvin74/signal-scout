@@ -1,0 +1,11 @@
+{
+  "name": "freqbeacon-live-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "node tests/live-kiwi-build-smoke.mjs"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}
