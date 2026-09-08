@@ -2,46 +2,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const options = fs.readFileSync(new URL('../sdr-options-fix-v4.js', import.meta.url), 'utf8');
 const worker = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+const reliability = fs.readFileSync(new URL('../sdr-live-reliability-v2.js', import.meta.url), 'utf8');
 
-test('dynamic ReceiverBook response is authoritative and built-in catalog is fallback only', () => {
-  assert.match(options, /const upstreamFetch = window\.fetch\.bind\(window\)/);
-  assert.match(options, /const DYNAMIC_TIMEOUT_MS = 5200/);
-  assert.match(options, /const dynamic = upstreamFetch\(input, init\)/);
-  assert.match(options, /Promise\.race\(\[dynamic, timeout\]\)/);
-  assert.match(options, /fallbackResponse\(url\)/);
-  assert.doesNotMatch(options, /source:\s*'instant-local-options'/);
-  assert.match(options, /\+listening-path-v4/);
+test('production HTML does not inject a client-side receiver-ranking override', () => {
+  assert.doesNotMatch(worker, /sdr-options-fix(?:-v\d+)?\.js/);
+  assert.doesNotMatch(worker, /applySdrReliabilityFetchOrder/);
+  assert.match(worker, /server-ranking-known-good-control-v1/);
 });
 
-test('HF listening rerank uses transmitter proximity plus corridor detour', () => {
-  assert.match(options, /function rerankForListening\(receivers, url\)/);
-  assert.match(options, /function stationSignalScore\(distance\)/);
-  assert.match(options, /userDistance \+ txDistance - direct/);
-  assert.match(options, /station \* 0\.45 \+ path \* 0\.30 \+ proximity \* 0\.15 \+ solar \* 0\.10/);
-  assert.match(options, /role === 'STATION CHECK' \? 8/);
+test('normal broadcast reliability does not preflight or reorder via probe sockets', () => {
+  assert.doesNotMatch(reliability, /PROBE_LIMIT|PROBE_TIMEOUT_MS|probeReceiver|preferReachableReceivers|\/api\/sdr\/probe/);
+  assert.match(reliability, /available = payload\.receivers\.filter/);
+  assert.match(reliability, /cooldownUntil/);
 });
 
-test('weak AM static is not treated as a successful listening receiver', () => {
-  assert.match(options, /const WEAK_RSSI_DB = -109/);
-  assert.match(options, /const SIGNAL_CHECK_MS = 2600/);
-  assert.match(options, /const MIN_SIGNAL_SAMPLES = 6/);
-  assert.match(options, /const MAX_WEAK_SWITCHES = 4/);
-  assert.match(options, /frequency < 2000 \|\| !\['am', 'sam'\]\.includes\(mode\)/);
-  assert.match(options, /switchFromWeakReceiver\(receiverName, rssi\)/);
-  assert.match(options, /addEventListener\('pointerdown'/);
-  assert.match(options, /resetQuality\(\{ clearManual: true \}\)/);
-  assert.match(options, /event\.isTrusted && event\.target\.closest\('\[data-sdr-choice-index\]'\)/);
-  assert.match(options, /quality\.manualOverride = true/);
+test('automatic chooser clicking remains ham RF-only', () => {
+  assert.match(reliability, /function tryNextHamRfReceiver/);
+  assert.match(reliability, /if \(!hamViewActive\(\) \|\| rfFallback\.busy \|\| !rfFailureText\(messageText\)\) return/);
+  assert.match(reliability, /receiverButton\?\.click\(\)/);
+  assert.doesNotMatch(reliability, /WEAK_RSSI_DB|weak-signal-switch|switchFromWeakReceiver/);
 });
 
-test('worker loads v4 before existing reliability layer without changing RF protocol files', () => {
-  assert.match(worker, /sdr-options-fix-v4\.js\?v=1/);
-  assert.match(worker, /dynamic-options-v4-before-reliability/);
-  assert.doesNotMatch(worker, /sdr-options-fix\.js\?v=3/);
-});
-
-test('browser options script parses as JavaScript', () => {
-  assert.doesNotThrow(() => new Function(options));
+test('known-good reliability script still parses', () => {
+  assert.doesNotThrow(() => new Function(reliability));
 });
