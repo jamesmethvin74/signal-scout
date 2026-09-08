@@ -1,8 +1,0 @@
-{
-  "name": "freqbeacon-branch-regression-check",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "prepare": "node --test tests/sdr-server-ranking-and-wbcq-authority.test.mjs tests/sdr-station-listen-ranking.test.mjs tests/sdr-live-disconnect-failover.test.mjs tests/sdr-useful-signal-selection.test.mjs"
-  }
-}
