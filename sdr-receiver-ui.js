@@ -80,6 +80,10 @@
     const context = installCardContext(card);
     if (!context) return;
 
+    // If a different live-player session is open, close it first. Otherwise the
+    // smart button correctly assumes the open player's receiver list is the
+    // context and would skip refreshing for this card.
+    document.querySelector('#sdrPlayer:not([hidden]) [data-sdr-close]')?.click();
     button.click();
     window.setTimeout(() => {
       if (context.isConnected) context.remove();
