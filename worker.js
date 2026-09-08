@@ -119,14 +119,6 @@ function applyFreqBeaconBrand(html) {
   return branded;
 }
 
-function applySdrReliabilityFetchOrder(html) {
-  if (html.includes('sdr-options-fix-v4.js?v=1')) return html;
-  return html.replace(
-    '<script src="sdr-live-reliability-v2.js?v=2"></script>',
-    '<script src="sdr-options-fix-v4.js?v=1"></script>\n  <script src="sdr-live-reliability-v2.js?v=2"></script>'
-  );
-}
-
 function applySdrTraceRuntime(html, url) {
   if (url.searchParams.get('sdrTrace') !== '1' || html.includes('sdr-live-path-trace.js?v=1')) return html;
   return html.replace(
@@ -182,7 +174,6 @@ export default {
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=2');
       html = applyFreqBeaconBrand(html);
-      html = applySdrReliabilityFetchOrder(html);
       html = applySdrTraceRuntime(html, url);
       html = applyProgramGuideRuntime(html);
       const headers = noStoreHeaders(response);
@@ -190,7 +181,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v2');
-      headers.set('x-freqbeacon-sdr-reliability-order', 'dynamic-options-v4-before-reliability');
+      headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
         status: response.status,
@@ -221,4 +212,4 @@ export default {
 // Deployment marker: lazy-load program-guide network work so Chrome reaches network idle and installability can settle.
 // Deployment marker: converge every PWA manifest and service-worker path on one canonical identity.
 // Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.
-// Deployment marker: replace the hard-coded receiver-only path with dynamic ReceiverBook ranking and weak-signal failover.
+// Deployment marker: restore the known-good server-ranked Listen Live control plane and remove client-side receiver automation.
