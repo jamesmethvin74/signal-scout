@@ -90,8 +90,36 @@
     return `<a class="program-guide-source" href="${esc(data.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
   }
 
+  function setListenAuthority(container, state) {
+    if (!container) return;
+    if (state === 'unscheduled') container.dataset.broadcastAuthority = 'unscheduled';
+    else if (state === 'scheduled') container.dataset.broadcastAuthority = 'scheduled';
+    else delete container.dataset.broadcastAuthority;
+
+    container.querySelectorAll('.listen-live-button').forEach((button) => {
+      if (!button.dataset.defaultLiveHtml) button.dataset.defaultLiveHtml = button.innerHTML;
+      if (state === 'unscheduled') {
+        button.textContent = 'Check receiver anyway';
+        button.classList.add('is-off-air-check');
+        button.setAttribute('title', 'WBCQ’s official guide has no current listing on this frequency. You can still check the receiver manually.');
+        button.setAttribute('aria-label', 'Check receiver anyway; no current WBCQ listing on this frequency');
+      } else {
+        if (button.dataset.defaultLiveHtml) button.innerHTML = button.dataset.defaultLiveHtml;
+        button.classList.remove('is-off-air-check');
+        button.removeAttribute('title');
+        button.removeAttribute('aria-label');
+      }
+    });
+  }
+
+  function isOfficialWbcqGap(station, data) {
+    return /^WBCQ$/i.test(String(station || '').trim())
+      && data?.status === 'unverified'
+      && /WBCQ official program guide/i.test(String(data?.sourceLabel || ''));
+  }
+
   function render(slot, data) {
-    slot.classList.remove('is-loading','is-verified','is-broadcast','is-warning','is-service');
+    slot.classList.remove('is-loading','is-verified','is-broadcast','is-warning','is-service','is-off-air');
     if (data.status === 'verified') {
       slot.classList.add('is-verified');
       slot.innerHTML = `
@@ -109,6 +137,16 @@
         <div class="program-guide-title">${esc(data.program)}</div>
         <div class="program-guide-window">${esc(data.window || '')}</div>
         <div class="program-guide-note">The broadcaster verifies this language/service block; individual segments inside it may vary.</div>
+        ${sourceLink(data)}`;
+      return;
+    }
+    if (data.status === 'unscheduled') {
+      slot.classList.add('is-off-air');
+      slot.innerHTML = `
+        <div class="program-guide-kicker">NOT SCHEDULED NOW · WBCQ GUIDE</div>
+        <div class="program-guide-title">No current WBCQ listing on this frequency</div>
+        <div class="program-guide-note">${esc(data.message || 'WBCQ’s official frequency guide has no current listing for this minute.')}</div>
+        ${data.next ? `<div class="program-guide-next"><b>Next official listing:</b> ${esc(data.next.program)}${data.next.window ? ` · ${esc(data.next.window)}` : ''}</div>` : ''}
         ${sourceLink(data)}`;
       return;
     }
@@ -207,7 +245,11 @@
     }
     try {
       const result = await promise;
-      if (result.status === 'unverified' || result.status === 'unavailable' || result.status === 'unsupported') {
+      if (isOfficialWbcqGap(station, result)) {
+        setListenAuthority(container, 'unscheduled');
+        render(slot, { ...result, status:'unscheduled' });
+      } else if (result.status === 'unverified' || result.status === 'unavailable' || result.status === 'unsupported') {
+        setListenAuthority(container, 'unknown');
         const service = serviceIdentity(container, station);
         render(slot, {
           status:'service',
@@ -215,9 +257,13 @@
           message:result.message || service.note
         });
       } else {
+        if (/^WBCQ$/i.test(station) && (result.status === 'verified' || result.status === 'broadcast')) {
+          setListenAuthority(container, 'scheduled');
+        }
         render(slot, result);
       }
     } catch {
+      setListenAuthority(container, 'unknown');
       const service = serviceIdentity(container, station);
       render(slot, { status:'service', program:service.title, message:'Program guide lookup is temporarily unavailable.' });
     }
@@ -256,10 +302,12 @@
     .program-guide-card.is-broadcast{border-color:rgba(88,196,255,.40);background:linear-gradient(135deg,rgba(88,196,255,.065),rgba(4,11,14,.82));}
     .program-guide-card.is-service{border-color:rgba(37,212,230,.28);background:linear-gradient(135deg,rgba(37,212,230,.045),rgba(4,11,14,.82));}
     .program-guide-card.is-warning{border-color:rgba(239,189,92,.32);}
+    .program-guide-card.is-off-air{border-color:rgba(239,189,92,.48);background:linear-gradient(135deg,rgba(239,189,92,.08),rgba(4,11,14,.84));}
     .program-guide-kicker{display:flex;align-items:center;gap:7px;color:#7f98a0;font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;}
     .program-guide-card.is-verified .program-guide-kicker{color:var(--green);}
     .program-guide-card.is-broadcast .program-guide-kicker{color:#7bcfff;}
     .program-guide-card.is-service .program-guide-kicker{color:#86aeb8;}
+    .program-guide-card.is-off-air .program-guide-kicker{color:#efbd5c;}
     .program-live-dot,.program-service-dot,.program-broadcast-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
     .program-live-dot{background:var(--green);box-shadow:0 0 10px rgba(97,231,134,.65);}
     .program-broadcast-dot{background:#7bcfff;box-shadow:0 0 9px rgba(123,207,255,.48);}
@@ -270,6 +318,7 @@
     .program-guide-next b{color:#bed0d4;}
     .program-guide-source{display:inline-block;margin-top:7px;color:var(--accent);font-family:var(--mono);font-size:8px;font-weight:800;letter-spacing:.04em;text-decoration:none;}
     .program-guide-card.is-loading{opacity:.72;}
+    .listen-live-button.is-off-air-check{border-color:rgba(239,189,92,.5)!important;color:#f0d38d!important;background:rgba(239,189,92,.07)!important;}
     @media(max-width:430px){.program-guide-card{padding:10px 11px}.program-guide-title{font-size:14px}}
   `;
   document.head.appendChild(style);
