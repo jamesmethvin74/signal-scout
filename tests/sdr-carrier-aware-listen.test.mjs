@@ -46,7 +46,7 @@ test('player uses its existing bounded receiver fallback for repeated no-carrier
 
 test('all player runtime patch anchors still exist', () => {
   assert.match(player, /function chooseReceiver\(index\)/);
-  assert.match(player, /async function startPlayer\(\{ frequency, station, mode = 'am', container = null \} = \{\}\)/);
+  assert.match(player, /async function startPlayer\(\{ frequency, station, mode = 'am', container = null \}\)/);
   assert.match(player, /sdr\.receiverIndex = sdr\.receivers\[receiverIndex\] \? receiverIndex : 0;/);
   assert.match(player, /function websocketUrl\(receiverIndex\)/);
   assert.match(player, /The public receiver disconnected\. Tap Play to reconnect\./);
