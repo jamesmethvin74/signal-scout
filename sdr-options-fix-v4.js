@@ -5,7 +5,7 @@
   const trace = (event, detail = {}) => window.__freqbeaconSdrTrace?.(`options-v4-${event}`, detail);
   const upstreamFetch = window.fetch.bind(window);
   const VERSION = 'dynamic-path-options-v4-20260907';
-  const DYNAMIC_TIMEOUT_MS = 3000;
+  const DYNAMIC_TIMEOUT_MS = 5200;
   const WEAK_RSSI_DB = -109;
   const SIGNAL_CHECK_MS = 2600;
   const MIN_SIGNAL_SAMPLES = 6;
@@ -419,11 +419,13 @@
     return true;
   }
 
+  // The player's document click handler calls stopImmediatePropagation(), so use
+  // pointerdown to reset manual/quality state before each new Listen Live gesture.
+  document.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('.listen-live-button')) resetQuality({ clearManual: true });
+  }, true);
+
   document.addEventListener('click', (event) => {
-    if (event.target.closest('.listen-live-button')) {
-      resetQuality({ clearManual: true });
-      return;
-    }
     if (event.isTrusted && event.target.closest('[data-sdr-choice-index]')) {
       quality.manualOverride = true;
       clearQualityTimer();
