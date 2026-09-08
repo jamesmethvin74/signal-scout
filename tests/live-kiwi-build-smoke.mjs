@@ -1,9 +1,7 @@
 import WebSocket from 'ws';
 import { writeFileSync } from 'node:fs';
 
-const candidates = [
-  { name: 'Sutton Massachusetts', host: 'kiwisdr.njctech.com:8073', frequency: 6160 }
-];
+const candidate = { name: 'Sutton Massachusetts', host: 'kiwisdr.njctech.com:8073', frequency: 7490 };
 
 function kiwiMessageText(data) {
   const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
@@ -27,21 +25,21 @@ function sndStats(data) {
     const normalized = sample / 32768;
     sumSq += normalized * normalized;
   }
-  return {
-    compressed: false,
-    rssi: smeter * 0.1 - 127,
-    samples: count,
-    rms: Math.sqrt(sumSq / Math.max(1, count))
-  };
+  return { compressed: false, rssi: smeter * 0.1 - 127, samples: count, rms: Math.sqrt(sumSq / Math.max(1, count)) };
 }
 
-function smoke(candidate) {
+function smoke(target, route) {
   return new Promise((resolve) => {
     const timestamp = (Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 10000)) >>> 0;
-    const url = `ws://${candidate.host}/ws/kiwi/${timestamp}/SND`;
+    const proxy = route === 'freqbeacon-proxy';
+    const url = proxy
+      ? `wss://freqbeacon.methvindigitalworks.com/api/sdr/ws?receiver=${encodeURIComponent(target.host)}&stream=SND&ts=${timestamp}`
+      : `ws://${target.host}/ws/kiwi/${timestamp}/SND`;
     const result = {
-      name: candidate.name,
-      host: candidate.host,
+      route,
+      name: target.name,
+      host: target.host,
+      frequency: target.frequency,
       opened: false,
       sampleRate: null,
       audioRate: null,
@@ -63,13 +61,13 @@ function smoke(candidate) {
     };
 
     const ws = new WebSocket(url, {
-      handshakeTimeout: 6000,
+      handshakeTimeout: 7000,
       headers: {
-        Origin: `http://${candidate.host}`,
+        Origin: proxy ? 'https://freqbeacon.methvindigitalworks.com' : `http://${target.host}`,
         'User-Agent': 'FREQBEACON/1.0 live build smoke'
       }
     });
-    const timer = setTimeout(() => finish(false, 'timeout waiting for uncompressed SND audio'), 12000);
+    const timer = setTimeout(() => finish(false, 'timeout waiting for uncompressed SND audio'), 14000);
 
     ws.on('open', () => {
       result.opened = true;
@@ -86,7 +84,7 @@ function smoke(candidate) {
           if (!configured) {
             configured = true;
             ws.send('SET ident_user=FREQBEACON-smoke');
-            ws.send(`SET mod=am low_cut=-4900 high_cut=4900 freq=${candidate.frequency.toFixed(3)}`);
+            ws.send(`SET mod=am low_cut=-4900 high_cut=4900 freq=${target.frequency.toFixed(3)}`);
             ws.send('SET agc=1 hang=0 thresh=-100 slope=6 decay=1000 manGain=50');
             ws.send('SET compression=0');
             ws.send('SET squelch=0 max=0');
@@ -113,7 +111,7 @@ function smoke(candidate) {
       result.pcmSamples += stats.samples;
       result.maxRms = Math.max(result.maxRms, stats.rms);
       result.bestRssi = Math.max(result.bestRssi, stats.rssi);
-      if (result.sndFrames >= 6 && result.pcmSamples >= 1500) finish(true);
+      if (result.sndFrames >= 8 && result.pcmSamples >= 2000 && result.maxRms > 0.0005) finish(true);
     });
 
     ws.on('error', (error) => finish(false, error?.message || 'websocket error'));
@@ -123,27 +121,24 @@ function smoke(candidate) {
   });
 }
 
-console.log('FREQBEACON live Kiwi build smoke: starting');
-let passed = null;
-const attempts = [];
-for (const candidate of candidates) {
-  const attempt = await smoke(candidate);
-  attempts.push(attempt.result);
-  console.log(JSON.stringify(attempt.result));
-  if (attempt.ok) {
-    passed = attempt.result;
-    break;
-  }
+console.log('FREQBEACON WBCQ 7490 live audio smoke: starting');
+const direct = await smoke(candidate, 'direct-kiwi');
+console.log(JSON.stringify(direct.result));
+if (!direct.ok) {
+  console.error('Direct Sutton Kiwi audio smoke FAILED');
+  process.exit(1);
 }
 
-if (!passed) {
-  console.error('FREQBEACON live Kiwi build smoke FAILED');
-  console.error(JSON.stringify(attempts, null, 2));
+const proxied = await smoke(candidate, 'freqbeacon-proxy');
+console.log(JSON.stringify(proxied.result));
+if (!proxied.ok) {
+  console.error('FREQBEACON proxied Sutton audio smoke FAILED');
   process.exit(1);
 }
 
 const proof = {
-  ...passed,
+  direct: direct.result,
+  proxied: proxied.result,
   provedAt: new Date().toISOString()
 };
 writeFileSync(
@@ -151,4 +146,4 @@ writeFileSync(
   `export const LIVE_KIWI_BUILD_SMOKE = ${JSON.stringify(proof)};\n`
 );
 
-console.log(`FREQBEACON LIVE KIWI PASS: ${passed.name} delivered ${passed.sndFrames} uncompressed SND frames / ${passed.pcmSamples} PCM samples, RSSI ${passed.bestRssi.toFixed(1)} dB, max RMS ${passed.maxRms.toFixed(4)}, sample_rate=${passed.sampleRate}, audio_rate=${passed.audioRate}`);
+console.log(`FREQBEACON LIVE PROXY PASS: Sutton delivered ${proxied.result.sndFrames} uncompressed SND frames / ${proxied.result.pcmSamples} PCM samples through the FREQBEACON Worker at ${candidate.frequency} kHz, RSSI ${proxied.result.bestRssi.toFixed(1)} dB, max RMS ${proxied.result.maxRms.toFixed(4)}.`);
