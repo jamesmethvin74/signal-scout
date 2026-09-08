@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const worker = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const playerWorker = fs.readFileSync(new URL('../worker-v2.js', import.meta.url), 'utf8');
+const player = fs.readFileSync(new URL('../sdr-player.js', import.meta.url), 'utf8');
+const rf = fs.readFileSync(new URL('../sdr-rf-v2.js', import.meta.url), 'utf8');
 
 test('RF quality is measured at the exact tuned frequency instead of RSSI', () => {
   assert.match(worker, /function patchRfCarrierSignal\(source\)/);
@@ -15,6 +17,13 @@ test('RF quality is measured at the exact tuned frequency instead of RSSI', () =
   assert.match(worker, /state\.carrierHistory\.length >= 6/);
   assert.match(worker, /presentVotes >= Math\.ceil\(state\.carrierHistory\.length \* 0\.60\)/);
   assert.match(worker, /freqbeacon:rf-carrier/);
+});
+
+test('RF runtime patch anchors still exist in the proven renderer', () => {
+  assert.match(rf, /function renderRfFrame\(rawBins\)/);
+  assert.match(rf, /const spectrumDb = smoothSpectrumDb\(db\);/);
+  assert.match(rf, /function setStage\(stage, title, detail = '', error = false\)/);
+  assert.match(rf, /state\.requestedCompression = false;/);
 });
 
 test('missing RF waterfall is evidence to move an automatic broadcast listen', () => {
@@ -30,8 +39,17 @@ test('player uses its existing bounded receiver fallback for repeated no-carrier
   assert.match(playerWorker, /sdr\.carrierMisses = detail\.unavailable \? 2/);
   assert.match(playerWorker, /if \(sdr\.carrierMisses < 2\) return/);
   assert.match(playerWorker, /No usable carrier was heard at the tuned frequency/);
-  assert.match(playerWorker, /const next = nextFallbackReceiver\(\)/);
-  assert.match(playerWorker, /sdr\.fallbackTried\.add\(next\)/);
+  assert.match(player, /function nextFallbackReceiver\(\)/);
+  assert.match(player, /function failCurrentReceiver\(message\)/);
+  assert.match(player, /sdr\.fallbackTried\.add\(next\)/);
+});
+
+test('all player runtime patch anchors still exist', () => {
+  assert.match(player, /function chooseReceiver\(index\)/);
+  assert.match(player, /async function startPlayer\(\{ frequency, station, mode = 'am', container = null \} = \{\}\)/);
+  assert.match(player, /sdr\.receiverIndex = sdr\.receivers\[receiverIndex\] \? receiverIndex : 0;/);
+  assert.match(player, /function websocketUrl\(receiverIndex\)/);
+  assert.match(player, /The public receiver disconnected\. Tap Play to reconnect\./);
 });
 
 test('manual receiver and manual tuning remain user-controlled', () => {
@@ -40,9 +58,9 @@ test('manual receiver and manual tuning remain user-controlled', () => {
   assert.match(playerWorker, /stationText === 'manual tuning'/);
 });
 
-test('live receiver disconnects fail over instead of returning to Tap Play', () => {
-  assert.match(playerWorker, /The public receiver disconnected\. Trying the next ranked receiver/);
-  assert.doesNotMatch(playerWorker, /setMessage\('The public receiver disconnected\. Tap Play to reconnect\.'/);
+test('effective live-close replacement is automatic and bounded', () => {
+  assert.match(playerWorker, /const newLiveClose = `[\s\S]*The public receiver disconnected\. Trying the next ranked receiver/);
+  assert.match(playerWorker, /carrierApplied \? PLAYER_CARRIER_MARKER : 'carrier-aware-patch-miss'/);
 });
 
 test('proven Kiwi transport is preserved', () => {
