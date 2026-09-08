@@ -12,6 +12,7 @@ test('card Receiver Options no longer installs a client-side receiver ranking ov
   assert.doesNotMatch(receiverUi, /instant-local-options/);
   assert.match(receiverUi, /\.card-receiver-options/);
   assert.match(receiverUi, /sdr-card-options-context/);
+  assert.match(receiverUi, /#sdrPlayer:not\(\[hidden\]\) \[data-sdr-close\]/);
   assert.match(receiverUi, /button\.click\(\)/);
 });
 
