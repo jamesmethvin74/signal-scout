@@ -306,22 +306,6 @@ function userProximityScore(distanceMiles) {
   return Math.max(4, 23 - (distanceMiles - 900) * 0.012);
 }
 
-function stationListeningScore(distanceMiles, frequencyKHz) {
-  if (!Number.isFinite(distanceMiles)) return 35;
-  const mhz = Number(frequencyKHz) / 1000;
-  // Remote Listen Live is a station check, not a surrogate for the user's own
-  // reception. Favor receivers that are physically positioned to hear the
-  // transmitter. Higher HF bands get a modestly wider useful radius, but user
-  // proximity is deliberately not part of this primary score.
-  const rangeScale = mhz >= 15 ? 1.25 : (mhz >= 8 ? 1.10 : 1);
-  const distance = distanceMiles / rangeScale;
-  if (distance <= 100) return 100;
-  if (distance <= 400) return 100 - (distance - 100) * 0.04;
-  if (distance <= 900) return 88 - (distance - 400) * 0.04;
-  if (distance <= 1600) return 68 - (distance - 900) * 0.04;
-  return Math.max(5, 40 - (distance - 1600) * 0.02);
-}
-
 function solarSimilarityScore(userLon, receiverLon, frequencyKHz) {
   const userHour = solarHour(userLon);
   const receiverHour = solarHour(receiverLon);
@@ -348,7 +332,6 @@ function rankReceivers(receivers, params) {
       const userDistance = hasUser ? milesBetween(userLat, userLon, receiver.lat, receiver.lon) : null;
       const txDistance = hasTx ? milesBetween(txLat, txLon, receiver.lat, receiver.lon) : null;
       const proximity = userProximityScore(userDistance);
-      const stationReach = stationListeningScore(txDistance, frequencyKHz);
       let pathSimilarity = 50;
       let detour = null;
       if (Number.isFinite(directDistance) && Number.isFinite(userDistance) && Number.isFinite(txDistance)) {
@@ -358,15 +341,16 @@ function rankReceivers(receivers, params) {
         pathSimilarity = clamp(pathSimilarity - detour / Math.max(20, directDistance * 0.025), 0, 100);
       }
       const solar = solarSimilarityScore(userLon, receiver.lon, frequencyKHz);
-      const stationSolar = solarSimilarityScore(txLon, receiver.lon, frequencyKHz);
 
       let score;
       if (localBand) {
         score = hasUser ? proximity * 0.92 + (receiver.coverageKnown ? 8 : 4) : 45;
-      } else if (hasTx) {
-        score = stationReach * 0.82 + stationSolar * 0.18 + (receiver.coverageKnown ? 1.5 : 0);
+      } else if (hasUser && hasTx) {
+        score = proximity * 0.50 + pathSimilarity * 0.38 + solar * 0.12;
       } else if (hasUser) {
         score = proximity * 0.82 + solar * 0.18;
+      } else if (hasTx && Number.isFinite(txDistance)) {
+        score = clamp(100 - txDistance / 30, 5, 95);
       } else {
         score = receiver.source === 'receiverbook' ? 55 : 40;
       }
@@ -379,18 +363,11 @@ function rankReceivers(receivers, params) {
         pathSimilarity,
         detour,
         solarSimilarity: solar,
-        stationSolarSimilarity: stationSolar,
-        stationListeningScore: stationReach,
         score
       };
     });
 
-  eligible.sort((a, b) => {
-    const scoreDifference = b.score - a.score;
-    if (scoreDifference) return scoreDifference;
-    if (!localBand && hasTx) return (a.txDistance ?? Infinity) - (b.txDistance ?? Infinity);
-    return (a.userDistance ?? Infinity) - (b.userDistance ?? Infinity);
-  });
+  eligible.sort((a, b) => b.score - a.score || (a.userDistance ?? Infinity) - (b.userDistance ?? Infinity));
   if (!eligible.length) return [];
 
   const picks = [];
@@ -405,28 +382,25 @@ function rankReceivers(receivers, params) {
   if (localBand) {
     const distanceText = Number.isFinite(best.userDistance) ? `${Math.round(best.userDistance)} mi from you` : 'best available receiver';
     add(best, 'NEAR YOU', `Closest useful public receiver for this local/regional frequency · ${distanceText}.`);
-  } else if (hasTx) {
-    const distanceText = Number.isFinite(best.txDistance) ? `${Math.round(best.txDistance)} mi from the transmitter` : 'transmitter-side listening point';
-    add(best, 'STATION CHECK', `Recommended for Listen Live because this receiver is positioned to hear the transmitter · ${distanceText}. Your local reception score remains separate.`);
   } else {
     const isNear = Number.isFinite(best.userDistance) && best.userDistance <= 250;
     add(
       best,
       isNear ? 'NEAR YOU' : 'BEST MATCH',
       isNear
-        ? 'Closest strong match to your listening location for this HF frequency.'
-        : 'Best available public receiver for this HF frequency and current day/night conditions.'
+        ? 'Closest strong match to your listening location while keeping a similar HF path.'
+        : 'Best balance of your location, transmitter path, frequency, and current day/night conditions.'
     );
   }
 
   if (hasUser) {
     const nearUser = [...eligible].sort((a, b) => (a.userDistance ?? Infinity) - (b.userDistance ?? Infinity))[0];
-    add(nearUser, 'NEAR YOU', 'Comparison receiver closest to your location. Use it to compare propagation, not as the default station-audio source.');
+    add(nearUser, 'NEAR YOU', 'Useful comparison point because its RF environment is geographically closest to yours.');
   }
 
   if (!localBand && hasTx) {
     const stationCheck = [...eligible].sort((a, b) => (a.txDistance ?? Infinity) - (b.txDistance ?? Infinity))[0];
-    add(stationCheck, 'STATION CHECK', 'Closest available public receiver to the transmitter; useful as a second station-side check.');
+    add(stationCheck, 'STATION CHECK', 'Closer to the transmitter; useful for checking whether the broadcast appears to be reaching the airwaves.');
   }
 
   if (!localBand && hasUser && hasTx) {
@@ -437,7 +411,7 @@ function rankReceivers(receivers, params) {
         const bScore = b.pathSimilarity * 0.72 + b.solarSimilarity * 0.28;
         return bScore - aScore;
       })[0];
-    add(propagationAlt, 'PROPAGATION ALT', 'Alternate receiver with a path toward your location for comparing HF propagation after the station-side check.');
+    add(propagationAlt, 'PROPAGATION ALT', 'Alternate receiver with a similar transmitter path and useful HF propagation geometry.');
   }
 
   for (const receiver of eligible) {
@@ -549,4 +523,3 @@ export default {
 // Deployment marker: force Cloudflare to publish the RF v2 frontend bundle.
 // Deployment marker 2: publish hard SDR cooldown skipping and RF standby UI.
 // Deployment marker 3: preserve last-known-good SDR directory through ReceiverBook outages.
-// Deployment marker 4: make known-transmitter HF Listen Live station-first while preserving local-band geography.
