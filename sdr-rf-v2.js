@@ -53,6 +53,8 @@
     lastError: '',
     displayMinDb: -130,
     displayMaxDb: -55,
+    pendingFrame: null,
+    renderFrameRequest: 0,
     keepaliveTimer: null,
     setupTimer: null,
     retryTimer: null,
@@ -102,11 +104,13 @@
     if (!playerAudioIsLive()) return;
     const el = document.querySelector('[data-sdr-message]');
     if (!el) return;
-    el.textContent = text;
-    el.classList.toggle('is-error', isError);
+    if (el.textContent !== text) el.textContent = text;
+    if (el.classList.contains('is-error') !== Boolean(isError)) el.classList.toggle('is-error', isError);
   }
 
   function ensureCanvas() {
+    if (state.canvas?.isConnected && state.originalCanvas?.isConnected) return state.canvas;
+
     const wrap = document.querySelector('.sdr-spectrum-wrap');
     const original = wrap?.querySelector('[data-sdr-canvas]');
     if (!wrap || !original) return null;
@@ -134,7 +138,7 @@
     state.canvas = canvas;
     state.originalCanvas = original;
     const label = wrap.querySelector('.sdr-spectrum-label');
-    if (label) label.textContent = 'Live RF spectrum / waterfall';
+    if (label && label.textContent !== 'Live RF spectrum / waterfall') label.textContent = 'Live RF spectrum / waterfall';
     return canvas;
   }
 
@@ -382,8 +386,20 @@
     state.hasFrame = true;
     state.frameCount += 1;
     const label = document.querySelector('.sdr-spectrum-label');
-    if (label) label.textContent = `Live RF spectrum / waterfall · ${span.toFixed(1)} kHz span`;
+    const labelText = `Live RF spectrum / waterfall · ${span.toFixed(1)} kHz span`;
+    if (label && label.textContent !== labelText) label.textContent = labelText;
     playerMessage('Actual receiver audio · RF spectrum and waterfall are live from this receiver.');
+  }
+
+  function queueRfFrame(bins) {
+    state.pendingFrame = bins;
+    if (state.renderFrameRequest) return;
+    state.renderFrameRequest = window.requestAnimationFrame(() => {
+      state.renderFrameRequest = 0;
+      const latest = state.pendingFrame;
+      state.pendingFrame = null;
+      if (latest) renderRfFrame(latest);
+    });
   }
 
   function decodeWaterfallAdpcm(payload, expectedBins) {
@@ -567,7 +583,7 @@
       return;
     }
     state.unsupportedFrames = 0;
-    renderRfFrame(bins);
+    queueRfFrame(bins);
   }
 
   function handleMessage(event) {
@@ -599,6 +615,9 @@
     state.hasFrame = false;
     state.configured = false;
     state.wfSetupSeen = false;
+    state.pendingFrame = null;
+    if (state.renderFrameRequest) window.cancelAnimationFrame(state.renderFrameRequest);
+    state.renderFrameRequest = 0;
     state.requestedCompression = false;
     if (ensureCanvas()) drawStage(reason);
   }
@@ -657,7 +676,7 @@
         configureWaterfall('compression-retry');
       }, RF_COMPAT_RETRY_MS);
       state.timeoutTimer = window.setTimeout(() => {
-        if (generation !== state.generation || state.hasFrame) return;
+        if (generation !== state.generation || state.hasFrame || state.pendingFrame) return;
         const detail = state.binaryCount
           ? `No decodable row. Last W/F frame: ${state.lastFrameBytes} bytes; ${state.unsupportedFrames} unsupported.`
           : (state.wfSetupSeen
