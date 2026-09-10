@@ -1,7 +1,7 @@
 import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
-const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js']);
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js', '/sdr-live-reliability-v2.js']);
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -119,6 +119,14 @@ function applyFreqBeaconBrand(html) {
   return branded;
 }
 
+function applySdrTraceRuntime(html, url) {
+  if (url.searchParams.get('sdrTrace') !== '1' || html.includes('sdr-early-trace.js?v=3')) return html;
+  return html.replace(
+    '<script src="freqbeacon-brand.js?v=13"></script>',
+    '<script src="sdr-early-trace.js?v=3"></script>\n  <script src="freqbeacon-brand.js?v=13"></script>'
+  );
+}
+
 function applyProgramGuideRuntime(html) {
   if (html.includes('program-guide.js')) return html;
   return html.replace(
@@ -141,11 +149,15 @@ export default {
       const source = await response.text();
       let patched = patchSdrOriginChecks(source);
       if (url.pathname === '/sdr-rf-v2.js') patched = patchRfSpectrumPersistence(patched);
+      if (url.pathname === '/sdr-early-trace.js') {
+        patched = patched.replace("version: 'early-stream-timing-v1'", "version: 'early-stream-timing-v2'");
+      }
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
       if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
+      if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       return new Response(patched, {
         status: response.status,
         statusText: response.statusText,
@@ -159,14 +171,16 @@ export default {
         .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=8')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
-        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=1');
+        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=2');
       html = applyFreqBeaconBrand(html);
+      html = applySdrTraceRuntime(html, url);
       html = applyProgramGuideRuntime(html);
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v2');
+      if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       return new Response(html, {
         status: response.status,
         statusText: response.statusText,
@@ -195,3 +209,4 @@ export default {
 // Deployment marker: shorten startup, add PNG PWA fallbacks, and remove service-worker request interception.
 // Deployment marker: lazy-load program-guide network work so Chrome reaches network idle and installability can settle.
 // Deployment marker: converge every PWA manifest and service-worker path on one canonical identity.
+// Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.

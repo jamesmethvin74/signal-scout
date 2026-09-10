@@ -2,10 +2,16 @@ import baseWorker from './worker-base.js';
 
 const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
 const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
+const SHARED_DIRECTORY_CACHE_PATHS = [
+  '/__cache/sdr-directory-v4-fresh',
+  '/__cache/sdr-directory-v4-last-good'
+];
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_STARTUP_MARKER = 'sdr-player-startup-window-v1';
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
+const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
+const PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -81,9 +87,40 @@ async function receiverDirectory() {
   return directoryMemory;
 }
 
-async function resolveReceiver(receiverId) {
+function normalizedCachedReceiver(receiver) {
+  if (!receiver || typeof receiver !== 'object') return null;
+  const rawUrl = receiver.url
+    || (receiver.upstreamHost ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.upstreamHost}` : '')
+    || (receiver.host ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.host}` : '');
+  return normalizeReceiverUrl(rawUrl);
+}
+
+async function resolveReceiverFromSharedCache(request, receiverId) {
+  const cache = caches.default;
+  for (const path of SHARED_DIRECTORY_CACHE_PATHS) {
+    try {
+      const key = new Request(new URL(path, request.url).toString(), { method: 'GET' });
+      const cached = await cache.match(key);
+      if (!cached) continue;
+      const payload = await cached.json();
+      if (!Array.isArray(payload?.receivers)) continue;
+      const match = payload.receivers.find((receiver) => receiver?.id === receiverId || receiver?.host === receiverId);
+      const normalized = normalizedCachedReceiver(match);
+      if (normalized?.id === receiverId) return normalized;
+    } catch {
+      // The shared cache is advisory. Fall through to live ReceiverBook lookup.
+    }
+  }
+  return null;
+}
+
+async function resolveReceiver(request, receiverId) {
   const legacyUrl = LEGACY_RECEIVERS[receiverId];
   if (legacyUrl) return normalizeReceiverUrl(legacyUrl);
+
+  const shared = await resolveReceiverFromSharedCache(request, receiverId);
+  if (shared) return shared;
+
   const directory = await receiverDirectory();
   return directory.get(receiverId) || null;
 }
@@ -108,7 +145,7 @@ async function proxySdrWebSocket(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(receiverId);
+    receiver = await resolveReceiver(request, receiverId);
   } catch (error) {
     return new Response(`Receiver directory unavailable: ${error?.message || 'lookup failed'}`, { status: 502 });
   }
@@ -144,6 +181,79 @@ async function proxySdrWebSocket(request) {
   }
 }
 
+async function probeSdrReceiver(request) {
+  const url = new URL(request.url);
+  const receiverId = url.searchParams.get('receiver') || '';
+  const stream = url.searchParams.get('stream') || 'SND';
+  const result = {
+    probe: 'direct-worker-upstream-websocket-v1',
+    receiverId,
+    stream,
+    resolved: false,
+    upstreamHost: null,
+    upstreamProtocol: null,
+    upstreamStatus: null,
+    webSocketAccepted: false,
+    elapsedMs: null,
+    error: null
+  };
+  const respond = () => new Response(JSON.stringify(result, null, 2), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store, max-age=0'
+    }
+  });
+
+  if (!receiverId || receiverId.length > 180 || !['SND', 'W/F'].includes(stream)) {
+    result.error = 'invalid probe request';
+    return respond();
+  }
+
+  let receiver;
+  try {
+    receiver = await resolveReceiver(request, receiverId);
+  } catch (error) {
+    result.error = `directory: ${error?.message || 'lookup failed'}`;
+    return respond();
+  }
+  if (!receiver?.upstreamHost || isBlockedHost(receiver.hostname)) {
+    result.error = 'receiver did not resolve to a permitted upstream host';
+    return respond();
+  }
+
+  result.resolved = true;
+  result.upstreamHost = receiver.upstreamHost;
+  result.upstreamProtocol = receiver.protocol;
+
+  const timestamp = String(Math.floor(Date.now() / 1000) % 10000000000);
+  const upstreamTimestamp = proxySafeTimestamp(timestamp);
+  const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
+  const started = Date.now();
+  try {
+    const upstreamResponse = await fetch(upstreamUrl, {
+      headers: {
+        Upgrade: 'websocket',
+        Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
+        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
+      }
+    });
+    result.elapsedMs = Date.now() - started;
+    result.upstreamStatus = upstreamResponse.status;
+    result.webSocketAccepted = Boolean(upstreamResponse.webSocket);
+    if (!upstreamResponse.webSocket) {
+      result.error = `upstream refused WebSocket (${upstreamResponse.status})`;
+    } else {
+      try { upstreamResponse.webSocket.close(1000, 'FREQBEACON diagnostic probe complete'); } catch {}
+    }
+  } catch (error) {
+    result.elapsedMs = Date.now() - started;
+    result.error = `upstream fetch: ${error?.message || 'connection failed'}`;
+  }
+  return respond();
+}
+
 async function patchSdrPlayerStartup(response) {
   const contentType = String(response.headers.get('content-type') || '');
   if (!/javascript|text\/plain/.test(contentType)) return response;
@@ -169,12 +279,29 @@ async function patchSdrPlayerStartup(response) {
   const disconnectApplied = source.includes(oldDisconnect);
   if (disconnectApplied) source = source.replace(oldDisconnect, newDisconnect);
 
+  const oldVisualizerStart = `  function startSpectrumAnimation() {\n    if (sdr.animationFrame) cancelAnimationFrame(sdr.animationFrame);\n    const canvas = playerEl('[data-sdr-canvas]');`;
+  const newVisualizerStart = `  function startSpectrumAnimation() {\n    if (sdr.animationFrame) cancelAnimationFrame(sdr.animationFrame);\n    if (document.querySelector('[data-sdr-rf-v2-canvas]')) {\n      sdr.animationFrame = null;\n      return;\n    }\n    const canvas = playerEl('[data-sdr-canvas]');`;
+  const oldDrawStart = `    const draw = () => {\n      if (!sdr.analyser || !sdr.audioContext || sdr.audioContext.state === 'closed') return;\n      const rect = canvas.getBoundingClientRect();`;
+  const newDrawStart = `    const draw = () => {\n      if (!sdr.analyser || !sdr.audioContext || sdr.audioContext.state === 'closed') return;\n      if (document.querySelector('[data-sdr-rf-v2-canvas]')) {\n        sdr.animationFrame = null;\n        return;\n      }\n      const rect = canvas.getBoundingClientRect();`;
+  const visualizerApplied = source.includes(oldVisualizerStart) && source.includes(oldDrawStart);
+  if (visualizerApplied) {
+    source = source.replace(oldVisualizerStart, newVisualizerStart);
+    source = source.replace(oldDrawStart, newDrawStart);
+  }
+
+  const oldLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        disconnectSocket();\n        setStatus('Disconnected', false);\n        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);\n        playerEl('[data-sdr-toggle]').textContent = 'Play';\n      }\n    };`;
+  const newLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        failCurrentReceiver('The public receiver disconnected. Trying the next ranked receiver…');\n      }\n    };`;
+  const liveFailoverApplied = source.includes(oldLiveClose);
+  if (liveFailoverApplied) source = source.replace(oldLiveClose, newLiveClose);
+
   const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('x-freqbeacon-sdr-player-startup', startupApplied ? PLAYER_STARTUP_MARKER : 'startup-window-patch-miss');
   headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-visualizer', visualizerApplied ? PLAYER_VISUALIZER_MARKER : 'legacy-spectrum-patch-miss');
+  headers.set('x-freqbeacon-sdr-player-failover', liveFailoverApplied ? PLAYER_LIVE_FAILOVER_MARKER : 'live-failover-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
@@ -185,6 +312,7 @@ async function patchSdrPlayerStartup(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request);
     if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerStartup(await baseWorker.fetch(request, env, ctx));
