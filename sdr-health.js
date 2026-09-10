@@ -2,6 +2,7 @@
   const HEALTH_KEY = 'signalScout:sdrHealth:v1';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
+  const SHORT_LIVE_SESSION_MS = 30 * 1000;
   const NativeFetch = window.fetch.bind(window);
   const NativeWebSocket = window.WebSocket;
   const decoder = new TextDecoder();
@@ -164,12 +165,14 @@
     if (!receiverId) return socket;
 
     let gotAudio = false;
+    let firstAudioAt = 0;
     let explicitFailure = false;
 
     socket.addEventListener('message', (event) => {
       const inspection = inspectKiwiMessage(event.data);
       if (inspection.audio && !gotAudio) {
         gotAudio = true;
+        firstAudioAt = now();
         markSuccess(receiverId);
       } else if (inspection.state && !explicitFailure && !gotAudio) {
         explicitFailure = true;
@@ -184,8 +187,15 @@
       }
     });
 
-    socket.addEventListener('close', () => {
-      if (!gotAudio && !explicitFailure) markFailure(receiverId, 'error');
+    socket.addEventListener('close', (event) => {
+      if (!gotAudio && !explicitFailure) {
+        markFailure(receiverId, 'error');
+        return;
+      }
+      const liveMs = firstAudioAt ? now() - firstAudioAt : 0;
+      if (gotAudio && Number(event?.code || 0) === 1006 && liveMs > 0 && liveMs < SHORT_LIVE_SESSION_MS) {
+        markFailure(receiverId, 'disconnect');
+      }
     });
 
     // Intentionally no health timeout and no socket.close(). The player owns
@@ -202,5 +212,5 @@
   });
 
   window.WebSocket = PassiveHealthWebSocket;
-  window.__freqbeaconSdrHealth = { version: 'passive-health-v2' };
+  window.__freqbeaconSdrHealth = { version: 'passive-health-v3' };
 })();
