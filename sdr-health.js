@@ -2,6 +2,7 @@
   const HEALTH_KEY = 'signalScout:sdrHealth:v1';
   const HEALTH_RETENTION_MS = 24 * 60 * 60 * 1000;
   const RECENT_SUCCESS_MS = 45 * 60 * 1000;
+  const STABLE_SUCCESS_MS = 30 * 1000;
   const SHORT_LIVE_SESSION_MS = 30 * 1000;
   const NativeFetch = window.fetch.bind(window);
   const NativeWebSocket = window.WebSocket;
@@ -166,35 +167,69 @@
 
     let gotAudio = false;
     let firstAudioAt = 0;
+    let stableTimer = null;
+    let stableSuccess = false;
     let explicitFailure = false;
+
+    function clearStableTimer() {
+      if (stableTimer) window.clearTimeout(stableTimer);
+      stableTimer = null;
+    }
+
+    function markStableSuccess() {
+      if (stableSuccess || explicitFailure || !gotAudio) return;
+      stableSuccess = true;
+      markSuccess(receiverId);
+    }
 
     socket.addEventListener('message', (event) => {
       const inspection = inspectKiwiMessage(event.data);
       if (inspection.audio && !gotAudio) {
         gotAudio = true;
         firstAudioAt = now();
-        markSuccess(receiverId);
+        stableTimer = window.setTimeout(() => {
+          stableTimer = null;
+          if (socket.readyState === NativeWebSocket.OPEN) markStableSuccess();
+        }, STABLE_SUCCESS_MS);
       } else if (inspection.state && !explicitFailure && !gotAudio) {
         explicitFailure = true;
+        clearStableTimer();
         markFailure(receiverId, inspection.state);
       }
     });
 
     socket.addEventListener('error', () => {
-      if (!gotAudio && !explicitFailure) {
+      if (explicitFailure) return;
+      const liveMs = firstAudioAt ? now() - firstAudioAt : 0;
+      if (!gotAudio) {
         explicitFailure = true;
+        clearStableTimer();
         markFailure(receiverId, 'error');
+      } else if (!stableSuccess && liveMs < SHORT_LIVE_SESSION_MS) {
+        explicitFailure = true;
+        clearStableTimer();
+        markFailure(receiverId, 'disconnect');
       }
     });
 
     socket.addEventListener('close', (event) => {
+      clearStableTimer();
+      const intentionalClientClose = Number(event?.code || 0) === 1000
+        && /Signal Scout disconnect/i.test(String(event?.reason || ''));
+      if (intentionalClientClose) return;
+
       if (!gotAudio && !explicitFailure) {
+        explicitFailure = true;
         markFailure(receiverId, 'error');
         return;
       }
+
       const liveMs = firstAudioAt ? now() - firstAudioAt : 0;
-      if (gotAudio && Number(event?.code || 0) === 1006 && liveMs > 0 && liveMs < SHORT_LIVE_SESSION_MS) {
+      if (gotAudio && !stableSuccess && !explicitFailure && liveMs < SHORT_LIVE_SESSION_MS) {
+        explicitFailure = true;
         markFailure(receiverId, 'disconnect');
+      } else if (gotAudio && !stableSuccess && !explicitFailure && liveMs >= STABLE_SUCCESS_MS) {
+        markStableSuccess();
       }
     });
 
@@ -212,5 +247,5 @@
   });
 
   window.WebSocket = PassiveHealthWebSocket;
-  window.__freqbeaconSdrHealth = { version: 'passive-health-v3' };
+  window.__freqbeaconSdrHealth = { version: 'passive-health-v4' };
 })();
