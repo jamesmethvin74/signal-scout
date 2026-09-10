@@ -72,6 +72,10 @@ function patchRfSpectrumPersistence(source) {
   return patched;
 }
 
+function patchRfWaterfallRate(source) {
+  return source.replace("send('SET wf_speed=2');", "send('SET wf_speed=4');");
+}
+
 function applyFreqBeaconBrand(html) {
   let branded = html
     .replaceAll('Signal Scout', 'FreqBeacon')
@@ -148,7 +152,10 @@ export default {
     if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
       const source = await response.text();
       let patched = patchSdrOriginChecks(source);
-      if (url.pathname === '/sdr-rf-v2.js') patched = patchRfSpectrumPersistence(patched);
+      if (url.pathname === '/sdr-rf-v2.js') {
+        patched = patchRfSpectrumPersistence(patched);
+        patched = patchRfWaterfallRate(patched);
+      }
       if (url.pathname === '/sdr-early-trace.js') {
         patched = patched.replace("version: 'early-stream-timing-v1'", "version: 'early-stream-timing-v2'");
       }
@@ -156,7 +163,10 @@ export default {
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
-      if (url.pathname === '/sdr-rf-v2.js') headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
+      if (url.pathname === '/sdr-rf-v2.js') {
+        headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
+        headers.set('x-freqbeacon-rf-rate', 'fast-23fps-v1');
+      }
       if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       if (url.pathname === '/sdr-live-path-trace.js') headers.set('x-freqbeacon-sdr-live-path-trace', 'v1');
       return new Response(patched, {
@@ -214,3 +224,4 @@ export default {
 // Deployment marker: trace real SDR sockets by host so WSS and HTTPS schemes do not hide them.
 // Deployment marker: restore the known-good server-ranked Listen Live control plane and remove client-side receiver automation.
 // Deployment marker: publish WBCQ official-schedule authority and keep card Receiver Options on server ranking.
+// Deployment marker: request Kiwi FAST waterfall cadence while retaining latest-frame rendering.
