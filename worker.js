@@ -1,7 +1,7 @@
 import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
-const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-early-trace.js', '/sdr-live-path-trace.js', '/sdr-live-reliability-v2.js']);
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-tuning-v3.js', '/sdr-early-trace.js', '/sdr-live-path-trace.js', '/sdr-live-reliability-v2.js']);
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -76,6 +76,25 @@ function patchRfWaterfallRate(source) {
   return source.replace("send('SET wf_speed=2');", "send('SET wf_speed=4');");
 }
 
+function patchRfExplorationSpan(source) {
+  return source.replace(
+    "const desiredZoom = (mode === 'usb' || mode === 'lsb') ? 11 : 10;",
+    "const desiredZoom = (mode === 'usb' || mode === 'lsb') ? 10 : 9;"
+  );
+}
+
+function patchTuningExplorationSpan(source) {
+  return source
+    .replace(
+      'return isSsbMode() ? 14.6484375 : 29.296875;',
+      'return isSsbMode() ? 29.296875 : 58.59375;'
+    )
+    .replace(
+      'const edgeMargin = span * 0.06;',
+      'const edgeMargin = span * 0.02;'
+    );
+}
+
 function applyFreqBeaconBrand(html) {
   let branded = html
     .replaceAll('Signal Scout', 'FreqBeacon')
@@ -139,6 +158,23 @@ function applyProgramGuideRuntime(html) {
   );
 }
 
+function applyExploreRuntime(html) {
+  let explored = html;
+  if (!explored.includes('freqbeacon-explore.css')) {
+    explored = explored.replace(
+      '</head>',
+      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=1" />\n</head>'
+    );
+  }
+  if (!explored.includes('freqbeacon-explore.js')) {
+    explored = explored.replace(
+      '</body>',
+      '  <script src="freqbeacon-explore.js?v=1"></script>\n</body>'
+    );
+  }
+  return explored;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -155,6 +191,10 @@ export default {
       if (url.pathname === '/sdr-rf-v2.js') {
         patched = patchRfSpectrumPersistence(patched);
         patched = patchRfWaterfallRate(patched);
+        patched = patchRfExplorationSpan(patched);
+      }
+      if (url.pathname === '/sdr-tuning-v3.js') {
+        patched = patchTuningExplorationSpan(patched);
       }
       if (url.pathname === '/sdr-early-trace.js') {
         patched = patched.replace("version: 'early-stream-timing-v1'", "version: 'early-stream-timing-v2'");
@@ -166,7 +206,9 @@ export default {
       if (url.pathname === '/sdr-rf-v2.js') {
         headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
         headers.set('x-freqbeacon-rf-rate', 'fast-23fps-v1');
+        headers.set('x-freqbeacon-rf-span', 'exploration-overscan-v1');
       }
+      if (url.pathname === '/sdr-tuning-v3.js') headers.set('x-freqbeacon-tuning-span', 'retained-view-v1');
       if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       if (url.pathname === '/sdr-live-path-trace.js') headers.set('x-freqbeacon-sdr-live-path-trace', 'v1');
       return new Response(patched, {
@@ -179,18 +221,20 @@ export default {
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
-        .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=8')
+        .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=9')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
-        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=2')
+        .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=3')
         .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=2');
       html = applyFreqBeaconBrand(html);
       html = applySdrTraceRuntime(html, url);
       html = applyProgramGuideRuntime(html);
+      html = applyExploreRuntime(html);
       const headers = noStoreHeaders(response);
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v3');
+      headers.set('x-freqbeacon-explore', 'v1');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
@@ -225,3 +269,4 @@ export default {
 // Deployment marker: restore the known-good server-ranked Listen Live control plane and remove client-side receiver automation.
 // Deployment marker: publish WBCQ official-schedule authority and keep card Receiver Options on server ranking.
 // Deployment marker: request Kiwi FAST waterfall cadence while retaining latest-frame rendering.
+// Deployment marker: launch exploration-first radio UI with retained RF overscan.
