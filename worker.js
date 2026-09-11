@@ -163,13 +163,13 @@ function applyExploreRuntime(html) {
   if (!explored.includes('freqbeacon-explore.css')) {
     explored = explored.replace(
       '</head>',
-      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=1" />\n</head>'
+      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=2" />\n</head>'
     );
   }
   if (!explored.includes('freqbeacon-explore.js')) {
     explored = explored.replace(
       '</body>',
-      '  <script src="freqbeacon-explore.js?v=1"></script>\n</body>'
+      '  <script src="freqbeacon-explore.js?v=2"></script>\n</body>'
     );
   }
   return explored;
@@ -234,7 +234,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v13');
       headers.set('x-freqbeacon-program-guide', 'v3');
-      headers.set('x-freqbeacon-explore', 'v1');
+      headers.set('x-freqbeacon-explore', 'tuner-first-v2');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
       return new Response(html, {
@@ -270,3 +270,4 @@ export default {
 // Deployment marker: publish WBCQ official-schedule authority and keep card Receiver Options on server ranking.
 // Deployment marker: request Kiwi FAST waterfall cadence while retaining latest-frame rendering.
 // Deployment marker: launch exploration-first radio UI with retained RF overscan.
+// Deployment marker: launch tuner-first live RF experience.
