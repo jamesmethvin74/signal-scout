@@ -1,0 +1,378 @@
+/* FREQBEACON exploration-first experience.
+   This layer changes hierarchy only; the existing scoring, lookup, SDR ranking,
+   RF transport and reliability modules remain the source of truth. */
+
+.fb-explore-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 6px 0 14px;
+  border: 1px solid rgba(95, 208, 255, .20);
+  border-radius: 22px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 78% 22%, rgba(30, 220, 224, .12), transparent 28%),
+    radial-gradient(circle at 18% 110%, rgba(53, 126, 255, .14), transparent 38%),
+    linear-gradient(145deg, rgba(10, 27, 45, .96), rgba(5, 14, 25, .98));
+  box-shadow: inset 0 1px rgba(255,255,255,.035), 0 22px 55px rgba(0,0,0,.20);
+}
+.fb-explore-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -8% 20px;
+  height: 1px;
+  opacity: .45;
+  background: linear-gradient(90deg, transparent, #25d4e6 28%, #69a8ff 50%, #25d4e6 72%, transparent);
+  box-shadow: 0 0 18px rgba(37,212,230,.35);
+}
+.fb-explore-kicker {
+  color: #79dff0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.fb-explore-hero h2 {
+  margin: 6px 0 7px;
+  color: #f1f8ff;
+  font-size: clamp(27px, 5vw, 42px);
+  line-height: 1;
+  letter-spacing: -.04em;
+}
+.fb-explore-hero p {
+  max-width: 620px;
+  margin: 0;
+  color: #93a9bc;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fb-explore-actions {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 18px;
+}
+.fb-explore-primary,
+.fb-explore-surprise,
+.fb-explore-band {
+  min-height: 52px;
+  border-radius: 12px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.fb-explore-primary {
+  border: 1px solid rgba(93, 238, 246, .72);
+  color: #031216;
+  background: linear-gradient(135deg, #6ff3ef, #68bfff);
+  box-shadow: 0 0 28px rgba(37,212,230,.16);
+}
+.fb-explore-surprise {
+  border: 1px solid rgba(105, 168, 255, .42);
+  color: #d9f5ff;
+  background: rgba(35, 91, 137, .20);
+}
+.fb-explore-bands {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 9px;
+}
+.fb-explore-band {
+  min-height: 44px;
+  border: 1px solid rgba(125, 159, 196, .22);
+  color: #b9cadb;
+  background: rgba(5, 15, 26, .55);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.fb-explore-band:hover,
+.fb-explore-surprise:hover {
+  border-color: rgba(95, 208, 255, .58);
+  color: #effbff;
+  background: rgba(30, 96, 130, .24);
+}
+
+.fb-location-strip.location-card {
+  min-height: 0;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-color: rgba(95,208,255,.11);
+  border-radius: 11px;
+  background: rgba(7,18,30,.54);
+}
+.fb-location-strip .eyebrow,
+.fb-location-strip #locationMeta { display: none; }
+.fb-location-strip h2 {
+  margin: 0;
+  color: #9fb4c8;
+  font-size: 11px;
+  font-weight: 750;
+}
+.fb-location-strip #locationButton {
+  min-height: 31px;
+  padding: 6px 9px;
+  font-size: 9px;
+}
+
+/* Exploration is the default. The old controls become the advanced layer. */
+body:not(.fb-more-open) main > .time-picker,
+body:not(.fb-more-open) main > .toolbar,
+body:not(.fb-more-open) main > .notice,
+body:not(.fb-more-open) main > .source-note {
+  display: none !important;
+}
+body.fb-more-open .fb-explore-hero { display: none; }
+body.fb-identify-open .fb-explore-hero,
+body.fb-identify-open .location-card,
+body.fb-identify-open .fb-more-panel-note {
+  display: none !important;
+}
+
+body:not(.fb-more-open) #signalGrid .signal-card:not(.fb-featured) {
+  display: none !important;
+}
+body:not(.fb-more-open) #signalGrid .ham-disclaimer {
+  display: none !important;
+}
+body:not(.fb-more-open) .results-header {
+  margin-top: 2px;
+}
+body:not(.fb-more-open) .results-header h2 {
+  font-size: 17px;
+  letter-spacing: -.015em;
+}
+body:not(.fb-more-open) #resultCount {
+  color: #698198;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+body:not(.fb-more-open) #signalGrid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+body:not(.fb-more-open) .signal-card {
+  min-height: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(150deg, rgba(12,29,47,.86), rgba(5,14,24,.94));
+}
+body:not(.fb-more-open) .signal-card.card-collapsed .tags,
+body:not(.fb-more-open) .signal-card.card-collapsed .details,
+body:not(.fb-more-open) .signal-card.card-collapsed .station-about,
+body:not(.fb-more-open) .signal-card.card-collapsed .antenna-guide,
+body:not(.fb-more-open) .signal-card.card-collapsed .why,
+body:not(.fb-more-open) .signal-card.card-collapsed .transmitter-summary,
+body:not(.fb-more-open) .signal-card.card-collapsed .ham-note,
+body:not(.fb-more-open) .signal-card.card-collapsed .ham-starts-list,
+body:not(.fb-more-open) .signal-card.card-collapsed .ham-quick-note {
+  display: none !important;
+}
+body:not(.fb-more-open) .signal-card .frequency,
+body:not(.fb-more-open) .signal-card .ham-range {
+  font-size: 24px;
+}
+body:not(.fb-more-open) .signal-card .station-name {
+  margin-top: 3px;
+  font-size: 14px;
+}
+body:not(.fb-more-open) .signal-card .station-description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #8298ad;
+  font-size: 11px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+body:not(.fb-more-open) .signal-card .score small,
+body:not(.fb-more-open) .signal-card .score-meter {
+  display: none !important;
+}
+body:not(.fb-more-open) .signal-card .score strong {
+  font-size: 10px;
+}
+body:not(.fb-more-open) .signal-card .card-live-row {
+  margin-top: 9px;
+  padding-top: 9px;
+}
+body:not(.fb-more-open) .signal-card .card-receiver-options {
+  display: none !important;
+}
+body:not(.fb-more-open) .signal-card .card-listen-live {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 39px;
+}
+body:not(.fb-more-open) .signal-card .card-toggle {
+  margin-top: 7px;
+  padding-top: 7px;
+  color: #6caec8;
+  font-size: 10px;
+}
+
+/* Ham: voice exploration first. Original allocation and digital/CW data remains in More. */
+body:not(.fb-more-open) #signalGrid[data-ham-view="true"] .signal-card.fb-ham-no-voice {
+  display: none !important;
+}
+body:not(.fb-more-open) #signalGrid[data-ham-view="true"] .ham-quick-tunes {
+  display: none !important;
+}
+.fb-ham-voice-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 7px;
+}
+.fb-ham-voice-target.lookup-result {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.fb-ham-voice-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(97,231,134,.32);
+  border-radius: 8px;
+  color: #d8ffe2;
+  background: rgba(31,108,66,.12);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.fb-ham-voice-button:hover {
+  border-color: rgba(97,231,134,.62);
+  background: rgba(31,108,66,.22);
+}
+
+/* The radio is the star. */
+.sdr-player.fb-radio-simple {
+  width: min(880px, calc(100% - 16px));
+  border-color: rgba(57,220,235,.78);
+  border-radius: 14px;
+  background: #040b10;
+}
+.sdr-player.fb-radio-simple .sdr-player-head {
+  padding: 11px 13px;
+}
+.sdr-player.fb-radio-simple .sdr-player-title strong {
+  color: #91a8b9;
+  font-size: 10px;
+  font-weight: 760;
+}
+.sdr-player.fb-radio-simple .sdr-player-title [data-sdr-frequency] {
+  margin-top: 1px;
+  color: #e8fbff;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -.025em;
+}
+.sdr-player.fb-radio-simple .sdr-rf-v2-spectrum,
+.sdr-player.fb-radio-simple .sdr-spectrum {
+  height: 220px;
+}
+.sdr-player.fb-radio-simple .sdr-spectrum-wrap {
+  border-color: rgba(37,212,230,.32);
+  border-radius: 9px;
+}
+.sdr-player.fb-radio-simple .sdr-controls {
+  grid-template-columns: 105px minmax(0,1fr);
+}
+.sdr-player.fb-radio-simple .sdr-controls > .sdr-control:nth-child(2),
+.sdr-player.fb-radio-simple .sdr-player-body > .sdr-control[style],
+.sdr-player.fb-radio-simple .sdr-context-note {
+  display: none;
+}
+.sdr-player.fb-radio-simple .sdr-play-control {
+  grid-column: auto !important;
+}
+.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-controls {
+  grid-template-columns: 120px minmax(0,1fr) 92px;
+}
+.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-controls > .sdr-control:nth-child(2),
+.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-player-body > .sdr-control[style],
+.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-context-note {
+  display: block;
+}
+.fb-radio-discovery {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr 1.2fr auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fb-radio-discovery button {
+  min-height: 34px;
+  border: 1px solid #1a3d47;
+  border-radius: 7px;
+  color: #9fb8c1;
+  background: #061116;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.fb-radio-discovery button:hover {
+  border-color: #328293;
+  color: #e6fbff;
+}
+.fb-radio-discovery .fb-radio-surprise {
+  border-color: rgba(37,212,230,.46);
+  color: #bff9ff;
+  background: rgba(37,212,230,.07);
+}
+.fb-radio-discovery .fb-radio-identify {
+  border-color: rgba(105,168,255,.38);
+  color: #cbdcff;
+}
+
+.fb-more-panel-note {
+  display: none;
+  margin: 0 0 10px;
+  color: #73899e;
+  font-size: 11px;
+}
+body.fb-more-open .fb-more-panel-note { display: block; }
+
+/* New four-way nav while legacy listeners remain intact behind Explore/Identify. */
+#bestBetsButton[hidden],
+#aboutButton[hidden] { display: none !important; }
+
+@media (max-width: 560px) {
+  .fb-explore-hero { padding: 18px 15px; border-radius: 17px; }
+  .fb-explore-actions { grid-template-columns: 1fr; }
+  .fb-explore-bands { grid-template-columns: 1fr 1fr; }
+  .fb-location-strip.location-card { gap: 8px; }
+  .fb-location-strip h2 {
+    max-width: 58vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sdr-player.fb-radio-simple .sdr-rf-v2-spectrum,
+  .sdr-player.fb-radio-simple .sdr-spectrum {
+    height: 190px;
+  }
+  .sdr-player.fb-radio-simple .sdr-player-title [data-sdr-frequency] {
+    font-size: 17px;
+  }
+  .fb-radio-discovery {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .fb-radio-discovery .fb-radio-controls {
+    grid-column: 1 / -1;
+    min-height: 28px;
+  }
+  body.sdr-player-open .app-shell {
+    padding-bottom: 560px !important;
+  }
+}
