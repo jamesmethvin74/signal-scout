@@ -10,6 +10,7 @@ const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
+const PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1';
 
 const LEGACY_RECEIVERS = {
   florida: 'http://22315.proxy.kiwisdr.com',
@@ -282,6 +283,11 @@ async function patchSdrPlayerRuntime(response) {
     source = source.replace(oldDrawStart, newDrawStart);
   }
 
+  const oldLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        disconnectSocket();\n        setStatus('Disconnected', false);\n        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);\n        playerEl('[data-sdr-toggle]').textContent = 'Play';\n      }\n    };`;
+  const newLiveClose = `    socket.onclose = () => {\n      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');\n      else if (!sdr.manualStop && sdr.gotAudio) {\n        failCurrentReceiver('The public receiver disconnected. Trying the next ranked receiver…');\n      }\n    };`;
+  const liveFailoverApplied = source.includes(oldLiveClose);
+  if (liveFailoverApplied) source = source.replace(oldLiveClose, newLiveClose);
+
   const audioApplied = scheduleApplied && pcmApplied && disconnectApplied;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'application/javascript; charset=utf-8');
@@ -289,6 +295,7 @@ async function patchSdrPlayerRuntime(response) {
   headers.set('x-freqbeacon-sdr-player-audio', audioApplied ? PLAYER_AUDIO_MARKER : 'audio-chunking-patch-miss');
   headers.set('x-freqbeacon-sdr-player-visualizer', visualizerApplied ? PLAYER_VISUALIZER_MARKER : 'legacy-spectrum-patch-miss');
   headers.set('x-freqbeacon-sdr-player-control', 'known-good-connect-lifecycle-v1');
+  headers.set('x-freqbeacon-sdr-player-failover', liveFailoverApplied ? PLAYER_LIVE_FAILOVER_MARKER : 'live-failover-patch-miss');
   return new Response(source, {
     status: response.status,
     statusText: response.statusText,
