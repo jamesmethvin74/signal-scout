@@ -1,28 +1,53 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import fs from 'node:fs';
+import test from 'node:test';
 
-const health = readFileSync(new URL('../sdr-health.js', import.meta.url), 'utf8');
-const player = readFileSync(new URL('../sdr-player.js', import.meta.url), 'utf8');
-const worker = readFileSync(new URL('../worker-v2.js', import.meta.url), 'utf8');
+const health = fs.readFileSync(new URL('../sdr-health.js', import.meta.url), 'utf8');
+const player = fs.readFileSync(new URL('../sdr-player.js', import.meta.url), 'utf8');
+const worker = fs.readFileSync(new URL('../worker-v2.js', import.meta.url), 'utf8');
 
-// Health can remember a short abnormal live session, but it must not own the
-// player's connection lifecycle or trigger another receiver after audio was live.
-assert.match(health, /SHORT_LIVE_SESSION_MS = 30 \* 1000/);
-assert.match(health, /markFailure\(receiverId, 'disconnect'\)/);
-assert.match(health, /passive-health-v3/);
+test('short abnormal live sessions remain passive health evidence', () => {
+  assert.match(health, /SHORT_LIVE_SESSION_MS = 30 \* 1000/);
+  assert.match(health, /Number\(event\?\.code \|\| 0\) === 1006/);
+  assert.match(health, /markFailure\(receiverId, 'disconnect'\)/);
+  assert.match(health, /passive-health-v3/);
+  assert.match(health, /Health is passive evidence only/);
+});
 
-// Restore the original player behavior: failed startup may try another ranked
-// receiver, but a session that was already live stops and waits for the user.
-assert.match(player, /Receiver did not answer\. Trying the next ranked receiver…/);
-assert.match(player, /The public receiver disconnected\. Tap Play to reconnect\./);
-assert.match(player, /\}, 9000\);/);
+test('real live socket death advances through the existing bounded ranked fallback', () => {
+  assert.match(worker, /PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1'/);
+  assert.match(worker, /The public receiver disconnected\. Trying the next ranked receiver…/);
+  assert.match(worker, /x-freqbeacon-sdr-player-failover/);
+  assert.match(worker, /liveFailoverApplied \? PLAYER_LIVE_FAILOVER_MARKER : 'live-failover-patch-miss'/);
 
-// The Worker may keep the proven audio batching/performance patches, but must
-// not rewrite the 9-second startup window or live-disconnect ownership.
-assert.doesNotMatch(worker, /sdr-player-live-disconnect-failover-v1/);
-assert.doesNotMatch(worker, /PLAYER_LIVE_FAILOVER_MARKER/);
-assert.doesNotMatch(worker, /Trying the next ranked receiver…'\);\n      \}\n    \};`/);
-assert.doesNotMatch(worker, /30000/);
-assert.match(worker, /known-good-connect-lifecycle-v1/);
+  // The source player owns the bounded receiver set. Each attempted receiver is
+  // marked once, already-tried indices are skipped, and exhaustion stops at
+  // Unavailable instead of wrapping forever.
+  assert.match(player, /if \(!sdr\.fallbackTried\.has\(index\)\) return index/);
+  assert.match(player, /sdr\.fallbackTried\.add\(next\)/);
+  assert.match(player, /sdr\.fallbackTried\.add\(sdr\.receiverIndex\)/);
+  assert.match(player, /if \(next == null\) \{/);
+  assert.match(player, /setStatus\('Unavailable', false\)/);
+  assert.match(player, /The ranked public receivers did not answer\. Tap Retry or choose another receiver\./);
+});
 
-console.log('known-good live SDR disconnect lifecycle guard passed');
+test('startup and healthy-stream lifecycle stay on the proven non-carrier path', () => {
+  assert.match(player, /\}, 9000\);/);
+  assert.doesNotMatch(worker, /30000/);
+  assert.match(worker, /known-good-connect-lifecycle-v1/);
+
+  // Do not revive the #195/#196 carrier/dead-air or same-receiver retry bundle.
+  assert.doesNotMatch(worker, /freqbeacon:rf-carrier/);
+  assert.doesNotMatch(worker, /PLAYER_CARRIER_MARKER/);
+  assert.doesNotMatch(worker, /carrierAutoAllowed/);
+  assert.doesNotMatch(worker, /No usable carrier/);
+  assert.doesNotMatch(worker, /CARRIER_STARTUP_GRACE_MS/);
+  assert.doesNotMatch(worker, /SHORT_LIVE_RETRY_MS/);
+  assert.doesNotMatch(worker, /Retrying the same receiver once/);
+});
+
+test('worker source still parses as JavaScript', () => {
+  assert.doesNotThrow(() => new Function(worker.replace(/^import .*$/gm, '').replace(/export default/g, 'void')));
+});
+
+console.log('bounded live SDR disconnect failover guard passed');
