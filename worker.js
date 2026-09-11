@@ -1,7 +1,7 @@
 import baseWorker from './worker-v2.js';
 import { programGuideResponse } from './program-guide-worker.js';
 
-const SDR_RUNTIME_ASSETS = new Set(['/sdr-rf-v2.js', '/sdr-health.js', '/sdr-tuning-v3.js', '/sdr-early-trace.js', '/sdr-live-path-trace.js', '/sdr-live-reliability-v2.js']);
+const SDR_RUNTIME_ASSETS = new Set(['/sdr-player.js', '/sdr-rf-v2.js', '/sdr-health.js', '/sdr-tuning-v3.js', '/sdr-early-trace.js', '/sdr-live-path-trace.js', '/sdr-live-reliability-v2.js']);
 
 function noStoreHeaders(response) {
   const headers = new Headers(response.headers);
@@ -72,8 +72,27 @@ function patchRfSpectrumPersistence(source) {
   return patched;
 }
 
-function patchRfWaterfallRate(source) {
-  return source.replace("send('SET wf_speed=2');", "send('SET wf_speed=4');");
+function patchRfStabilityRate(source) {
+  return source.replaceAll("send('SET wf_speed=4');", "send('SET wf_speed=2');");
+}
+
+function patchPlayerStableLiveDisconnect(source) {
+  const automaticFailover = `    socket.onclose = () => {
+      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');
+      else if (!sdr.manualStop && sdr.gotAudio) {
+        failCurrentReceiver('The public receiver disconnected. Trying the next ranked receiver…');
+      }
+    };`;
+  const stickyLiveSession = `    socket.onclose = () => {
+      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');
+      else if (!sdr.manualStop && sdr.gotAudio) {
+        disconnectSocket();
+        setStatus('Disconnected', false);
+        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);
+        playerEl('[data-sdr-toggle]').textContent = 'Play';
+      }
+    };`;
+  return source.replace(automaticFailover, stickyLiveSession);
 }
 
 function patchRfExplorationSpan(source) {
@@ -163,7 +182,7 @@ function applyExploreRuntime(html) {
   if (!explored.includes('freqbeacon-explore.css')) {
     explored = explored.replace(
       '</head>',
-      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=2" />\n</head>'
+      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=3" />\n</head>'
     );
   }
   if (!explored.includes('freqbeacon-explore.js')) {
@@ -188,9 +207,12 @@ export default {
     if (SDR_RUNTIME_ASSETS.has(url.pathname) && /javascript|text\/plain/.test(contentType)) {
       const source = await response.text();
       let patched = patchSdrOriginChecks(source);
+      if (url.pathname === '/sdr-player.js') {
+        patched = patchPlayerStableLiveDisconnect(patched);
+      }
       if (url.pathname === '/sdr-rf-v2.js') {
         patched = patchRfSpectrumPersistence(patched);
-        patched = patchRfWaterfallRate(patched);
+        patched = patchRfStabilityRate(patched);
         patched = patchRfExplorationSpan(patched);
       }
       if (url.pathname === '/sdr-tuning-v3.js') {
@@ -203,9 +225,10 @@ export default {
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
+      if (url.pathname === '/sdr-player.js') headers.set('x-freqbeacon-sdr-player-session', 'session-sticky-v1');
       if (url.pathname === '/sdr-rf-v2.js') {
         headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
-        headers.set('x-freqbeacon-rf-rate', 'fast-23fps-v1');
+        headers.set('x-freqbeacon-rf-rate', 'stability-standard-v1');
         headers.set('x-freqbeacon-rf-span', 'exploration-overscan-v1');
       }
       if (url.pathname === '/sdr-tuning-v3.js') headers.set('x-freqbeacon-tuning-span', 'retained-view-v1');
@@ -234,7 +257,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v14');
       headers.set('x-freqbeacon-program-guide', 'v3');
-      headers.set('x-freqbeacon-explore', 'tuner-first-v2');
+      headers.set('x-freqbeacon-explore', 'tuner-first-v3');
       headers.set('x-freqbeacon-guide', 'v1');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
@@ -273,3 +296,4 @@ export default {
 // Deployment marker: launch exploration-first radio UI with retained RF overscan.
 // Deployment marker: launch tuner-first live RF experience.
 // Deployment marker: guide listeners into broadcasts, amateur voice, shortwave and longwave without frequency entry.
+// Deployment marker: restore standard Kiwi waterfall cadence, keep established sessions sticky, and return compact RF proportions.
