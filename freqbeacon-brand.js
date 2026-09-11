@@ -251,8 +251,35 @@
     brandNode(document.body);
   }
 
+  function installGuidedListeningAssets() {
+    if (new URLSearchParams(window.location.search).get('classic') === '1') return;
+
+    if (!document.querySelector('link[data-freqbeacon-guide]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'freqbeacon-guide.css?v=1';
+      link.dataset.freqbeaconGuide = '1';
+      document.head.appendChild(link);
+    }
+
+    const loadScript = () => {
+      if (document.querySelector('script[data-freqbeacon-guide]')) return;
+      const script = document.createElement('script');
+      script.src = 'freqbeacon-guide.js?v=1';
+      script.dataset.freqbeaconGuide = '1';
+      document.body.appendChild(script);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', loadScript, { once: true });
+    } else {
+      loadScript();
+    }
+  }
+
   disablePwaServiceWorker();
   installLocationReliability();
   installApprovedSplash();
   applyPrimaryBrand();
+  installGuidedListeningAssets();
 })();
