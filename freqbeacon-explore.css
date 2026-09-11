@@ -1,378 +1,58 @@
-/* FREQBEACON exploration-first experience.
-   This layer changes hierarchy only; the existing scoring, lookup, SDR ranking,
-   RF transport and reliability modules remain the source of truth. */
+:root {
+  --fb-bg:#03070d; --fb-panel:#07111b; --fb-line:rgba(102,205,231,.16);
+  --fb-cyan:#65e8f5; --fb-green:#6ff2a4; --fb-text:#eef8fb; --fb-muted:#8299a6;
+}
+body.fb-tuner-v2{background:radial-gradient(circle at 50% -18%,rgba(29,126,163,.18),transparent 36rem),linear-gradient(180deg,#02060b 0%,#06101a 52%,#02070d 100%)!important;color:var(--fb-text)}
+body.fb-tuner-v2 .app-shell{width:min(1500px,100%);padding-bottom:88px!important}
+body.fb-tuner-v2 .topbar{min-height:58px;padding:8px clamp(12px,3vw,26px);border-bottom:1px solid rgba(116,200,227,.08);background:rgba(2,8,14,.78);backdrop-filter:blur(14px)}
+body.fb-tuner-v2 .topbar .brand p{display:none} body.fb-tuner-v2 .topbar .brand h1{letter-spacing:.12em;font-size:14px} body.fb-tuner-v2 .topbar .signal-logo{width:34px;height:34px} body.fb-tuner-v2 .utc-clock{color:#718a96;font-size:10px}
+body.fb-tuner-v2 main{padding-top:12px}
+body.fb-tuner-v2 main>.location-card,body.fb-tuner-v2 main>.time-picker,body.fb-tuner-v2 main>.toolbar,body.fb-tuner-v2 main>.notice,body.fb-tuner-v2 main>.results-header,body.fb-tuner-v2 main>#signalGrid,body.fb-tuner-v2 main>.source-note,body.fb-tuner-v2 .bottom-nav{display:none!important}
+body.fb-tuner-v2 #lookupView{display:none!important}
+body.fb-tuner-v2.fb2-show-lookup #lookupView{display:block!important;width:min(1120px,calc(100% - 18px));margin:14px auto 0;border:1px solid rgba(91,180,204,.14);border-radius:18px;overflow:hidden;background:rgba(5,14,22,.84)}
+body.fb-tuner-v2.fb2-show-lookup #lookupView .lookup-hero{padding-top:18px}
 
-.fb-explore-hero {
-  position: relative;
-  overflow: hidden;
-  margin: 6px 0 14px;
-  border: 1px solid rgba(95, 208, 255, .20);
-  border-radius: 22px;
-  padding: 22px;
-  background:
-    radial-gradient(circle at 78% 22%, rgba(30, 220, 224, .12), transparent 28%),
-    radial-gradient(circle at 18% 110%, rgba(53, 126, 255, .14), transparent 38%),
-    linear-gradient(145deg, rgba(10, 27, 45, .96), rgba(5, 14, 25, .98));
-  box-shadow: inset 0 1px rgba(255,255,255,.035), 0 22px 55px rgba(0,0,0,.20);
-}
-.fb-explore-hero::after {
-  content: "";
-  position: absolute;
-  inset: auto -8% 20px;
-  height: 1px;
-  opacity: .45;
-  background: linear-gradient(90deg, transparent, #25d4e6 28%, #69a8ff 50%, #25d4e6 72%, transparent);
-  box-shadow: 0 0 18px rgba(37,212,230,.35);
-}
-.fb-explore-kicker {
-  color: #79dff0;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-}
-.fb-explore-hero h2 {
-  margin: 6px 0 7px;
-  color: #f1f8ff;
-  font-size: clamp(27px, 5vw, 42px);
-  line-height: 1;
-  letter-spacing: -.04em;
-}
-.fb-explore-hero p {
-  max-width: 620px;
-  margin: 0;
-  color: #93a9bc;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.fb-explore-actions {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 18px;
-}
-.fb-explore-primary,
-.fb-explore-surprise,
-.fb-explore-band {
-  min-height: 52px;
-  border-radius: 12px;
-  font-weight: 900;
-  letter-spacing: .02em;
-}
-.fb-explore-primary {
-  border: 1px solid rgba(93, 238, 246, .72);
-  color: #031216;
-  background: linear-gradient(135deg, #6ff3ef, #68bfff);
-  box-shadow: 0 0 28px rgba(37,212,230,.16);
-}
-.fb-explore-surprise {
-  border: 1px solid rgba(105, 168, 255, .42);
-  color: #d9f5ff;
-  background: rgba(35, 91, 137, .20);
-}
-.fb-explore-bands {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 9px;
-}
-.fb-explore-band {
-  min-height: 44px;
-  border: 1px solid rgba(125, 159, 196, .22);
-  color: #b9cadb;
-  background: rgba(5, 15, 26, .55);
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-}
-.fb-explore-band:hover,
-.fb-explore-surprise:hover {
-  border-color: rgba(95, 208, 255, .58);
-  color: #effbff;
-  background: rgba(30, 96, 130, .24);
-}
+.fb2-home{width:min(1240px,calc(100% - 18px));margin:0 auto;padding:0 0 30px}
+.fb2-hero{position:relative;overflow:hidden;border:1px solid var(--fb-line);border-radius:24px;background:linear-gradient(180deg,rgba(11,28,43,.96),rgba(3,10,17,.98)),radial-gradient(circle at 50% 0%,rgba(46,190,221,.18),transparent 60%);box-shadow:0 24px 90px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.035)}
+.fb2-hero:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(92,221,245,.026) 1px,transparent 1px),linear-gradient(90deg,rgba(92,221,245,.018) 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(180deg,#000,transparent 92%)}
+.fb2-topline{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 9px}
+.fb2-live-label{display:flex;align-items:center;gap:8px;color:var(--fb-muted);font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:850;letter-spacing:.11em;text-transform:uppercase}
+.fb2-live-dot{width:8px;height:8px;border-radius:50%;background:#596b72;box-shadow:0 0 0 4px rgba(89,107,114,.1)}
+.fb2-home.is-live .fb2-live-dot{background:var(--fb-green);box-shadow:0 0 14px rgba(111,242,164,.8),0 0 0 4px rgba(111,242,164,.08)} .fb2-home.is-live .fb2-live-label{color:#a8e9bd}
+.fb2-location{border:0;padding:7px 9px;border-radius:10px;color:#91a7b1;background:rgba(255,255,255,.025);font-size:10px;text-align:right}.fb2-location:hover{color:var(--fb-text);background:rgba(101,232,245,.06)}
 
-.fb-location-strip.location-card {
-  min-height: 0;
-  margin: 0 0 12px;
-  padding: 9px 12px;
-  border-color: rgba(95,208,255,.11);
-  border-radius: 11px;
-  background: rgba(7,18,30,.54);
-}
-.fb-location-strip .eyebrow,
-.fb-location-strip #locationMeta { display: none; }
-.fb-location-strip h2 {
-  margin: 0;
-  color: #9fb4c8;
-  font-size: 11px;
-  font-weight: 750;
-}
-.fb-location-strip #locationButton {
-  min-height: 31px;
-  padding: 6px 9px;
-  font-size: 9px;
-}
+.fb2-readout{position:relative;z-index:2;display:grid;justify-items:center;gap:7px;padding:5px 16px 16px;text-align:center}
+.fb2-eyebrow{color:#6e8793;font-family:var(--mono,ui-monospace,monospace);font-size:9px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
+.fb2-frequency-line{display:flex;align-items:baseline;justify-content:center;gap:10px;width:100%}
+.fb2-frequency{max-width:100%;color:#f7fdff;font-family:var(--mono,ui-monospace,monospace);font-size:clamp(42px,7.8vw,92px);font-weight:350;line-height:.96;letter-spacing:-.065em;text-shadow:0 0 34px rgba(98,222,244,.11);font-variant-numeric:tabular-nums}
+.fb2-unit{color:#75909b;font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,2vw,18px);font-weight:800;letter-spacing:.08em}
+.fb2-station{min-height:22px;max-width:min(680px,90%);overflow:hidden;color:#acc0c9;font-size:14px;white-space:nowrap;text-overflow:ellipsis}
+.fb2-mode-row{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:4px}.fb2-mode{min-width:54px;min-height:34px;border:1px solid rgba(111,160,181,.24);border-radius:10px;color:#78919d;background:rgba(5,16,25,.72);font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:900;letter-spacing:.08em}.fb2-mode.is-active{border-color:rgba(101,232,245,.58);color:#dcfbff;background:linear-gradient(180deg,rgba(45,163,190,.19),rgba(24,99,121,.13));box-shadow:inset 0 0 0 1px rgba(101,232,245,.07),0 0 18px rgba(55,191,219,.08)}
 
-/* Exploration is the default. The old controls become the advanced layer. */
-body:not(.fb-more-open) main > .time-picker,
-body:not(.fb-more-open) main > .toolbar,
-body:not(.fb-more-open) main > .notice,
-body:not(.fb-more-open) main > .source-note {
-  display: none !important;
-}
-body.fb-more-open .fb-explore-hero { display: none; }
-body.fb-identify-open .fb-explore-hero,
-body.fb-identify-open .location-card,
-body.fb-identify-open .fb-more-panel-note {
-  display: none !important;
-}
+.fb2-stage{position:relative;z-index:2;margin:0 12px;border:1px solid rgba(83,183,209,.22);border-radius:18px;overflow:hidden;background:#02070d;box-shadow:inset 0 0 32px rgba(0,0,0,.62)}
+.fb2-start-layer{min-height:clamp(330px,50vh,530px);display:grid;place-items:center;padding:30px 18px;background:radial-gradient(circle at 50% 45%,rgba(20,119,149,.18),transparent 28rem),repeating-linear-gradient(0deg,transparent 0 32px,rgba(97,211,235,.028) 33px),repeating-linear-gradient(90deg,transparent 0 68px,rgba(97,211,235,.023) 69px),#02070d}
+.fb2-start-inner{width:min(620px,100%);text-align:center}.fb2-start-mark{width:72px;height:72px;margin:0 auto 17px;border:1px solid rgba(101,232,245,.30);border-radius:50%;display:grid;place-items:center;color:var(--fb-cyan);background:rgba(101,232,245,.045);font-size:28px;box-shadow:0 0 46px rgba(54,193,221,.08)}
+.fb2-start-inner h2{margin:0;color:#f2fbfd;font-size:clamp(25px,4vw,42px);letter-spacing:-.035em}.fb2-start-inner p{width:min(520px,100%);margin:10px auto 20px;color:#8299a5;font-size:13px;line-height:1.55}
+.fb2-start-button{min-height:58px;min-width:min(330px,100%);border:1px solid rgba(101,232,245,.70);border-radius:14px;padding:0 24px;color:#041116;background:linear-gradient(180deg,#8af1f8,#55d6e8);box-shadow:0 10px 34px rgba(35,183,214,.20);font-size:13px;font-weight:950;letter-spacing:.05em;text-transform:uppercase}.fb2-start-button:active{transform:translateY(1px)}.fb2-start-note{margin-top:12px;color:#526c78;font-family:var(--mono,ui-monospace,monospace);font-size:9px}
+.fb2-player-slot{display:none}.fb2-home.has-started .fb2-start-layer{display:none}.fb2-home.has-started .fb2-player-slot{display:block}
 
-body:not(.fb-more-open) #signalGrid .signal-card:not(.fb-featured) {
-  display: none !important;
-}
-body:not(.fb-more-open) #signalGrid .ham-disclaimer {
-  display: none !important;
-}
-body:not(.fb-more-open) .results-header {
-  margin-top: 2px;
-}
-body:not(.fb-more-open) .results-header h2 {
-  font-size: 17px;
-  letter-spacing: -.015em;
-}
-body:not(.fb-more-open) #resultCount {
-  color: #698198;
-  font-family: var(--mono);
-  font-size: 9px;
-}
-body:not(.fb-more-open) #signalGrid {
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
+body.fb-tuner-v2 #sdrPlayer{position:relative!important;left:auto!important;bottom:auto!important;z-index:4!important;width:100%!important;transform:none!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
+body.fb-tuner-v2 #sdrPlayer .sdr-player-head{display:none!important} body.fb-tuner-v2 #sdrPlayer .sdr-player-body{padding:0!important} body.fb-tuner-v2 #sdrPlayer .sdr-spectrum-wrap{border:0!important;border-radius:0!important;background:#010509!important}
+body.fb-tuner-v2 #sdrPlayer .sdr-rf-v2-spectrum,body.fb-tuner-v2 #sdrPlayer .sdr-spectrum{width:100%!important;height:clamp(330px,50vh,530px)!important}
+body.fb-tuner-v2 #sdrPlayer .sdr-spectrum-label{left:12px!important;top:10px!important;padding:5px 7px;border-radius:7px;color:#667f8a!important;background:rgba(2,8,13,.58);backdrop-filter:blur(5px);font-size:8px!important}
+body.fb-tuner-v2 #sdrPlayer .sdr-readout,body.fb-tuner-v2 #sdrPlayer .sdr-controls,body.fb-tuner-v2 #sdrPlayer .sdr-control,body.fb-tuner-v2 #sdrPlayer .sdr-message,body.fb-tuner-v2 #sdrPlayer .sdr-context-note,body.fb-tuner-v2 #sdrPlayer .sdr-tune-strip,body.fb-tuner-v2 #sdrPlayer .fb-radio-discovery{display:none!important}
+body.fb-tuner-v2.sdr-player-open .app-shell,body.fb-tuner-v2.sdr-player-open.sdr-player-minimized .app-shell{padding-bottom:88px!important}
 
-body:not(.fb-more-open) .signal-card {
-  min-height: 0;
-  padding: 14px;
-  border-radius: 14px;
-  background: linear-gradient(150deg, rgba(12,29,47,.86), rgba(5,14,24,.94));
-}
-body:not(.fb-more-open) .signal-card.card-collapsed .tags,
-body:not(.fb-more-open) .signal-card.card-collapsed .details,
-body:not(.fb-more-open) .signal-card.card-collapsed .station-about,
-body:not(.fb-more-open) .signal-card.card-collapsed .antenna-guide,
-body:not(.fb-more-open) .signal-card.card-collapsed .why,
-body:not(.fb-more-open) .signal-card.card-collapsed .transmitter-summary,
-body:not(.fb-more-open) .signal-card.card-collapsed .ham-note,
-body:not(.fb-more-open) .signal-card.card-collapsed .ham-starts-list,
-body:not(.fb-more-open) .signal-card.card-collapsed .ham-quick-note {
-  display: none !important;
-}
-body:not(.fb-more-open) .signal-card .frequency,
-body:not(.fb-more-open) .signal-card .ham-range {
-  font-size: 24px;
-}
-body:not(.fb-more-open) .signal-card .station-name {
-  margin-top: 3px;
-  font-size: 14px;
-}
-body:not(.fb-more-open) .signal-card .station-description {
-  display: -webkit-box;
-  overflow: hidden;
-  margin-top: 3px;
-  color: #8298ad;
-  font-size: 11px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-}
-body:not(.fb-more-open) .signal-card .score small,
-body:not(.fb-more-open) .signal-card .score-meter {
-  display: none !important;
-}
-body:not(.fb-more-open) .signal-card .score strong {
-  font-size: 10px;
-}
-body:not(.fb-more-open) .signal-card .card-live-row {
-  margin-top: 9px;
-  padding-top: 9px;
-}
-body:not(.fb-more-open) .signal-card .card-receiver-options {
-  display: none !important;
-}
-body:not(.fb-more-open) .signal-card .card-listen-live {
-  flex: 1 1 auto;
-  justify-content: center;
-  min-height: 39px;
-}
-body:not(.fb-more-open) .signal-card .card-toggle {
-  margin-top: 7px;
-  padding-top: 7px;
-  color: #6caec8;
-  font-size: 10px;
-}
+.fb2-coach{position:absolute;left:50%;bottom:14px;z-index:9;width:min(620px,calc(100% - 28px));transform:translateX(-50%);border:1px solid rgba(96,207,232,.20);border-radius:13px;padding:10px 13px;color:#aec1c9;background:rgba(3,12,18,.82);backdrop-filter:blur(10px);box-shadow:0 12px 38px rgba(0,0,0,.34);font-size:11px;line-height:1.45;pointer-events:none}.fb2-coach b{color:#e8f8fb}
+.fb2-signal-strip{position:relative;z-index:2;display:flex;align-items:center;gap:7px;overflow-x:auto;min-height:48px;padding:8px 12px 4px;scrollbar-width:none}.fb2-signal-strip::-webkit-scrollbar{display:none}.fb2-signal-caption{flex:0 0 auto;color:#617985;font-family:var(--mono,ui-monospace,monospace);font-size:8px;font-weight:900;letter-spacing:.10em;text-transform:uppercase}.fb2-signal-chip{flex:0 0 auto;min-height:32px;border:1px solid rgba(85,177,201,.20);border-radius:999px;padding:0 11px;color:#8ca6b1;background:rgba(6,17,26,.82);font-family:var(--mono,ui-monospace,monospace);font-size:9px}.fb2-signal-chip strong{color:#d7edf2;font-weight:850}.fb2-signal-chip.is-strong{border-color:rgba(111,242,164,.32);color:#92cda7}.fb2-signal-chip:hover{border-color:rgba(101,232,245,.52);color:#e4faff}.fb2-signal-empty{color:#506873;font-size:10px}
 
-/* Ham: voice exploration first. Original allocation and digital/CW data remains in More. */
-body:not(.fb-more-open) #signalGrid[data-ham-view="true"] .signal-card.fb-ham-no-voice {
-  display: none !important;
-}
-body:not(.fb-more-open) #signalGrid[data-ham-view="true"] .ham-quick-tunes {
-  display: none !important;
-}
-.fb-ham-voice-actions {
-  display: flex;
-  gap: 7px;
-  margin-top: 7px;
-}
-.fb-ham-voice-target.lookup-result {
-  flex: 1 1 auto;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.fb-ham-voice-button {
-  width: 100%;
-  min-height: 42px;
-  border: 1px solid rgba(97,231,134,.32);
-  border-radius: 8px;
-  color: #d8ffe2;
-  background: rgba(31,108,66,.12);
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-}
-.fb-ham-voice-button:hover {
-  border-color: rgba(97,231,134,.62);
-  background: rgba(31,108,66,.22);
-}
+.fb2-dial-zone{position:relative;z-index:2;padding:10px 12px 12px}.fb2-dial{position:relative;height:74px;border:1px solid rgba(94,190,215,.19);border-radius:16px;overflow:hidden;background:repeating-linear-gradient(90deg,transparent 0 23px,rgba(139,220,238,.08) 24px,transparent 25px),linear-gradient(180deg,rgba(11,27,40,.95),rgba(4,12,19,.95));touch-action:none;cursor:ew-resize;user-select:none}.fb2-dial:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px);background:linear-gradient(180deg,rgba(255,255,255,.18),#f6fcff 25%,#70e5f3 78%,rgba(101,232,245,.08));box-shadow:0 0 12px rgba(101,232,245,.48)}.fb2-dial:after{content:"DRAG TO TUNE  ·  MOUSE WHEEL = FINE TUNE";position:absolute;left:50%;bottom:8px;transform:translateX(-50%);color:#506a76;font-family:var(--mono,ui-monospace,monospace);font-size:8px;font-weight:850;letter-spacing:.09em;white-space:nowrap}.fb2-dial-scale{position:absolute;inset:10px 0 auto;display:flex;justify-content:space-around;color:#718b96;font-family:var(--mono,ui-monospace,monospace);font-size:8px}
 
-/* The radio is the star. */
-.sdr-player.fb-radio-simple {
-  width: min(880px, calc(100% - 16px));
-  border-color: rgba(57,220,235,.78);
-  border-radius: 14px;
-  background: #040b10;
-}
-.sdr-player.fb-radio-simple .sdr-player-head {
-  padding: 11px 13px;
-}
-.sdr-player.fb-radio-simple .sdr-player-title strong {
-  color: #91a8b9;
-  font-size: 10px;
-  font-weight: 760;
-}
-.sdr-player.fb-radio-simple .sdr-player-title [data-sdr-frequency] {
-  margin-top: 1px;
-  color: #e8fbff;
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: -.025em;
-}
-.sdr-player.fb-radio-simple .sdr-rf-v2-spectrum,
-.sdr-player.fb-radio-simple .sdr-spectrum {
-  height: 220px;
-}
-.sdr-player.fb-radio-simple .sdr-spectrum-wrap {
-  border-color: rgba(37,212,230,.32);
-  border-radius: 9px;
-}
-.sdr-player.fb-radio-simple .sdr-controls {
-  grid-template-columns: 105px minmax(0,1fr);
-}
-.sdr-player.fb-radio-simple .sdr-controls > .sdr-control:nth-child(2),
-.sdr-player.fb-radio-simple .sdr-player-body > .sdr-control[style],
-.sdr-player.fb-radio-simple .sdr-context-note {
-  display: none;
-}
-.sdr-player.fb-radio-simple .sdr-play-control {
-  grid-column: auto !important;
-}
-.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-controls {
-  grid-template-columns: 120px minmax(0,1fr) 92px;
-}
-.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-controls > .sdr-control:nth-child(2),
-.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-player-body > .sdr-control[style],
-.sdr-player.fb-radio-simple.fb-radio-advanced .sdr-context-note {
-  display: block;
-}
-.fb-radio-discovery {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr 1fr 1.2fr auto;
-  gap: 6px;
-  margin-top: 8px;
-}
-.fb-radio-discovery button {
-  min-height: 34px;
-  border: 1px solid #1a3d47;
-  border-radius: 7px;
-  color: #9fb8c1;
-  background: #061116;
-  font-family: var(--mono);
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-}
-.fb-radio-discovery button:hover {
-  border-color: #328293;
-  color: #e6fbff;
-}
-.fb-radio-discovery .fb-radio-surprise {
-  border-color: rgba(37,212,230,.46);
-  color: #bff9ff;
-  background: rgba(37,212,230,.07);
-}
-.fb-radio-discovery .fb-radio-identify {
-  border-color: rgba(105,168,255,.38);
-  color: #cbdcff;
-}
+.fb2-actions{position:relative;z-index:2;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:0 12px 14px}.fb2-action{min-height:44px;border:1px solid rgba(91,179,203,.20);border-radius:11px;color:#91a7b1;background:rgba(4,14,22,.86);font-size:10px;font-weight:800}.fb2-action strong{display:block;margin-bottom:2px;color:#d9edf2;font-size:12px}.fb2-action.is-primary{border-color:rgba(101,232,245,.46);color:#9fcbd4;background:linear-gradient(180deg,rgba(27,126,151,.20),rgba(12,65,80,.12))}.fb2-action:hover{border-color:rgba(101,232,245,.50);color:#dff9fd}
+.fb2-footerbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:0 14px 15px}.fb2-receiver{min-width:0;overflow:hidden;color:#59717d;font-size:9px;white-space:nowrap;text-overflow:ellipsis}.fb2-more{border:0;color:#718a95;background:transparent;font-size:10px;text-decoration:underline;text-underline-offset:3px}
 
-.fb-more-panel-note {
-  display: none;
-  margin: 0 0 10px;
-  color: #73899e;
-  font-size: 11px;
-}
-body.fb-more-open .fb-more-panel-note { display: block; }
+.fb2-panel{margin-top:12px;border:1px solid rgba(95,183,206,.13);border-radius:18px;overflow:hidden;background:rgba(5,14,22,.72)}.fb2-panel[hidden]{display:none!important}.fb2-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 15px 10px}.fb2-panel-head h3{margin:0;color:#e9f6f8;font-size:16px}.fb2-panel-head p{margin:4px 0 0;color:#607985;font-size:10px}.fb2-panel-close{border:0;color:#76909a;background:transparent;font-size:18px}.fb2-discover-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 12px 13px}.fb2-discover-target{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;min-height:52px;border:1px solid rgba(91,177,199,.14);border-radius:12px;padding:8px 10px;color:#c5d9df;background:#07131d;text-align:left}.fb2-discover-target b{color:#f1fbfd;font-family:var(--mono,ui-monospace,monospace);font-size:11px}.fb2-discover-target span{overflow:hidden;color:#8198a2;font-size:10px;white-space:nowrap;text-overflow:ellipsis}.fb2-discover-target em{color:#5ee7f2;font-family:var(--mono,ui-monospace,monospace);font-size:9px;font-style:normal}.fb2-discover-target:hover{border-color:rgba(101,232,245,.42)}
+.fb2-band-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 12px 13px}.fb2-band{min-height:55px;border:1px solid rgba(90,176,200,.16);border-radius:12px;color:#8ea5af;background:#07131d;font-size:10px}.fb2-band b{display:block;color:#e4f5f8;font-size:13px;margin-bottom:3px}.fb2-classic-link{display:inline-flex;align-items:center;gap:7px;margin:2px 14px 14px;color:#78939f;font-size:10px}.fb2-classic-link a{color:#9bcbd5}
 
-/* New four-way nav while legacy listeners remain intact behind Explore/Identify. */
-#bestBetsButton[hidden],
-#aboutButton[hidden] { display: none !important; }
-
-@media (max-width: 560px) {
-  .fb-explore-hero { padding: 18px 15px; border-radius: 17px; }
-  .fb-explore-actions { grid-template-columns: 1fr; }
-  .fb-explore-bands { grid-template-columns: 1fr 1fr; }
-  .fb-location-strip.location-card { gap: 8px; }
-  .fb-location-strip h2 {
-    max-width: 58vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sdr-player.fb-radio-simple .sdr-rf-v2-spectrum,
-  .sdr-player.fb-radio-simple .sdr-spectrum {
-    height: 190px;
-  }
-  .sdr-player.fb-radio-simple .sdr-player-title [data-sdr-frequency] {
-    font-size: 17px;
-  }
-  .fb-radio-discovery {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .fb-radio-discovery .fb-radio-controls {
-    grid-column: 1 / -1;
-    min-height: 28px;
-  }
-  body.sdr-player-open .app-shell {
-    padding-bottom: 560px !important;
-  }
-}
+@media(max-width:760px){body.fb-tuner-v2 .app-shell{width:100%} body.fb-tuner-v2 main{padding-left:0;padding-right:0}.fb2-home{width:100%;padding:0 5px 18px}.fb2-hero{border-radius:16px}.fb2-topline{padding:12px 12px 7px}.fb2-readout{padding-bottom:12px}.fb2-frequency{font-size:clamp(43px,15vw,72px)}.fb2-unit{font-size:11px}.fb2-station{font-size:12px}.fb2-stage{margin:0 6px;border-radius:13px}.fb2-start-layer,body.fb-tuner-v2 #sdrPlayer .sdr-rf-v2-spectrum,body.fb-tuner-v2 #sdrPlayer .sdr-spectrum{height:360px!important;min-height:360px}.fb2-coach{bottom:10px;font-size:10px}.fb2-actions{grid-template-columns:repeat(3,minmax(0,1fr));padding:0 7px 11px;gap:6px}.fb2-action{min-height:46px;font-size:9px}.fb2-action strong{font-size:11px}.fb2-dial-zone{padding:8px 7px 9px}.fb2-signal-strip{padding-left:7px;padding-right:7px}.fb2-discover-list{grid-template-columns:1fr;padding-left:8px;padding-right:8px}.fb2-band-row{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:8px;padding-right:8px}.fb2-footerbar{padding:0 9px 12px}}
+@media(max-width:420px){.fb2-location{max-width:46%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.fb2-mode{min-width:47px;min-height:32px;padding:0 8px}.fb2-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.fb2-actions .fb2-action.is-primary{grid-column:1/-1;order:-1}.fb2-dial:after{font-size:7px}}
