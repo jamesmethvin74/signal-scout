@@ -1,0 +1,21 @@
+/* Guided listening launcher for the tuner-first FREQBEACON home. */
+.fb3-start-copy { margin: 0 auto 14px; max-width: 560px; color: #9bb0c2; font-size: 13px; line-height: 1.5; }
+.fb3-start-copy strong { color: #edfaff; }
+.fb3-choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; width:min(620px,100%); margin:16px auto 0; }
+.fb3-choice { position:relative; min-height:104px; border:1px solid rgba(85,180,214,.26); border-radius:16px; padding:15px; color:#dceaf2; background:linear-gradient(145deg,rgba(8,27,43,.96),rgba(5,14,24,.98)); text-align:left; box-shadow:inset 0 1px rgba(255,255,255,.025); }
+.fb3-choice:hover,.fb3-choice:active { border-color:rgba(89,224,236,.66); background:linear-gradient(145deg,rgba(10,40,56,.98),rgba(6,20,31,.98)); }
+.fb3-choice b { display:block; color:#f3fbff; font-size:16px; line-height:1.15; }
+.fb3-choice span { display:block; margin-top:6px; color:#8ba3b7; font-size:11px; line-height:1.35; }
+.fb3-choice em { display:inline-flex; margin-top:9px; border:1px solid rgba(74,197,212,.24); border-radius:999px; padding:3px 7px; color:#73d8e4; font-family:var(--mono); font-size:7px; font-style:normal; font-weight:900; letter-spacing:.07em; text-transform:uppercase; }
+.fb3-choice.is-best { border-color:rgba(83,226,235,.46); box-shadow:0 0 28px rgba(28,199,218,.08),inset 0 1px rgba(255,255,255,.03); }
+.fb3-surprise { width:min(620px,100%); min-height:46px; margin:10px auto 0; border:1px solid rgba(107,155,255,.34); border-radius:12px; color:#dce7ff; background:rgba(53,80,145,.13); font-weight:850; }
+.fb3-no-frequency { margin-top:11px; color:#637b91; font-family:var(--mono); font-size:8px; letter-spacing:.065em; text-transform:uppercase; }
+.fb3-live-kind { display:inline-flex; align-items:center; gap:6px; margin-top:8px; border:1px solid rgba(88,224,190,.2); border-radius:999px; padding:4px 8px; color:#89e9c7; background:rgba(45,120,88,.08); font-family:var(--mono); font-size:8px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.fb3-longwave-note { margin-top:8px; color:#71889b; font-size:9px; line-height:1.4; }
+@media (max-width:560px){
+  .fb3-choice-grid { gap:8px; }
+  .fb3-choice { min-height:112px; padding:13px 12px; border-radius:14px; }
+  .fb3-choice b { font-size:14px; }
+  .fb3-choice span { font-size:10px; }
+  .fb3-start-copy { font-size:12px; }
+}
