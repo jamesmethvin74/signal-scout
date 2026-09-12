@@ -8,7 +8,9 @@ const NEW_TIMESTAMP_SPACE = 1n << 62n;
 const LOWER_TIMESTAMP_MASK = NEW_TIMESTAMP_SPACE - 1n;
 
 function upstreamTimestamp(raw) {
-  const value = BigInt(raw) & LOWER_TIMESTAMP_MASK;
+  const parsed = BigInt(raw);
+  const seconds = raw.length > 10 ? parsed / 1000n : parsed;
+  const value = seconds & LOWER_TIMESTAMP_MASK;
   return (NEW_TIMESTAMP_SPACE | value).toString();
 }
 
