@@ -12,7 +12,9 @@
   const FOLLOW_LEFT = 0.20;
   const FOLLOW_RIGHT = 0.80;
   const EPSILON_KHZ = 0.05;
-  const MIN_FOLLOW_PIXELS = 8;
+  const MIN_FOLLOW_PIXELS = 7;
+  const PREVIEW_MS = 54;
+  const SETTLE_MS = 96;
 
   const knob = document.querySelector('#tuningKnob');
   const canvas = document.querySelector('#rfCanvas');
@@ -26,6 +28,7 @@
 
   let recentering = false;
   let pointerSequence = 9400;
+  let settleToken = 0;
 
   function running() {
     return power?.getAttribute('aria-pressed') === 'true';
@@ -76,6 +79,54 @@
   function cursorClientX() {
     const rect = cursor.getBoundingClientRect();
     return rect.left + rect.width / 2;
+  }
+
+  function translateX(element) {
+    const transform = getComputedStyle(element).transform;
+    if (!transform || transform === 'none') return 0;
+    try {
+      return new DOMMatrixReadOnly(transform).m41 || 0;
+    } catch {
+      const match = transform.match(/^matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*(-?[\d.]+)/);
+      return match ? Number(match[1]) || 0 : 0;
+    }
+  }
+
+  function setCanvasTranslation(px, durationMs) {
+    settleToken += 1;
+    canvas.style.willChange = 'transform';
+    canvas.style.transition = durationMs > 0 ? `transform ${durationMs}ms linear` : 'none';
+    canvas.style.transform = `translate3d(${px.toFixed(3)}px, 0, 0)`;
+  }
+
+  function settleCanvasFrom(px) {
+    const token = ++settleToken;
+    canvas.style.willChange = 'transform';
+    canvas.style.transition = 'none';
+    canvas.style.transform = `translate3d(${px.toFixed(3)}px, 0, 0)`;
+    void canvas.offsetWidth;
+    requestAnimationFrame(() => {
+      if (token !== settleToken) return;
+      canvas.style.transition = `transform ${SETTLE_MS}ms linear`;
+      canvas.style.transform = 'translate3d(0, 0, 0)';
+      window.setTimeout(() => {
+        if (token !== settleToken) return;
+        canvas.style.transition = '';
+        canvas.style.transform = '';
+        canvas.style.willChange = '';
+      }, SETTLE_MS + 24);
+    });
+  }
+
+  function resetPreview() {
+    const current = translateX(canvas);
+    if (Math.abs(current) < 0.15) {
+      canvas.style.transition = '';
+      canvas.style.transform = '';
+      canvas.style.willChange = '';
+      return;
+    }
+    settleCanvasFrom(current);
   }
 
   function surfacePanDelta(deltaKHz) {
@@ -129,30 +180,48 @@
     let followRatio = null;
     if (ratio > FOLLOW_RIGHT) followRatio = FOLLOW_RIGHT;
     else if (ratio < FOLLOW_LEFT) followRatio = FOLLOW_LEFT;
-    else return;
+    else {
+      resetPreview();
+      return;
+    }
 
-    // Edge-follow instead of recentering: once the needle reaches the soft edge,
-    // move the viewport only by the amount the needle has crossed that edge.
-    // The needle therefore stays near 20%/80% while the RF world glides beneath
-    // it, avoiding the large 15-20 kHz jumps of the original follow behavior.
+    // Once the needle enters the edge-follow zone, preview every small change
+    // immediately with a GPU transform. This fills the gap between real direct-
+    // manipulation pans, which intentionally ignore drags below ~7 CSS pixels.
     const desiredCenter = clampCenter(tuned - (followRatio - 0.5) * SPAN_KHZ);
     const centerDelta = desiredCenter - center;
-    if (Math.abs(centerDelta) < EPSILON_KHZ) return; // Actual receiver edge.
+    if (Math.abs(centerDelta) < EPSILON_KHZ) {
+      resetPreview(); // Actual receiver edge.
+      return;
+    }
 
-    // The qualified dial intentionally ignores tiny surface drags. Accumulate
-    // sub-pixel/fine-step movement until it represents one real drag threshold,
-    // then apply that small delta. At a 1 kHz tuning step this is effectively
-    // continuous on a phone-sized scope instead of a visible chunked recenter.
     const rect = canvas.getBoundingClientRect();
-    const minDeltaKHz = rect.width
-      ? (MIN_FOLLOW_PIXELS / rect.width) * SPAN_KHZ
-      : EPSILON_KHZ;
-    if (Math.abs(centerDelta) < Math.max(EPSILON_KHZ, minDeltaKHz)) return;
+    if (!rect.width) return;
+    const previewPx = -(centerDelta / SPAN_KHZ) * rect.width;
+    const minDeltaKHz = (MIN_FOLLOW_PIXELS / rect.width) * SPAN_KHZ;
+
+    if (Math.abs(centerDelta) < Math.max(EPSILON_KHZ, minDeltaKHz)) {
+      setCanvasTranslation(previewPx, PREVIEW_MS);
+      return;
+    }
+
+    // Hand the accumulated motion back to the qualified dial. Preserve the
+    // exact on-screen position during that handoff, then ease the tiny remaining
+    // compensation to zero. The RF data remains real; this only interpolates
+    // how the already-rendered canvas moves between qualified center updates.
+    const beforeX = translateX(canvas);
+    const width = rect.width;
 
     recentering = true;
     try {
+      canvas.style.transition = 'none';
+      canvas.style.transform = `translate3d(${beforeX.toFixed(3)}px, 0, 0)`;
       surfacePanDelta(centerDelta);
       needleTo(tuned);
+
+      const internalShiftPx = -(centerDelta / SPAN_KHZ) * width;
+      const compensationPx = beforeX - internalShiftPx;
+      settleCanvasFrom(compensationPx);
     } finally {
       recentering = false;
     }
@@ -164,4 +233,8 @@
   knob.addEventListener('pointermove', autoFollow);
   knob.addEventListener('wheel', autoFollow, { passive: true });
   for (const button of fineButtons) button.addEventListener('click', autoFollow);
+
+  power?.addEventListener('click', () => {
+    if (power.getAttribute('aria-pressed') !== 'true') resetPreview();
+  });
 })();
