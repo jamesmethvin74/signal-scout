@@ -1,0 +1,14 @@
+#rfCanvas {
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tune-cursor {
+  will-change: left;
+}
+
+@media (pointer: coarse) {
+  #rfCanvas { cursor: default; }
+}
