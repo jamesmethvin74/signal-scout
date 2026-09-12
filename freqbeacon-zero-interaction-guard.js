@@ -150,6 +150,12 @@
 
     const style = document.createElement('style');
     style.textContent = `
+      /* The qualified canvas still paints its original static scale underneath
+         the moving band overlay. Make the overlay's formerly-transparent label
+         strip opaque so only the live, moving scale remains visible. */
+      .zero-band-overlay {
+        background: #060a0c;
+      }
       .zero-lw-context {
         position: absolute;
         z-index: 3;
