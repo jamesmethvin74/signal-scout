@@ -76,7 +76,52 @@ function patchRfStabilityRate(source) {
   return source.replaceAll("send('SET wf_speed=4');", "send('SET wf_speed=2');");
 }
 
-function patchPlayerStableLiveDisconnect(source) {
+function patchRfLifecycleState(source) {
+  let patched = source.replace(
+    `  function playerAudioIsLive() {
+    return String(document.querySelector('[data-sdr-status]')?.textContent || '').trim().toLowerCase() === 'live rf';
+  }`,
+    `  function playerAudioIsLive() {
+    return document.getElementById('sdrPlayer')?.classList.contains('is-live') === true;
+  }`
+  );
+
+  patched = patched.replace(
+    '    state.hasFrame = true;\n    state.frameCount += 1;',
+    `    const firstRfFrame = !state.hasFrame;
+    state.hasFrame = true;
+    const liveCanvas = ensureCanvas();
+    if (liveCanvas) liveCanvas.dataset.rfLive = '1';
+    document.documentElement.dataset.freqbeaconRfLive = '1';
+    document.documentElement.dataset.freqbeaconRfEstablished = '1';
+    const statusEl = document.querySelector('[data-sdr-status]');
+    if (statusEl) statusEl.textContent = 'Live RF';
+    if (firstRfFrame) {
+      window.dispatchEvent(new CustomEvent('freqbeacon:rf-live', { detail: { receiverId: state.receiverId } }));
+    }
+    state.frameCount += 1;`
+  );
+
+  patched = patched.replace(
+    '    state.hasFrame = false;\n    state.configured = false;',
+    `    state.hasFrame = false;
+    document.documentElement.dataset.freqbeaconRfLive = '0';
+    if (state.canvas) delete state.canvas.dataset.rfLive;
+    state.configured = false;`
+  );
+
+  patched = patched.replace(
+    `    closeWaterfall('OPENING RF');
+    state.sndSocket = sndSocket;`,
+    `    closeWaterfall('OPENING RF');
+    document.documentElement.dataset.freqbeaconRfEstablished = '0';
+    state.sndSocket = sndSocket;`
+  );
+
+  return patched;
+}
+
+function patchPlayerRfEstablishment(source) {
   const automaticFailover = `    socket.onclose = () => {
       if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');
       else if (!sdr.manualStop && sdr.gotAudio) {
@@ -92,7 +137,58 @@ function patchPlayerStableLiveDisconnect(source) {
         playerEl('[data-sdr-toggle]').textContent = 'Play';
       }
     };`;
-  return source.replace(automaticFailover, stickyLiveSession);
+  const rfAwareSession = `    socket.onclose = () => {
+      if (!sdr.manualStop && !sdr.gotAudio) failCurrentReceiver('Receiver did not answer. Trying the next ranked receiver…');
+      else if (!sdr.manualStop && sdr.gotAudio && document.documentElement.dataset.freqbeaconRfEstablished !== '1') {
+        failCurrentReceiver('Receiver audio started, but RF never established. Trying the next ranked receiver…');
+      } else if (!sdr.manualStop && sdr.gotAudio) {
+        disconnectSocket();
+        setStatus('Disconnected', false);
+        setMessage('The public receiver disconnected. Tap Play to reconnect.', true);
+        playerEl('[data-sdr-toggle]').textContent = 'Play';
+      }
+    };`;
+
+  let patched = source.replace(automaticFailover, rfAwareSession).replace(stickyLiveSession, rfAwareSession);
+  patched = patched.replace(
+    `      setStatus('Live RF', true);
+      setMessage('Actual receiver audio · spectrum and waterfall are generated from the live audio stream.');`,
+    `      setStatus('Live audio', true);
+      setMessage('Receiver audio is live · waiting for the real RF waterfall.');`
+  );
+  return patched;
+}
+
+function patchHamReliabilityContext(source) {
+  const oldHamContext = `  function hamViewActive() {
+    return document.getElementById('signalGrid')?.dataset.hamView === 'true';
+  }`;
+  const newHamContext = `  function frequencyLooksHam(value) {
+    const frequency = Number(value);
+    if (!Number.isFinite(frequency)) return false;
+    return [
+      [1800, 2000], [3500, 4000], [5330, 5405], [7000, 7300], [10100, 10150],
+      [14000, 14350], [18068, 18168], [21000, 21450], [24890, 24990], [28000, 29700]
+    ].some(([low, high]) => frequency >= low && frequency <= high);
+  }
+
+  function hamViewActive(requestUrl = null) {
+    if (document.getElementById('signalGrid')?.dataset.hamView === 'true') return true;
+    const badge = document.querySelector('[data-fb3-live-kind]')?.textContent || '';
+    const tunerStation = document.querySelector('[data-fb2-station]')?.textContent || '';
+    if (/amateur|ham/i.test(badge) || /amateur|\\bmeters?\\b.*voice/i.test(tunerStation)) return true;
+    const frequency = Number(requestUrl?.searchParams?.get('frequency'));
+    const mode = String(document.querySelector('[data-sdr-mode]')?.value || '').toLowerCase();
+    return (mode === 'lsb' || mode === 'usb') && frequencyLooksHam(frequency);
+  }`;
+
+  let patched = source.replace(oldHamContext, newHamContext);
+  patched = patched.replace('      const hamMode = hamViewActive();', '      const hamMode = hamViewActive(url);');
+  patched = patched.replace(
+    "    return /RF WATERFALL TIMEOUT|no W\\/F rows|sent no W\\/F rows/i.test(String(text || ''));",
+    "    return /RF WATERFALL TIMEOUT|RF STREAM CLOSED|RF SOCKET ERROR|RF UNAVAILABLE|no W\\/F rows|sent no W\\/F rows|waterfall slots are full|rejected the RF waterfall/i.test(String(text || ''));"
+  );
+  return patched;
 }
 
 function patchRfExplorationSpan(source) {
@@ -182,7 +278,17 @@ function applyExploreRuntime(html) {
   if (!explored.includes('freqbeacon-explore.css')) {
     explored = explored.replace(
       '</head>',
-      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=3" />\n</head>'
+      '  <link rel="stylesheet" href="freqbeacon-explore.css?v=4" />\n</head>'
+    );
+  }
+  if (!explored.includes('freqbeacon-rf-layout-fix-v2')) {
+    explored = explored.replace(
+      '</head>',
+      `  <style id="freqbeacon-rf-layout-fix-v2">
+    body.fb-tuner-v2 #sdrPlayer .sdr-spectrum-wrap > canvas[data-sdr-canvas] { display:none!important; height:0!important; min-height:0!important; max-height:0!important; }
+    body.fb-tuner-v2 #sdrPlayer .sdr-spectrum-wrap > canvas[data-sdr-rf-v2-canvas] { display:block!important; width:100%!important; height:240px!important; min-height:0!important; max-height:240px!important; }
+    @media (max-width:760px) { body.fb-tuner-v2 #sdrPlayer .sdr-spectrum-wrap > canvas[data-sdr-rf-v2-canvas] { height:210px!important; max-height:210px!important; } }
+  </style>\n</head>`
     );
   }
   if (!explored.includes('freqbeacon-explore.js')) {
@@ -208,12 +314,16 @@ export default {
       const source = await response.text();
       let patched = patchSdrOriginChecks(source);
       if (url.pathname === '/sdr-player.js') {
-        patched = patchPlayerStableLiveDisconnect(patched);
+        patched = patchPlayerRfEstablishment(patched);
       }
       if (url.pathname === '/sdr-rf-v2.js') {
         patched = patchRfSpectrumPersistence(patched);
         patched = patchRfStabilityRate(patched);
         patched = patchRfExplorationSpan(patched);
+        patched = patchRfLifecycleState(patched);
+      }
+      if (url.pathname === '/sdr-live-reliability-v2.js') {
+        patched = patchHamReliabilityContext(patched);
       }
       if (url.pathname === '/sdr-tuning-v3.js') {
         patched = patchTuningExplorationSpan(patched);
@@ -225,12 +335,14 @@ export default {
       headers.set('content-type', 'application/javascript; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v1');
-      if (url.pathname === '/sdr-player.js') headers.set('x-freqbeacon-sdr-player-session', 'session-sticky-v1');
+      if (url.pathname === '/sdr-player.js') headers.set('x-freqbeacon-sdr-player-session', 'rf-established-sticky-v2');
       if (url.pathname === '/sdr-rf-v2.js') {
         headers.set('x-freqbeacon-rf-profile', 'waterfall-persistence-v1');
         headers.set('x-freqbeacon-rf-rate', 'stability-standard-v1');
         headers.set('x-freqbeacon-rf-span', 'exploration-overscan-v1');
+        headers.set('x-freqbeacon-rf-lifecycle', 'audio-then-rf-v1');
       }
+      if (url.pathname === '/sdr-live-reliability-v2.js') headers.set('x-freqbeacon-ham-context', 'tuner-aware-v1');
       if (url.pathname === '/sdr-tuning-v3.js') headers.set('x-freqbeacon-tuning-span', 'retained-view-v1');
       if (url.pathname === '/sdr-early-trace.js') headers.set('x-freqbeacon-sdr-trace', 'early-stream-timing-v2');
       if (url.pathname === '/sdr-live-path-trace.js') headers.set('x-freqbeacon-sdr-live-path-trace', 'v1');
@@ -244,10 +356,11 @@ export default {
     if ((url.pathname === '/' || url.pathname === '/index.html') && contentType.includes('text/html')) {
       let html = await response.text();
       html = html
-        .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=9')
+        .replace(/sdr-rf-v2\.js\?v=\d+/, 'sdr-rf-v2.js?v=10')
+        .replace(/sdr-player\.js\?v=\d+/, 'sdr-player.js?v=3')
         .replace('sdr-health.js?v=2', 'sdr-health.js?v=3')
         .replace('sdr-tuning.js?v=1', 'sdr-tuning-v3.js?v=3')
-        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=2');
+        .replace('sdr-live-reliability.js?v=1', 'sdr-live-reliability-v2.js?v=3');
       html = applyFreqBeaconBrand(html);
       html = applySdrTraceRuntime(html, url);
       html = applyProgramGuideRuntime(html);
@@ -257,7 +370,7 @@ export default {
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v14');
       headers.set('x-freqbeacon-program-guide', 'v3');
-      headers.set('x-freqbeacon-explore', 'tuner-first-v3');
+      headers.set('x-freqbeacon-explore', 'tuner-first-v4');
       headers.set('x-freqbeacon-guide', 'v1');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
       if (url.searchParams.get('sdrTrace') === '1') headers.set('x-freqbeacon-sdr-trace', 'live-path-v1');
@@ -297,3 +410,4 @@ export default {
 // Deployment marker: launch tuner-first live RF experience.
 // Deployment marker: guide listeners into broadcasts, amateur voice, shortwave and longwave without frequency entry.
 // Deployment marker: restore standard Kiwi waterfall cadence, keep established sessions sticky, and return compact RF proportions.
+// Deployment marker: require real W/F establishment before a session becomes sticky and keep tuner-launched ham sessions geography-aware.
