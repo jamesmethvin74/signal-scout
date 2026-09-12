@@ -1,10 +1,11 @@
 const RECEIVERS = Object.freeze({
   zero: Object.freeze({
-    id: 'ku4by-8074',
-    name: 'KU4BY',
-    place: 'Elizabeth City, North Carolina',
-    host: 'kiwisdr.ku4by.com:8074',
-    protocol: 'http:'
+    id: 'n2yo-8073',
+    name: 'N2YO',
+    place: 'Chantilly, Virginia',
+    host: 'kiwisdr.n2yo.net:8073',
+    protocol: 'http:',
+    requiredMode: 'rx4_wf4'
   }),
   bench: Object.freeze({
     id: 'n2yo-8073',
@@ -16,7 +17,7 @@ const RECEIVERS = Object.freeze({
   })
 });
 
-const VERSION = 'zero-cleanroom-3';
+const VERSION = 'zero-cleanroom-4';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
