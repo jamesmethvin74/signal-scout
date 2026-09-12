@@ -1,0 +1,47 @@
+.scope-start-button {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 64%;
+  transform: translate(-50%, -50%);
+  min-width: 176px;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid rgba(86, 220, 214, .44);
+  border-radius: 7px;
+  color: #c9fffb;
+  background:
+    linear-gradient(180deg, rgba(111, 246, 239, .16), rgba(40, 145, 151, .10) 45%, rgba(3, 21, 25, .76)),
+    #132328;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.12),
+    inset 0 -1px rgba(0,0,0,.65),
+    0 5px 14px rgba(0,0,0,.34),
+    0 0 14px rgba(57, 213, 208, .10);
+  font-size: 13px;
+  font-weight: 720;
+  letter-spacing: .08em;
+  text-shadow: 0 0 9px rgba(95, 237, 229, .24);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.scope-start-button:active {
+  transform: translate(-50%, -48%);
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,.45),
+    0 2px 7px rgba(0,0,0,.28);
+}
+
+.scope-start-button[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 480px) {
+  .scope-start-button {
+    top: 68%;
+    min-width: 168px;
+    min-height: 44px;
+    font-size: 12px;
+  }
+}
