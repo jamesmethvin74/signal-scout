@@ -1,8 +1,8 @@
 const RECEIVER = Object.freeze({
-  id: 'ku4by-8073',
+  id: 'ku4by-8074',
   name: 'KU4BY',
   place: 'Elizabeth City, North Carolina',
-  host: 'kiwisdr.ku4by.com:8073',
+  host: 'kiwisdr.ku4by.com:8074',
   protocol: 'http:'
 });
 
