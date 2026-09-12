@@ -18,6 +18,14 @@ export default {
       }));
     }
 
+    if (request.method === 'GET' && (url.pathname === '/zero-bench' || url.pathname === '/zero-bench/')) {
+      const benchUrl = new URL('/freqbeacon-zero-bench.html', request.url);
+      return env.ASSETS.fetch(new Request(benchUrl.toString(), {
+        method: 'GET',
+        headers: request.headers
+      }));
+    }
+
     const response = await baseWorker.fetch(request, env, ctx);
     if (request.method !== 'GET') return response;
 
