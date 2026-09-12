@@ -6,10 +6,11 @@ const FIXED = Object.freeze({
   zoom: 8,
   fullBandwidthKHz: 30000,
   waterfallBins: 1024,
-  waterfallRowPx: 1,
+  waterfallRowPx: 2,
   waterfallSpeed: -1,
-  spectrumAlpha: 0.16,
-  spectrumRadius: 2,
+  spectrumRadius: 3,
+  spectrumAttack: 0.48,
+  spectrumRelease: 0.16,
   tuneStepKHz: 1,
   audioProofFrames: 5,
   noFrameTimeoutMs: 7000,
@@ -60,8 +61,9 @@ const state = {
   uptimeTimer: null,
   startedAt: 0,
   muted: false,
-  rfFloor: -122,
+  rfFloor: -112,
   rfCeiling: -62,
+  rfRangeReady: false,
   tunedKHz: FIXED.initialFrequencyKHz,
   viewportCenterKHz: FIXED.initialFrequencyKHz,
   spectrumDb: null,
@@ -129,10 +131,10 @@ function drawIdleScope() {
   const scaleH = 42;
   const wfTop = scaleTop + scaleH;
 
-  ctx.fillStyle = '#020405';
+  ctx.fillStyle = '#06121a';
   ctx.fillRect(0, 0, w, h);
 
-  ctx.strokeStyle = 'rgba(93, 137, 150, .16)';
+  ctx.strokeStyle = 'rgba(103, 174, 190, .14)';
   ctx.lineWidth = 1;
   for (let x = 0; x <= w; x += 64) {
     ctx.beginPath();
@@ -149,7 +151,7 @@ function drawIdleScope() {
 
   ctx.fillStyle = '#060a0c';
   ctx.fillRect(0, scaleTop, w, scaleH);
-  ctx.fillStyle = '#020405';
+  ctx.fillStyle = '#04101c';
   ctx.fillRect(0, wfTop, w, h - wfTop);
   drawFrequencyScale(scaleTop, scaleH);
 }
@@ -162,7 +164,7 @@ function drawFrequencyScale(top, height) {
   ctx.fillStyle = '#060a0c';
   ctx.fillRect(0, top, w, height);
   ctx.strokeStyle = 'rgba(114, 144, 154, .42)';
-  ctx.fillStyle = 'rgba(157, 178, 184, .72)';
+  ctx.fillStyle = 'rgba(177, 198, 204, .78)';
   ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textBaseline = 'top';
 
@@ -190,37 +192,53 @@ function waterfallStart() {
 
 function updateRfRange(bins) {
   const values = Array.from(bins, (value) => value - 255).sort((a, b) => a - b);
-  const floorSample = values[Math.floor(values.length * .22)] ?? -120;
-  const peakSample = values[Math.floor(values.length * .995)] ?? -70;
-  const targetFloor = Math.max(-145, Math.min(-85, floorSample - 3));
-  const targetCeiling = Math.max(targetFloor + 30, Math.min(-25, peakSample + 4));
+  const noiseSample = values[Math.floor(values.length * .50)] ?? -105;
+  const peakSample = values[Math.floor(values.length * .997)] ?? -65;
+  const targetFloor = Math.max(-150, Math.min(-78, noiseSample - 13));
+  const targetCeiling = Math.max(targetFloor + 48, Math.min(-20, peakSample + 7));
 
-  state.rfFloor = state.rfFloor * .90 + targetFloor * .10;
-  state.rfCeiling = state.rfCeiling * .88 + targetCeiling * .12;
-  if (state.rfCeiling - state.rfFloor < 34) state.rfCeiling = state.rfFloor + 34;
+  if (!state.rfRangeReady) {
+    state.rfFloor = targetFloor;
+    state.rfCeiling = targetCeiling;
+    state.rfRangeReady = true;
+    return;
+  }
+
+  state.rfFloor += (targetFloor - state.rfFloor) * .035;
+  state.rfCeiling += (targetCeiling - state.rfCeiling) * .065;
+  if (state.rfCeiling - state.rfFloor < 48) state.rfCeiling = state.rfFloor + 48;
 }
 
-function colorForDb(db) {
-  const n = Math.max(0, Math.min(1, (db - state.rfFloor) / (state.rfCeiling - state.rfFloor)));
+const WATERFALL_STOPS = Object.freeze([
+  [0.00, [2, 8, 24]],
+  [0.12, [5, 28, 86]],
+  [0.28, [7, 103, 166]],
+  [0.43, [18, 185, 212]],
+  [0.58, [24, 208, 178]],
+  [0.70, [84, 216, 124]],
+  [0.82, [216, 219, 56]],
+  [0.92, [233, 143, 38]],
+  [1.00, [255, 58, 34]]
+]);
 
-  if (n < .16) {
-    const t = n / .16;
-    return [2, Math.round(8 + 22 * t), Math.round(12 + 36 * t)];
+function colorForDb(db) {
+  const range = Math.max(48, state.rfCeiling - state.rfFloor);
+  const n = Math.max(0, Math.min(1, (db - state.rfFloor) / range));
+
+  for (let i = 1; i < WATERFALL_STOPS.length; i += 1) {
+    const [at, color] = WATERFALL_STOPS[i];
+    const [prevAt, prev] = WATERFALL_STOPS[i - 1];
+    if (n <= at) {
+      const t = (n - prevAt) / Math.max(.0001, at - prevAt);
+      return [
+        Math.round(prev[0] + (color[0] - prev[0]) * t),
+        Math.round(prev[1] + (color[1] - prev[1]) * t),
+        Math.round(prev[2] + (color[2] - prev[2]) * t)
+      ];
+    }
   }
-  if (n < .42) {
-    const t = (n - .16) / .26;
-    return [Math.round(3 + 5 * t), Math.round(30 + 92 * t), Math.round(48 + 100 * t)];
-  }
-  if (n < .68) {
-    const t = (n - .42) / .26;
-    return [Math.round(8 + 48 * t), Math.round(122 + 111 * t), Math.round(148 + 80 * t)];
-  }
-  if (n < .86) {
-    const t = (n - .68) / .18;
-    return [Math.round(56 + 199 * t), Math.round(233 - 38 * t), Math.round(228 - 128 * t)];
-  }
-  const t = (n - .86) / .14;
-  return [255, Math.round(195 + 50 * t), Math.round(100 + 135 * t)];
+
+  return WATERFALL_STOPS[WATERFALL_STOPS.length - 1][1];
 }
 
 function smoothSpectrum(bins) {
@@ -232,18 +250,20 @@ function smoothSpectrum(bins) {
 
   const radius = FIXED.spectrumRadius;
   for (let i = 0; i < bins.length; i += 1) {
-    let sum = 0;
-    let count = 0;
+    let weighted = 0;
+    let weightTotal = 0;
     for (let j = Math.max(0, i - radius); j <= Math.min(bins.length - 1, i + radius); j += 1) {
-      sum += bins[j] - 255;
-      count += 1;
+      const weight = radius + 1 - Math.abs(i - j);
+      weighted += (bins[j] - 255) * weight;
+      weightTotal += weight;
     }
-    state.spectrumScratch[i] = sum / count;
+    state.spectrumScratch[i] = weighted / weightTotal;
   }
 
-  const alpha = FIXED.spectrumAlpha;
   for (let i = 0; i < bins.length; i += 1) {
-    state.spectrumDb[i] += (state.spectrumScratch[i] - state.spectrumDb[i]) * alpha;
+    const delta = state.spectrumScratch[i] - state.spectrumDb[i];
+    const alpha = delta >= 0 ? FIXED.spectrumAttack : FIXED.spectrumRelease;
+    state.spectrumDb[i] += delta * alpha;
   }
   return state.spectrumDb;
 }
@@ -264,7 +284,7 @@ function renderRf(bins) {
   if (state.wfFrames > 1) {
     ctx.drawImage(els.canvas, 0, wfTop, w, wfH - rowPx, 0, wfTop + rowPx, w, wfH - rowPx);
   } else {
-    ctx.fillStyle = '#020405';
+    ctx.fillStyle = '#04101c';
     ctx.fillRect(0, wfTop, w, wfH);
   }
 
@@ -282,10 +302,10 @@ function renderRf(bins) {
   }
   ctx.putImageData(row, 0, wfTop);
 
-  ctx.fillStyle = '#020607';
+  ctx.fillStyle = '#071a24';
   ctx.fillRect(0, 0, w, spectrumH);
 
-  ctx.strokeStyle = 'rgba(86, 240, 226, .11)';
+  ctx.strokeStyle = 'rgba(121, 192, 207, .13)';
   ctx.lineWidth = 1;
   for (let x = 0; x <= w; x += 128) {
     ctx.beginPath();
@@ -300,17 +320,41 @@ function renderRf(bins) {
     ctx.stroke();
   }
 
-  ctx.beginPath();
-  const range = Math.max(34, state.rfCeiling - state.rfFloor);
+  const range = Math.max(48, state.rfCeiling - state.rfFloor);
+  const points = new Float32Array(w);
   for (let x = 0; x < w; x += 1) {
     const db = spectrum[x];
     const n = Math.max(0, Math.min(1, (db - state.rfFloor) / range));
-    const y = spectrumH - 8 - n * (spectrumH - 18);
-    if (x === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    points[x] = spectrumH - 10 - n * (spectrumH - 24);
   }
-  ctx.strokeStyle = '#56f0e2';
-  ctx.lineWidth = 2;
+
+  const fill = ctx.createLinearGradient(0, 16, 0, spectrumH);
+  fill.addColorStop(0, 'rgba(60, 219, 232, .20)');
+  fill.addColorStop(1, 'rgba(9, 73, 94, .03)');
+  ctx.beginPath();
+  ctx.moveTo(0, spectrumH);
+  for (let x = 0; x < w; x += 1) ctx.lineTo(x, points[x]);
+  ctx.lineTo(w, spectrumH);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let x = 0; x < w; x += 1) {
+    if (x === 0) ctx.moveTo(x, points[x]);
+    else ctx.lineTo(x, points[x]);
+  }
+  ctx.strokeStyle = 'rgba(55, 221, 235, .24)';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.beginPath();
+  for (let x = 0; x < w; x += 1) {
+    if (x === 0) ctx.moveTo(x, points[x]);
+    else ctx.lineTo(x, points[x]);
+  }
+  ctx.strokeStyle = '#dffcff';
+  ctx.lineWidth = 1.6;
   ctx.stroke();
 
   drawFrequencyScale(scaleTop, scaleH);
@@ -653,8 +697,9 @@ function resetCounters() {
   state.rfProven = false;
   state.sndConfigured = false;
   state.wfConfigured = false;
-  state.rfFloor = -122;
+  state.rfFloor = -112;
   state.rfCeiling = -62;
+  state.rfRangeReady = false;
   state.tunedKHz = FIXED.initialFrequencyKHz;
   state.viewportCenterKHz = FIXED.initialFrequencyKHz;
   state.spectrumDb = null;
