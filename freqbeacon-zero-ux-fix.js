@@ -63,7 +63,7 @@
   function loadKnobFollowAdapter() {
     if (document.querySelector('script[data-zero-knob-follow]')) return;
     const script = document.createElement('script');
-    script.src = '/freqbeacon-zero-knob-follow.js?v=3';
+    script.src = '/freqbeacon-zero-knob-follow.js?v=2';
     script.dataset.zeroKnobFollow = 'true';
     document.body.appendChild(script);
   }
