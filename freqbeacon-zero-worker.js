@@ -1,12 +1,21 @@
-const RECEIVER = Object.freeze({
-  id: 'ku4by-8074',
-  name: 'KU4BY',
-  place: 'Elizabeth City, North Carolina',
-  host: 'kiwisdr.ku4by.com:8074',
-  protocol: 'http:'
+const RECEIVERS = Object.freeze({
+  zero: Object.freeze({
+    id: 'ku4by-8074',
+    name: 'KU4BY',
+    place: 'Elizabeth City, North Carolina',
+    host: 'kiwisdr.ku4by.com:8074',
+    protocol: 'http:'
+  }),
+  bench: Object.freeze({
+    id: 'ku4by-8073',
+    name: 'KU4BY · KIWI 1',
+    place: 'Elizabeth City, North Carolina',
+    host: 'kiwisdr.ku4by.com:8073',
+    protocol: 'http:'
+  })
 });
 
-const VERSION = 'zero-cleanroom-2';
+const VERSION = 'zero-cleanroom-3';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -19,8 +28,8 @@ function json(data, status = 200) {
   });
 }
 
-function upstreamBase() {
-  return `${RECEIVER.protocol}//${RECEIVER.host}`;
+function upstreamBase(receiver) {
+  return `${receiver.protocol}//${receiver.host}`;
 }
 
 function parseStatusPairs(text) {
@@ -37,8 +46,8 @@ function parseStatusPairs(text) {
   return pairs;
 }
 
-async function fetchUpstreamText(path, accept = 'text/plain') {
-  const response = await fetch(`${upstreamBase()}${path}`, {
+async function fetchUpstreamText(receiver, path, accept = 'text/plain') {
+  const response = await fetch(`${upstreamBase(receiver)}${path}`, {
     headers: {
       accept,
       'user-agent': 'FREQBEACON-ZERO/cleanroom'
@@ -51,9 +60,9 @@ async function fetchUpstreamText(path, accept = 'text/plain') {
   return text;
 }
 
-async function bootstrap() {
+async function bootstrap(receiver) {
   try {
-    const text = await fetchUpstreamText('/VER', 'application/json');
+    const text = await fetchUpstreamText(receiver, '/VER', 'application/json');
     let version;
     try {
       version = JSON.parse(text);
@@ -70,9 +79,9 @@ async function bootstrap() {
       ok: true,
       sessionTs,
       receiver: {
-        id: RECEIVER.id,
-        name: RECEIVER.name,
-        place: RECEIVER.place
+        id: receiver.id,
+        name: receiver.name,
+        place: receiver.place
       },
       kiwi: {
         major: Number.isFinite(Number(version?.maj)) ? Number(version.maj) : null,
@@ -87,11 +96,11 @@ async function bootstrap() {
   }
 }
 
-async function receiverDiagnostics() {
+async function receiverDiagnostics(receiver) {
   try {
     const [versionText, statusText] = await Promise.all([
-      fetchUpstreamText('/VER', 'application/json'),
-      fetchUpstreamText('/status', 'text/plain')
+      fetchUpstreamText(receiver, '/VER', 'application/json'),
+      fetchUpstreamText(receiver, '/status', 'text/plain')
     ]);
 
     let version = null;
@@ -105,10 +114,10 @@ async function receiverDiagnostics() {
       ok: true,
       observedAt: new Date().toISOString(),
       receiver: {
-        id: RECEIVER.id,
-        name: RECEIVER.name,
-        place: RECEIVER.place,
-        host: RECEIVER.host
+        id: receiver.id,
+        name: receiver.name,
+        place: receiver.place,
+        host: receiver.host
       },
       kiwi: {
         major: Number.isFinite(Number(version?.maj)) ? Number(version.maj) : null,
@@ -125,7 +134,7 @@ async function receiverDiagnostics() {
   }
 }
 
-async function openKiwiSocket(request, url) {
+async function openKiwiSocket(request, url, receiver) {
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('WEBSOCKET REQUIRED', { status: 426 });
   }
@@ -140,13 +149,13 @@ async function openKiwiSocket(request, url) {
     return new Response('BAD SESSION TIMESTAMP', { status: 400 });
   }
 
-  const target = `${upstreamBase()}/ws/kiwi/${sessionTs}/${stream}`;
+  const target = `${upstreamBase(receiver)}/ws/kiwi/${sessionTs}/${stream}`;
 
   try {
     const response = await fetch(target, {
       headers: {
         Upgrade: 'websocket',
-        Origin: upstreamBase(),
+        Origin: upstreamBase(receiver),
         'User-Agent': 'FREQBEACON-ZERO/cleanroom'
       }
     });
@@ -165,17 +174,19 @@ async function openKiwiSocket(request, url) {
 
 export async function handleFreqbeaconZero(request) {
   const url = new URL(request.url);
+  const isBench = url.pathname.startsWith('/api/zero-bench/');
+  const receiver = isBench ? RECEIVERS.bench : RECEIVERS.zero;
 
-  if (request.method === 'GET' && url.pathname === '/api/zero/bootstrap') {
-    return bootstrap();
+  if (request.method === 'GET' && (url.pathname === '/api/zero/bootstrap' || url.pathname === '/api/zero-bench/bootstrap')) {
+    return bootstrap(receiver);
   }
 
-  if (request.method === 'GET' && url.pathname === '/api/zero/diagnostics') {
-    return receiverDiagnostics();
+  if (request.method === 'GET' && (url.pathname === '/api/zero/diagnostics' || url.pathname === '/api/zero-bench/diagnostics')) {
+    return receiverDiagnostics(receiver);
   }
 
-  if (url.pathname === '/api/zero/ws') {
-    return openKiwiSocket(request, url);
+  if (url.pathname === '/api/zero/ws' || url.pathname === '/api/zero-bench/ws') {
+    return openKiwiSocket(request, url, receiver);
   }
 
   return json({ ok: false, error: 'ZERO ENDPOINT NOT FOUND' }, 404);
