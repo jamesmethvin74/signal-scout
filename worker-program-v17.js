@@ -12,7 +12,7 @@ export default {
     }
     if (request.method === 'GET' && (url.pathname === '/zero' || url.pathname === '/zero/')) {
       const zeroUrl = new URL('/zero.html', request.url);
-      return env.ASSETS.fetch(new Request(zeroUrl, request));
+      return env.ASSETS.fetch(new Request(zeroUrl.toString(), { method: 'GET', headers: request.headers }));
     }
 
     const response = await baseWorker.fetch(request, env, ctx);
