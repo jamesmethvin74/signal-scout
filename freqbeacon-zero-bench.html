@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070a0d">
+  <title>FREQBEACON Zero Bench — Band & Mode Qualification</title>
+  <link rel="stylesheet" href="/freqbeacon-zero.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-tuning.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-bench.css?v=1">
+</head>
+<body>
+  <main class="radio bench-radio" aria-label="FREQBEACON Zero band and mode qualification bench">
+    <header class="topline">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <b>FREQBEACON</b>
+          <small>ZERO · QUALIFICATION BENCH</small>
+        </div>
+      </div>
+      <div class="tagline">One session. Full-range proof.</div>
+    </header>
+
+    <section class="readout" aria-label="Receiver readout">
+      <div class="readout-meta">
+        <span class="eyebrow">BAND + MODE QUALIFICATION</span>
+        <span id="receiverIdentity">KU4BY · ELIZABETH CITY, NC</span>
+      </div>
+      <div class="frequency" aria-live="polite">
+        <span id="frequencyValue">0.560</span><em>MHz</em>
+      </div>
+      <div class="readout-foot">
+        <span id="modeValue" class="mode">AM</span>
+        <span>PRESET JUMP · TAP/DRAG TO FINE TUNE</span>
+        <span id="kiwiVersion">KIWI · —</span>
+      </div>
+    </section>
+
+    <section class="scope-shell" aria-label="RF spectrum and waterfall">
+      <div class="scope-status" aria-live="polite">
+        <span><i id="sndLamp"></i>SND</span>
+        <span><i id="wfLamp"></i>W/F</span>
+        <span id="sessionLabel">PAIR —</span>
+      </div>
+
+      <div class="scope">
+        <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Tap or drag within the current RF span to fine tune."></canvas>
+        <div class="tune-cursor" aria-hidden="true"><span></span></div>
+        <div id="scopeMessage" class="scope-message">
+          <strong>BENCH OFF</strong>
+          <span>Press START, then jump across bands without reopening the Kiwi session.</span>
+        </div>
+      </div>
+
+      <div class="scale-footer">
+        <span id="leftEdge">0.501 MHz</span>
+        <span id="centerMark" class="center-mark">VIEW 560.000 kHz</span>
+        <span id="rightEdge">0.619 MHz</span>
+      </div>
+    </section>
+
+    <section class="bench-panel" aria-label="Band and mode test controls">
+      <div class="bench-panel-head">
+        <div>
+          <span class="bench-kicker">MODE TEST</span>
+          <strong>Demodulation</strong>
+        </div>
+        <span id="filterReadout" class="filter-readout">AM · −4.9 / +4.9 kHz · STEP 1 kHz</span>
+      </div>
+
+      <div id="modeButtons" class="bench-mode-row" role="group" aria-label="Demodulation modes">
+        <button type="button" data-mode="am" class="active" disabled>AM</button>
+        <button type="button" data-mode="sam" disabled>SAM</button>
+        <button type="button" data-mode="lsb" disabled>LSB</button>
+        <button type="button" data-mode="usb" disabled>USB</button>
+        <button type="button" data-mode="cw" disabled>CW</button>
+        <button type="button" data-mode="nbfm" disabled>NBFM</button>
+      </div>
+
+      <div class="bench-panel-head bench-presets-head">
+        <div>
+          <span class="bench-kicker">RANGE TEST</span>
+          <strong>Qualification presets</strong>
+        </div>
+        <span class="bench-range">60 kHz → 29.600 MHz</span>
+      </div>
+
+      <div id="presetGrid" class="preset-grid" aria-label="Qualification frequency presets">
+        <button type="button" data-preset="lw" disabled><b>LW</b><span>60.000 kHz</span><small>WWVB · AM</small></button>
+        <button type="button" data-preset="mw" disabled><b>MW</b><span>560 kHz</span><small>LOCAL AM · AM</small></button>
+        <button type="button" data-preset="sw" disabled><b>SW</b><span>9.955 MHz</span><small>BROADCAST · AM</small></button>
+        <button type="button" data-preset="80m" disabled><b>80m</b><span>3.900 MHz</span><small>HAM VOICE · LSB</small></button>
+        <button type="button" data-preset="40m" disabled><b>40m</b><span>7.200 MHz</span><small>HAM VOICE · LSB</small></button>
+        <button type="button" data-preset="20m" disabled><b>20m</b><span>14.200 MHz</span><small>HAM VOICE · USB</small></button>
+        <button type="button" data-preset="air" disabled><b>HF AIR</b><span>11.175 MHz</span><small>HFGCS · USB</small></button>
+        <button type="button" data-preset="cb" disabled><b>CB 19</b><span>27.185 MHz</span><small>CB · AM</small></button>
+        <button type="button" data-preset="10fm" disabled><b>10m FM</b><span>29.600 MHz</span><small>HAM · NBFM</small></button>
+      </div>
+
+      <div class="bench-proof" aria-live="polite">
+        <span><small>PAIR</small><b id="pairProof">—</b></span>
+        <span><small>RETUNES</small><b id="retuneCount">0</b></span>
+        <span><small>MODES</small><b id="modeCount">0</b></span>
+        <span><small>SOCKET OPENS</small><b id="socketProof">0 SND · 0 W/F</b></span>
+      </div>
+      <div id="lastAction" class="last-action">Start the bench to establish one SND + one paired W/F session.</div>
+      <div class="air-note"><b>VHF AIR NOTE</b> Standard Kiwi coverage ends at 30 MHz. The HF AIR preset tests aeronautical USB on 11.175 MHz; 118–137 MHz VHF airband requires different RF hardware.</div>
+    </section>
+
+    <section class="lower-deck" aria-label="Receiver controls">
+      <div class="signal">
+        <div class="signal-label"><span>SIGNAL</span><b id="signalValue">— dB</b></div>
+        <div class="signal-track" aria-hidden="true"><i id="signalBar"></i></div>
+        <div class="signal-scale"><span>S1</span><span>S5</span><span>S9</span><span>+20</span></div>
+      </div>
+
+      <div class="telemetry" aria-label="Session telemetry">
+        <span>SND <b id="sndFrames">0</b></span>
+        <span>RF <b id="wfFrames">0</b></span>
+        <span>UP <b id="uptime">00:00</b></span>
+      </div>
+
+      <div class="controls">
+        <button id="mute" class="mute" type="button" aria-pressed="false">MUTE</button>
+        <button id="power" class="power" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>START</span></button>
+      </div>
+    </section>
+
+    <footer class="bench-note">ZERO BENCH · ONE RECEIVER · ONE SESSION · NO FAILOVER · FROZEN /ZERO UNTOUCHED</footer>
+  </main>
+
+  <script type="module" src="/freqbeacon-zero-bench.js?v=1"></script>
+  <script type="module" src="/freqbeacon-zero-spectrum-motion.js?v=1"></script>
+</body>
+</html>
