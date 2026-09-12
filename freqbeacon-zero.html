@@ -7,42 +7,38 @@
   <title>FREQBEACON Zero — Live RF</title>
   <link rel="stylesheet" href="/freqbeacon-zero.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-zero-tuning.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-shell.css?v=1">
 </head>
 <body>
-  <main class="radio" aria-label="FREQBEACON Zero radio instrument">
-    <header class="topline">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <div>
-          <b>FREQBEACON</b>
-          <small>ZERO · CLEANROOM RECEIVER</small>
-        </div>
+  <main class="radio zero-radio" aria-label="FREQBEACON Zero radio instrument">
+    <header class="zero-header">
+      <div class="zero-brandline">
+        <strong>FREQBEACON <span>Zero</span></strong>
+        <i aria-hidden="true"></i>
+        <small>CLEANROOM RECEIVER</small>
       </div>
-      <div class="tagline">Explore the airwaves.</div>
+      <div class="zero-tagline">Explore the airwaves.</div>
     </header>
 
-    <section class="readout" aria-label="Receiver readout">
-      <div class="readout-meta">
-        <span class="eyebrow">LIVE TUNING PROOF</span>
-        <span id="receiverIdentity">N2YO · CHANTILLY, VA</span>
+    <section class="zero-readout" aria-label="Tuned frequency">
+      <div class="zero-frequency" aria-live="polite">
+        <span id="frequencyDisplay">560,000</span><em>Hz</em>
       </div>
-      <div class="frequency" aria-label="560 kilohertz">
-        <span id="frequencyValue">0.560</span><em>MHz</em>
-      </div>
-      <div class="readout-foot">
-        <span class="mode">AM</span>
-        <span>DRAG NEEDLE · DRAG RF · TAP PEAK</span>
-        <span id="kiwiVersion">KIWI · —</span>
+      <div class="engine-frequency-bridge" aria-hidden="true">
+        <span id="frequencyValue">0.560</span>
       </div>
     </section>
 
-    <section class="scope-shell" aria-label="RF spectrum and waterfall">
-      <div class="scope-status" aria-live="polite">
-        <span><i id="sndLamp"></i>SND</span>
-        <span><i id="wfLamp"></i>W/F</span>
-        <span id="sessionLabel">PAIR —</span>
-      </div>
+    <nav class="mode-bar" aria-label="Receiver mode">
+      <button type="button" data-shell-mode="am" class="active" aria-pressed="true">AM</button>
+      <button type="button" data-shell-mode="sam" aria-pressed="false">SAM</button>
+      <button type="button" data-shell-mode="usb" aria-pressed="false">USB</button>
+      <button type="button" data-shell-mode="lsb" aria-pressed="false">LSB</button>
+      <button type="button" data-shell-mode="cw" aria-pressed="false">CW</button>
+      <button type="button" data-shell-mode="nbfm" aria-pressed="false">NBFM</button>
+    </nav>
 
+    <section class="scope-shell zero-scope-shell" aria-label="RF spectrum and waterfall">
       <div class="scope">
         <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Drag the tuning needle, drag the RF display beneath it, or tap a signal peak to tune."></canvas>
         <div class="tune-cursor" aria-hidden="true"><span></span></div>
@@ -51,36 +47,111 @@
           <span>Press START to open one Kiwi receiver session.</span>
         </div>
       </div>
-
-      <div class="scale-footer">
+      <div class="engine-scale-bridge" aria-hidden="true">
         <span id="leftEdge">0.501 MHz</span>
-        <span id="centerMark" class="center-mark">VIEW 560.000 kHz</span>
+        <span id="centerMark">VIEW 560.000 kHz</span>
         <span id="rightEdge">0.619 MHz</span>
       </div>
     </section>
 
-    <section class="lower-deck" aria-label="Receiver controls">
-      <div class="signal">
-        <div class="signal-label"><span>SIGNAL</span><b id="signalValue">— dB</b></div>
-        <div class="signal-track" aria-hidden="true"><i id="signalBar"></i></div>
-        <div class="signal-scale"><span>S1</span><span>S5</span><span>S9</span><span>+20</span></div>
-      </div>
-
-      <div class="telemetry" aria-label="Session telemetry">
-        <span>SND <b id="sndFrames">0</b></span>
-        <span>RF <b id="wfFrames">0</b></span>
-        <span>UP <b id="uptime">00:00</b></span>
-      </div>
-
-      <div class="controls">
-        <button id="mute" class="mute" type="button" aria-pressed="false">MUTE</button>
-        <button id="power" class="power" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>START</span></button>
+    <section class="band-explorer" aria-label="Band explorer">
+      <div class="deck-title"><span>BAND EXPLORER</span></div>
+      <div class="band-rail" role="group" aria-label="Quick tune bands">
+        <button type="button" data-band-khz="60" data-band-mode="am">LW</button>
+        <button type="button" data-band-khz="1000" data-band-mode="am" class="active">AM BC</button>
+        <button type="button" data-band-khz="9955" data-band-mode="am">Shortwave</button>
+        <button type="button" data-band-khz="1900" data-band-mode="lsb">160m</button>
+        <button type="button" data-band-khz="3900" data-band-mode="lsb">80m</button>
+        <button type="button" data-band-khz="5371.5" data-band-mode="usb">60m</button>
+        <button type="button" data-band-khz="7200" data-band-mode="lsb">40m</button>
+        <button type="button" data-band-khz="10125" data-band-mode="cw">30m</button>
+        <button type="button" data-band-khz="14200" data-band-mode="usb">20m</button>
+        <button type="button" data-band-khz="18100" data-band-mode="usb">17m</button>
+        <button type="button" data-band-khz="21200" data-band-mode="usb">15m</button>
+        <button type="button" data-band-khz="24940" data-band-mode="usb">12m</button>
+        <button type="button" data-band-khz="28400" data-band-mode="usb">10m</button>
+        <button type="button" data-band-khz="27185" data-band-mode="am">CB</button>
+        <button type="button" data-band-khz="8992" data-band-mode="usb">Utility</button>
+        <button type="button" data-band-khz="11175" data-band-mode="usb">Aviation</button>
       </div>
     </section>
 
-    <footer class="bench-note">ONE RECEIVER · ONE SESSION · LIVE TUNING · NO FAILOVER</footer>
+    <section class="hardware-deck" aria-label="Tuning controls">
+      <div class="tuning-zone">
+        <div class="tuning-caption">TUNING</div>
+        <button id="tuningKnob" class="tuning-knob" type="button" aria-label="Main tuning knob. Drag around the knob to tune.">
+          <span class="knob-marker" aria-hidden="true"></span>
+          <span class="knob-face" aria-hidden="true"></span>
+        </button>
+        <div class="fine-tune" aria-label="Fine tuning">
+          <span>FINE-TUNING</span>
+          <div class="fine-buttons">
+            <button type="button" data-fine="-1" aria-label="Tune down one step">−</button>
+            <button type="button" data-fine="1" aria-label="Tune up one step">+</button>
+          </div>
+          <button id="stepButton" class="step-button" type="button" aria-label="Change tuning step"><b id="stepValue">1 kHz</b><small>STEP</small></button>
+        </div>
+      </div>
+
+      <div class="meter-row">
+        <div class="analog-meter" aria-label="Signal meter">
+          <div class="meter-window">
+            <div class="meter-scale" aria-hidden="true">
+              <span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span>+20</span>
+            </div>
+            <div id="meterNeedle" class="meter-needle" aria-hidden="true"></div>
+            <div class="meter-pivot" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div id="dbmReadout" class="dbm-readout">— dBm</div>
+        <button type="button" class="adv-button">ADV</button>
+      </div>
+
+      <div class="lower-controls">
+        <div class="control-block volume-block">
+          <span>VOLUME</span>
+          <div class="hardware-slider static-slider" aria-hidden="true"><i></i><b></b></div>
+        </div>
+        <button id="mute" class="hardware-button mute" type="button" aria-pressed="false">MUTE</button>
+        <div class="control-block agc-block">
+          <span>AGC</span>
+          <div class="agc-switch" aria-label="AGC display"><i></i><b>FAST</b><small>SLOW<br>OFF</small></div>
+        </div>
+        <div class="control-block gain-block">
+          <span>RF GAIN</span>
+          <div class="mini-knob" aria-hidden="true"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="receiver-strip">
+      <div class="receiver-line">
+        <span id="receiverIdentity">N2YO · CHANTILLY, VA</span>
+        <span class="receiver-dot">•</span>
+        <span id="kiwiVersion">KIWI · —</span>
+      </div>
+      <div class="receiver-actions">
+        <div class="scope-status" aria-live="polite">
+          <span><i id="sndLamp"></i>SND</span>
+          <span><i id="wfLamp"></i>W/F</span>
+          <span id="sessionLabel">PAIR —</span>
+        </div>
+        <button id="power" class="power" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>START</span></button>
+      </div>
+    </footer>
+
+    <div class="engine-telemetry" aria-hidden="true">
+      <div class="signal">
+        <span id="signalValue">— dB</span>
+        <div class="signal-track"><i id="signalBar"></i></div>
+      </div>
+      <span id="sndFrames">0</span>
+      <span id="wfFrames">0</span>
+      <span id="uptime">00:00</span>
+    </div>
   </main>
 
+  <script src="/freqbeacon-zero-controls.js?v=1"></script>
   <script type="module" src="/freqbeacon-zero.js?v=6"></script>
   <script type="module" src="/freqbeacon-zero-dial.js?v=1"></script>
   <script type="module" src="/freqbeacon-zero-spectrum-motion.js?v=1"></script>
