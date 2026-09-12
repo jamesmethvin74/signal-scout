@@ -7,10 +7,10 @@ const RECEIVERS = Object.freeze({
     protocol: 'http:'
   }),
   bench: Object.freeze({
-    id: 'ku4by-8073',
-    name: 'KU4BY · KIWI 1',
-    place: 'Elizabeth City, North Carolina',
-    host: 'kiwisdr.ku4by.com:8073',
+    id: 'n0bqv-8073',
+    name: 'N0BQV',
+    place: 'Republic, Missouri',
+    host: 'n0bqv.proxy.kiwisdr.com:8073',
     protocol: 'http:'
   })
 });
