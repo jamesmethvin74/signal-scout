@@ -11,9 +11,8 @@
   const MAX_CENTER_KHZ = FULL_BAND_KHZ - HALF_SPAN_KHZ;
   const FOLLOW_LEFT = 0.20;
   const FOLLOW_RIGHT = 0.80;
-  const REST_LEFT = 0.36;
-  const REST_RIGHT = 0.64;
   const EPSILON_KHZ = 0.05;
+  const MIN_FOLLOW_PIXELS = 8;
 
   const knob = document.querySelector('#tuningKnob');
   const canvas = document.querySelector('#rfCanvas');
@@ -96,15 +95,6 @@
     const pointerId = nextPointerId();
 
     dispatchPointer('pointerdown', startX, pointerId, 1);
-
-    // The qualified dial intentionally requires a small drag before a surface
-    // gesture becomes a pan. Arm that state first when a very small center move
-    // is requested, then settle to the exact final delta before pointer-up.
-    if (Math.abs(finalDx) < 8) {
-      const direction = finalDx === 0 ? 1 : Math.sign(finalDx);
-      dispatchPointer('pointermove', startX + direction * 9, pointerId, 1);
-    }
-
     dispatchPointer('pointermove', endX, pointerId, 1);
     dispatchPointer('pointerup', endX, pointerId, 0);
     return true;
@@ -136,19 +126,28 @@
     if (!Number.isFinite(tuned) || !Number.isFinite(center)) return;
 
     const ratio = ratioFor(tuned, center);
-    let restRatio = null;
-    if (ratio > FOLLOW_RIGHT) restRatio = REST_RIGHT;
-    else if (ratio < FOLLOW_LEFT) restRatio = REST_LEFT;
+    let followRatio = null;
+    if (ratio > FOLLOW_RIGHT) followRatio = FOLLOW_RIGHT;
+    else if (ratio < FOLLOW_LEFT) followRatio = FOLLOW_LEFT;
     else return;
 
-    // Move only the viewport. A qualified surface pan moves both center and
-    // tuned frequency together, so immediately move the needle back to the
-    // original frequency. Net result: frequency keeps increasing/decreasing,
-    // while the RF world slides underneath and the needle returns to a useful
-    // on-screen position.
-    const desiredCenter = clampCenter(tuned - (restRatio - 0.5) * SPAN_KHZ);
+    // Edge-follow instead of recentering: once the needle reaches the soft edge,
+    // move the viewport only by the amount the needle has crossed that edge.
+    // The needle therefore stays near 20%/80% while the RF world glides beneath
+    // it, avoiding the large 15-20 kHz jumps of the original follow behavior.
+    const desiredCenter = clampCenter(tuned - (followRatio - 0.5) * SPAN_KHZ);
     const centerDelta = desiredCenter - center;
     if (Math.abs(centerDelta) < EPSILON_KHZ) return; // Actual receiver edge.
+
+    // The qualified dial intentionally ignores tiny surface drags. Accumulate
+    // sub-pixel/fine-step movement until it represents one real drag threshold,
+    // then apply that small delta. At a 1 kHz tuning step this is effectively
+    // continuous on a phone-sized scope instead of a visible chunked recenter.
+    const rect = canvas.getBoundingClientRect();
+    const minDeltaKHz = rect.width
+      ? (MIN_FOLLOW_PIXELS / rect.width) * SPAN_KHZ
+      : EPSILON_KHZ;
+    if (Math.abs(centerDelta) < Math.max(EPSILON_KHZ, minDeltaKHz)) return;
 
     recentering = true;
     try {
@@ -160,8 +159,8 @@
   }
 
   // Existing knob/fine-control handlers run first; this adapter follows their
-  // resulting tuned position and only recenters when the needle reaches a soft
-  // edge. Fine steps remain owned by the existing control adapter.
+  // resulting tuned position and only shifts the viewport after the needle
+  // reaches a soft edge. Fine steps remain owned by the existing control layer.
   knob.addEventListener('pointermove', autoFollow);
   knob.addEventListener('wheel', autoFollow, { passive: true });
   for (const button of fineButtons) button.addEventListener('click', autoFollow);
