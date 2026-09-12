@@ -5,8 +5,8 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // FREQBEACON Zero owns a completely separate transport namespace and client.
-    if (url.pathname.startsWith('/api/zero/')) {
+    // FREQBEACON Zero owns completely separate transport namespaces and clients.
+    if (url.pathname.startsWith('/api/zero/') || url.pathname.startsWith('/api/zero-bench/')) {
       return handleFreqbeaconZero(request);
     }
 
