@@ -6,6 +6,8 @@ const FIXED = Object.freeze({
   zoom: 10,
   fullBandwidthKHz: 30000,
   waterfallBins: 1024,
+  waterfallRowPx: 3,
+  waterfallSpeed: 4,
   audioProofFrames: 5,
   noFrameTimeoutMs: 7000,
   keepaliveMs: 15000
@@ -51,7 +53,9 @@ const state = {
   watchdogTimers: new Set(),
   uptimeTimer: null,
   startedAt: 0,
-  muted: false
+  muted: false,
+  rfFloor: -122,
+  rfCeiling: -62
 };
 
 const ctx = els.canvas.getContext('2d', { alpha: false });
@@ -158,29 +162,40 @@ function waterfallStart() {
   return Math.max(0, Math.min(totalBins - FIXED.waterfallBins, Math.round(raw)));
 }
 
-function colorForDb(db) {
-  const min = -125;
-  const max = -35;
-  const n = Math.max(0, Math.min(1, (db - min) / (max - min)));
+function updateRfRange(bins) {
+  const values = Array.from(bins, (value) => value - 255).sort((a, b) => a - b);
+  const floorSample = values[Math.floor(values.length * .22)] ?? -120;
+  const peakSample = values[Math.floor(values.length * .992)] ?? -70;
+  const targetFloor = Math.max(-145, Math.min(-85, floorSample - 3));
+  const targetCeiling = Math.max(targetFloor + 30, Math.min(-25, peakSample + 4));
 
-  if (n < .23) {
-    const t = n / .23;
-    return [2, Math.round(7 + 17 * t), Math.round(10 + 26 * t)];
+  state.rfFloor = state.rfFloor * .86 + targetFloor * .14;
+  state.rfCeiling = state.rfCeiling * .82 + targetCeiling * .18;
+
+  if (state.rfCeiling - state.rfFloor < 34) state.rfCeiling = state.rfFloor + 34;
+}
+
+function colorForDb(db) {
+  const n = Math.max(0, Math.min(1, (db - state.rfFloor) / (state.rfCeiling - state.rfFloor)));
+
+  if (n < .16) {
+    const t = n / .16;
+    return [2, Math.round(8 + 22 * t), Math.round(12 + 36 * t)];
   }
-  if (n < .52) {
-    const t = (n - .23) / .29;
-    return [Math.round(4 + 4 * t), Math.round(24 + 90 * t), Math.round(36 + 96 * t)];
+  if (n < .42) {
+    const t = (n - .16) / .26;
+    return [Math.round(3 + 5 * t), Math.round(30 + 92 * t), Math.round(48 + 100 * t)];
   }
-  if (n < .75) {
-    const t = (n - .52) / .23;
-    return [Math.round(8 + 54 * t), Math.round(114 + 117 * t), Math.round(132 + 92 * t)];
+  if (n < .68) {
+    const t = (n - .42) / .26;
+    return [Math.round(8 + 48 * t), Math.round(122 + 111 * t), Math.round(148 + 80 * t)];
   }
-  if (n < .90) {
-    const t = (n - .75) / .15;
-    return [Math.round(62 + 193 * t), Math.round(231 - 42 * t), Math.round(224 - 137 * t)];
+  if (n < .86) {
+    const t = (n - .68) / .18;
+    return [Math.round(56 + 199 * t), Math.round(233 - 38 * t), Math.round(228 - 128 * t)];
   }
-  const t = (n - .90) / .10;
-  return [255, Math.round(189 + 57 * t), Math.round(87 + 148 * t)];
+  const t = (n - .86) / .14;
+  return [255, Math.round(195 + 50 * t), Math.round(100 + 135 * t)];
 }
 
 function renderRf(bins) {
@@ -191,19 +206,22 @@ function renderRf(bins) {
   const scaleH = 42;
   const wfTop = scaleTop + scaleH;
   const wfH = h - wfTop;
+  const rowPx = FIXED.waterfallRowPx;
+
+  updateRfRange(bins);
 
   if (state.wfFrames > 1) {
-    ctx.drawImage(els.canvas, 0, wfTop, w, wfH - 2, 0, wfTop + 2, w, wfH - 2);
+    ctx.drawImage(els.canvas, 0, wfTop, w, wfH - rowPx, 0, wfTop + rowPx, w, wfH - rowPx);
   } else {
     ctx.fillStyle = '#020405';
     ctx.fillRect(0, wfTop, w, wfH);
   }
 
-  const row = ctx.createImageData(w, 2);
+  const row = ctx.createImageData(w, rowPx);
   for (let x = 0; x < w; x += 1) {
     const db = bins[x] - 255;
     const [r, g, b] = colorForDb(db);
-    for (let y = 0; y < 2; y += 1) {
+    for (let y = 0; y < rowPx; y += 1) {
       const p = (y * w + x) * 4;
       row.data[p] = r;
       row.data[p + 1] = g;
@@ -232,9 +250,10 @@ function renderRf(bins) {
   }
 
   ctx.beginPath();
+  const range = Math.max(34, state.rfCeiling - state.rfFloor);
   for (let x = 0; x < w; x += 1) {
     const db = bins[x] - 255;
-    const n = Math.max(0, Math.min(1, (db + 125) / 90));
+    const n = Math.max(0, Math.min(1, (db - state.rfFloor) / range));
     const y = spectrumH - 8 - n * (spectrumH - 18);
     if (x === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
@@ -392,7 +411,7 @@ function configureWf() {
   send(state.wf, 'SET wf_comp=0');
   send(state.wf, 'SET interp=13');
   send(state.wf, 'SET window_func=2');
-  send(state.wf, 'SET wf_speed=3');
+  send(state.wf, `SET wf_speed=${FIXED.waterfallSpeed}`);
 }
 
 function socketUrl(stream) {
@@ -582,6 +601,8 @@ function resetCounters() {
   state.rfProven = false;
   state.sndConfigured = false;
   state.wfConfigured = false;
+  state.rfFloor = -122;
+  state.rfCeiling = -62;
   els.sndFrames.textContent = '0';
   els.wfFrames.textContent = '0';
   els.uptime.textContent = '00:00';
