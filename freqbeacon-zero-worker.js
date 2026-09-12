@@ -6,7 +6,7 @@ const RECEIVER = Object.freeze({
   protocol: 'http:'
 });
 
-const VERSION = 'zero-cleanroom-1';
+const VERSION = 'zero-cleanroom-2';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -23,20 +23,37 @@ function upstreamBase() {
   return `${RECEIVER.protocol}//${RECEIVER.host}`;
 }
 
+function parseStatusPairs(text) {
+  const pairs = {};
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const eq = line.indexOf('=');
+    if (eq < 1) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim();
+    if (key) pairs[key] = value;
+  }
+  return pairs;
+}
+
+async function fetchUpstreamText(path, accept = 'text/plain') {
+  const response = await fetch(`${upstreamBase()}${path}`, {
+    headers: {
+      accept,
+      'user-agent': 'FREQBEACON-ZERO/cleanroom'
+    }
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${path} FAILED (${response.status})`);
+  }
+  return text;
+}
+
 async function bootstrap() {
   try {
-    const response = await fetch(`${upstreamBase()}/VER`, {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'FREQBEACON-ZERO/cleanroom'
-      }
-    });
-
-    if (!response.ok) {
-      return json({ ok: false, error: `RECEIVER VER FAILED (${response.status})` }, 502);
-    }
-
-    const text = await response.text();
+    const text = await fetchUpstreamText('/VER', 'application/json');
     let version;
     try {
       version = JSON.parse(text);
@@ -66,6 +83,44 @@ async function bootstrap() {
     return json({
       ok: false,
       error: `RECEIVER VER FAILED: ${error?.message || 'network error'}`
+    }, 502);
+  }
+}
+
+async function receiverDiagnostics() {
+  try {
+    const [versionText, statusText] = await Promise.all([
+      fetchUpstreamText('/VER', 'application/json'),
+      fetchUpstreamText('/status', 'text/plain')
+    ]);
+
+    let version = null;
+    try {
+      version = JSON.parse(versionText);
+    } catch {
+      // Keep the status payload usable even if VER format changes.
+    }
+
+    return json({
+      ok: true,
+      observedAt: new Date().toISOString(),
+      receiver: {
+        id: RECEIVER.id,
+        name: RECEIVER.name,
+        place: RECEIVER.place,
+        host: RECEIVER.host
+      },
+      kiwi: {
+        major: Number.isFinite(Number(version?.maj)) ? Number(version.maj) : null,
+        minor: Number.isFinite(Number(version?.min)) ? Number(version.min) : null,
+        sessionTs: version?.ts != null ? String(version.ts) : null
+      },
+      status: parseStatusPairs(statusText)
+    });
+  } catch (error) {
+    return json({
+      ok: false,
+      error: `RECEIVER DIAGNOSTICS FAILED: ${error?.message || 'network error'}`
     }, 502);
   }
 }
@@ -113,6 +168,10 @@ export async function handleFreqbeaconZero(request) {
 
   if (request.method === 'GET' && url.pathname === '/api/zero/bootstrap') {
     return bootstrap();
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/zero/diagnostics') {
+    return receiverDiagnostics();
   }
 
   if (url.pathname === '/api/zero/ws') {
