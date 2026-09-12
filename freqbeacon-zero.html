@@ -31,7 +31,7 @@
       </div>
       <div class="readout-foot">
         <span class="mode">AM</span>
-        <span>TAP OR DRAG RF TO TUNE</span>
+        <span>DRAG NEEDLE · DRAG RF · TAP PEAK</span>
         <span id="kiwiVersion">KIWI · —</span>
       </div>
     </section>
@@ -44,7 +44,7 @@
       </div>
 
       <div class="scope">
-        <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Tap or drag horizontally to tune."></canvas>
+        <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Drag the tuning needle, drag the RF display beneath it, or tap a signal peak to tune."></canvas>
         <div class="tune-cursor" aria-hidden="true"><span></span></div>
         <div id="scopeMessage" class="scope-message">
           <strong>RF OFF</strong>
@@ -81,6 +81,7 @@
     <footer class="bench-note">ONE RECEIVER · ONE SESSION · LIVE TUNING · NO FAILOVER</footer>
   </main>
 
-  <script type="module" src="/freqbeacon-zero.js?v=5"></script>
+  <script type="module" src="/freqbeacon-zero.js?v=6"></script>
+  <script type="module" src="/freqbeacon-zero-dial.js?v=1"></script>
 </body>
 </html>
