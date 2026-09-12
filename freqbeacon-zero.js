@@ -7,7 +7,7 @@ const FIXED = Object.freeze({
   fullBandwidthKHz: 30000,
   waterfallBins: 1024,
   waterfallRowPx: 1,
-  waterfallSpeed: 23,
+  waterfallSpeed: -1,
   spectrumAlpha: 0.16,
   spectrumRadius: 2,
   tuneStepKHz: 1,
