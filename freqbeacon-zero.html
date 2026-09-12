@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/freqbeacon-zero.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-zero-tuning.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-zero-shell.css?v=1">
-  <link rel="stylesheet" href="/freqbeacon-zero-ux-fix.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-ux-fix.css?v=2">
 </head>
 <body>
   <main class="radio zero-radio" aria-label="FREQBEACON Zero radio instrument">
@@ -41,13 +41,13 @@
 
     <section class="scope-shell zero-scope-shell" aria-label="RF spectrum and waterfall">
       <div class="scope">
-        <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Drag the tuning needle, drag the RF display beneath it, or tap a signal peak to tune."></canvas>
+        <canvas id="rfCanvas" width="1024" height="640" aria-label="Live RF spectrum and waterfall. Drag the tuning needle, drag the RF display beneath it, or tap a signal peak to tune."></canvas>
         <div class="tune-cursor" aria-hidden="true"><span></span></div>
         <div id="scopeMessage" class="scope-message">
           <strong>RF OFF</strong>
           <span>Start the receiver to open one live Kiwi session.</span>
         </div>
-        <button id="scopeStartButton" class="scope-start-button" type="button">START RECEIVER</button>
+        <button id="scopeStartButton" class="scope-start-button" type="button">START</button>
       </div>
       <div class="engine-scale-bridge" aria-hidden="true">
         <span id="leftEdge">0.501 MHz</span>
@@ -154,7 +154,7 @@
   </main>
 
   <script src="/freqbeacon-zero-controls.js?v=1"></script>
-  <script src="/freqbeacon-zero-ux-fix.js?v=1"></script>
+  <script src="/freqbeacon-zero-ux-fix.js?v=2"></script>
   <script type="module" src="/freqbeacon-zero.js?v=6"></script>
   <script type="module" src="/freqbeacon-zero-dial.js?v=1"></script>
   <script type="module" src="/freqbeacon-zero-spectrum-motion.js?v=1"></script>

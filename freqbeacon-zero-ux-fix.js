@@ -4,7 +4,7 @@
   const display = document.querySelector('#frequencyDisplay');
   const unit = document.querySelector('#frequencyUnit');
   const power = document.querySelector('#power');
-  const scopeStart = document.querySelector('#scopeStartButton');
+  const scopePower = document.querySelector('#scopeStartButton');
 
   function normalizeFrequencyReadout() {
     if (!display || !unit) return;
@@ -33,24 +33,32 @@
     normalizeFrequencyReadout();
   }
 
-  function syncScopeStart() {
-    if (!scopeStart || !power) return;
+  function syncScopePower() {
+    if (!scopePower || !power) return;
     const running = power.getAttribute('aria-pressed') === 'true';
-    scopeStart.hidden = running;
-    scopeStart.disabled = power.disabled;
+    const busy = power.disabled;
+
+    scopePower.hidden = false;
+    scopePower.disabled = busy;
+    scopePower.classList.toggle('is-running', running);
+    scopePower.textContent = busy && running ? 'STARTING' : running ? 'STOP' : 'START';
+    scopePower.setAttribute(
+      'aria-label',
+      busy && running ? 'Receiver starting' : running ? 'Stop receiver' : 'Start receiver'
+    );
   }
 
-  scopeStart?.addEventListener('click', () => {
+  scopePower?.addEventListener('click', () => {
     if (!power || power.disabled) return;
     power.click();
   });
 
   if (power) {
-    new MutationObserver(syncScopeStart).observe(power, {
+    new MutationObserver(syncScopePower).observe(power, {
       attributes: true,
       attributeFilter: ['aria-pressed', 'disabled']
     });
   }
 
-  syncScopeStart();
+  syncScopePower();
 })();

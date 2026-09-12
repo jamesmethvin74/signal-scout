@@ -2,46 +2,248 @@
   position: absolute;
   z-index: 6;
   left: 50%;
-  top: 64%;
+  top: 62%;
   transform: translate(-50%, -50%);
-  min-width: 176px;
-  min-height: 46px;
-  padding: 0 18px;
-  border: 1px solid rgba(86, 220, 214, .44);
-  border-radius: 7px;
+  min-width: 138px;
+  min-height: 38px;
+  padding: 0 15px;
+  border: 1px solid rgba(86, 220, 214, .42);
+  border-radius: 6px;
   color: #c9fffb;
   background:
-    linear-gradient(180deg, rgba(111, 246, 239, .16), rgba(40, 145, 151, .10) 45%, rgba(3, 21, 25, .76)),
+    linear-gradient(180deg, rgba(111, 246, 239, .15), rgba(40, 145, 151, .08) 45%, rgba(3, 21, 25, .78)),
     #132328;
   box-shadow:
-    inset 0 1px rgba(255,255,255,.12),
-    inset 0 -1px rgba(0,0,0,.65),
-    0 5px 14px rgba(0,0,0,.34),
-    0 0 14px rgba(57, 213, 208, .10);
-  font-size: 13px;
+    inset 0 1px rgba(255,255,255,.11),
+    inset 0 -1px rgba(0,0,0,.68),
+    0 4px 11px rgba(0,0,0,.32),
+    0 0 12px rgba(57, 213, 208, .08);
+  font-size: 11px;
   font-weight: 720;
   letter-spacing: .08em;
-  text-shadow: 0 0 9px rgba(95, 237, 229, .24);
+  text-shadow: 0 0 8px rgba(95, 237, 229, .22);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .scope-start-button:active {
   transform: translate(-50%, -48%);
-  box-shadow:
-    inset 0 2px 5px rgba(0,0,0,.45),
-    0 2px 7px rgba(0,0,0,.28);
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.45), 0 2px 7px rgba(0,0,0,.28);
 }
 
-.scope-start-button[hidden] {
-  display: none !important;
+.scope-start-button.is-running {
+  left: auto;
+  right: 7px;
+  top: 7px;
+  transform: none;
+  min-width: 58px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: rgba(245,189,105,.35);
+  color: #e7c88f;
+  background: linear-gradient(180deg, rgba(245,189,105,.11), rgba(0,0,0,.15)), #172024;
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 2px 7px rgba(0,0,0,.30);
+  font-size: 9px;
 }
 
-@media (max-width: 480px) {
-  .scope-start-button {
-    top: 68%;
-    min-width: 168px;
-    min-height: 44px;
-    font-size: 12px;
+.scope-start-button.is-running:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 600px) {
+  html, body { overflow-x: hidden; }
+
+  .zero-radio {
+    width: 100%;
+    min-height: 100svh;
+    padding: 3px 6px max(3px, env(safe-area-inset-bottom));
   }
+
+  .zero-header {
+    min-height: 34px;
+    gap: 0;
+    padding: 1px 8px 0;
+  }
+
+  .zero-brandline { gap: 5px; }
+  .zero-brandline strong { font-size: clamp(13px, 4.1vw, 16px); }
+  .zero-brandline small { font-size: clamp(8px, 2.35vw, 10px); letter-spacing: .035em; }
+  .zero-tagline { font-size: clamp(10px, 2.9vw, 12px); line-height: 1.05; }
+
+  .zero-readout {
+    min-height: 56px;
+    padding: 0 5px 1px;
+  }
+
+  .zero-frequency { gap: 5px; }
+  .zero-frequency span {
+    font-size: clamp(42px, 14.8vw, 56px);
+    line-height: .9;
+    letter-spacing: -.04em;
+  }
+  .zero-frequency em { font-size: clamp(15px, 4.7vw, 19px); }
+
+  .mode-bar {
+    width: min(96%, 520px);
+    margin-bottom: 3px;
+  }
+  .mode-bar button {
+    min-height: 32px;
+    font-size: clamp(10px, 3vw, 13px);
+  }
+
+  .zero-scope-shell { margin-inline: -6px; }
+  .zero-scope-shell #rfCanvas {
+    aspect-ratio: 1024 / 640;
+    width: 100%;
+    height: auto;
+  }
+  .zero-scope-shell .scope-message {
+    gap: 5px;
+    padding: 14px;
+  }
+  .zero-scope-shell .scope-message strong { font-size: 11px; }
+  .zero-scope-shell .scope-message span { font-size: 10px; }
+
+  .scope-start-button {
+    top: 64%;
+    min-width: 132px;
+    min-height: 36px;
+    font-size: 10px;
+  }
+  .scope-start-button.is-running {
+    top: 6px;
+    right: 6px;
+    min-width: 54px;
+    min-height: 26px;
+    font-size: 8px;
+  }
+
+  .band-explorer {
+    margin: 0;
+    padding: 2px 4px 4px;
+    border-radius: 0 0 7px 7px;
+  }
+  .deck-title {
+    height: 18px;
+    font-size: 10px;
+  }
+  .band-rail {
+    grid-template-rows: repeat(2, 24px);
+    gap: 1px 0;
+    padding: 3px 6px;
+    border-radius: 6px;
+  }
+  .band-rail button {
+    min-height: 23px;
+    padding: 0 8px;
+    font-size: 9px;
+    border-radius: 3px;
+  }
+
+  .hardware-deck {
+    margin-top: 3px;
+    padding: 3px 5px 4px;
+    border-radius: 8px;
+  }
+
+  .tuning-zone {
+    min-height: 110px;
+    grid-template-columns: 32px minmax(104px, 1fr) minmax(72px, .72fr);
+    gap: 2px;
+  }
+  .tuning-caption { margin-right: 0; font-size: 8px; }
+  .tuning-knob { width: clamp(108px, 31.5vw, 124px); }
+  .knob-marker { height: 8px; }
+  .fine-tune { max-width: 82px; gap: 4px; }
+  .fine-tune > span { font-size: 8px; }
+  .fine-buttons { gap: 3px; }
+  .fine-buttons button {
+    min-height: 30px;
+    border-radius: 6px;
+    font-size: 21px;
+  }
+  .step-button {
+    min-height: 34px;
+    border-radius: 17px;
+  }
+  .step-button b { font-size: 11px; }
+  .step-button small { font-size: 6px; }
+
+  .meter-row {
+    grid-template-columns: minmax(118px, 1.5fr) minmax(82px, .88fr) 44px;
+    gap: 4px;
+    min-height: 48px;
+    margin: 0 2px 4px;
+  }
+  .analog-meter { padding: 3px; border-radius: 5px; }
+  .meter-scale { inset: 6px 6px auto; font-size: 6px; }
+  .dbm-readout {
+    border-radius: 5px;
+    font-size: clamp(18px, 5.5vw, 23px);
+  }
+  .adv-button { border-radius: 5px; font-size: 9px; }
+
+  .lower-controls {
+    grid-template-columns: minmax(92px, 1.45fr) 48px minmax(76px, .9fr) 45px;
+    gap: 4px;
+    padding: 2px 2px 0;
+  }
+  .control-block { gap: 2px; }
+  .control-block > span { font-size: 7px; }
+  .hardware-slider { height: 24px; }
+  .hardware-slider::before,
+  .hardware-slider i { top: 11px; height: 3px; }
+  .hardware-slider b {
+    top: 3px;
+    width: 19px;
+    height: 19px;
+    margin-left: -9px;
+  }
+  .hardware-button.mute {
+    min-height: 32px;
+    border-radius: 6px;
+    font-size: 8px;
+  }
+  .agc-switch {
+    min-height: 32px;
+    grid-template-columns: 21px 1fr auto;
+    gap: 3px;
+  }
+  .agc-switch i { width: 21px; height: 21px; }
+  .agc-switch b { font-size: 7px; }
+  .agc-switch small { font-size: 6px; }
+  .mini-knob { width: 30px; height: 30px; }
+  .mini-knob i { top: 4px; height: 6px; }
+
+  .receiver-strip {
+    margin-top: 3px;
+    padding: 2px 6px 1px;
+    border-radius: 7px;
+  }
+  .receiver-line {
+    min-height: 15px;
+    font-size: 7px;
+    gap: 4px;
+  }
+  .receiver-actions { min-height: 25px; gap: 5px; }
+  .receiver-strip .scope-status {
+    min-height: 22px;
+    justify-content: center;
+    gap: 9px;
+    font-size: 7px;
+  }
+  .receiver-strip .power { display: none; }
+}
+
+@media (max-width: 370px) {
+  .zero-header { min-height: 32px; }
+  .zero-readout { min-height: 52px; }
+  .zero-frequency span { font-size: 40px; }
+  .mode-bar button { min-height: 30px; font-size: 9px; }
+  .tuning-zone { min-height: 104px; grid-template-columns: 28px minmax(100px, 1fr) 68px; }
+  .tuning-knob { width: 104px; }
+  .tuning-caption { writing-mode: horizontal-tb; transform: none; font-size: 7px; }
+  .meter-row { grid-template-columns: minmax(108px, 1.45fr) minmax(75px, .86fr) 40px; }
+  .lower-controls { grid-template-columns: minmax(84px, 1.4fr) 44px minmax(70px, .88fr) 40px; }
 }
