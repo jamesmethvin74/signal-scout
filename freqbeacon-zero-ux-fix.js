@@ -6,15 +6,13 @@
   const power = document.querySelector('#power');
   const scopeStart = document.querySelector('#scopeStartButton');
 
-  function parseDisplayedHz() {
-    const raw = String(display?.textContent || '').replace(/[^0-9.-]/g, '');
-    const value = Number(raw);
-    return Number.isFinite(value) ? value : NaN;
-  }
-
   function normalizeFrequencyReadout() {
     if (!display || !unit) return;
-    const hz = parseDisplayedHz();
+
+    const raw = String(display.textContent || '').trim();
+    if (!raw.includes(',')) return;
+
+    const hz = Number(raw.replace(/,/g, ''));
     if (!Number.isFinite(hz)) return;
 
     if (hz < 1_000_000) {
@@ -26,15 +24,12 @@
     }
   }
 
-  let normalizing = false;
   if (display) {
-    const observer = new MutationObserver(() => {
-      if (normalizing) return;
-      normalizing = true;
-      normalizeFrequencyReadout();
-      normalizing = false;
+    new MutationObserver(normalizeFrequencyReadout).observe(display, {
+      childList: true,
+      characterData: true,
+      subtree: true
     });
-    observer.observe(display, { childList: true, characterData: true, subtree: true });
     normalizeFrequencyReadout();
   }
 
