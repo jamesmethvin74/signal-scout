@@ -268,6 +268,12 @@ function smoothSpectrum(bins) {
   return state.spectrumDb;
 }
 
+function shapeSpectrumLevel(n) {
+  const knee = 0.68;
+  if (n >= knee) return n;
+  return knee * Math.pow(n / knee, 1.65);
+}
+
 function renderRf(bins) {
   const w = els.canvas.width;
   const h = els.canvas.height;
@@ -325,7 +331,8 @@ function renderRf(bins) {
   for (let x = 0; x < w; x += 1) {
     const db = spectrum[x];
     const n = Math.max(0, Math.min(1, (db - state.rfFloor) / range));
-    points[x] = spectrumH - 10 - n * (spectrumH - 24);
+    const shaped = shapeSpectrumLevel(n);
+    points[x] = spectrumH - 10 - shaped * (spectrumH - 24);
   }
 
   const fill = ctx.createLinearGradient(0, 16, 0, spectrumH);
