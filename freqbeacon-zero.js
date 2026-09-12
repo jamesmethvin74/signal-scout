@@ -1,13 +1,16 @@
 const FIXED = Object.freeze({
-  frequencyKHz: 5000,
+  initialFrequencyKHz: 5000,
   mode: 'am',
   lowCut: -5000,
   highCut: 5000,
-  zoom: 10,
+  zoom: 8,
   fullBandwidthKHz: 30000,
   waterfallBins: 1024,
-  waterfallRowPx: 3,
-  waterfallSpeed: 4,
+  waterfallRowPx: 1,
+  waterfallSpeed: 23,
+  spectrumAlpha: 0.16,
+  spectrumRadius: 2,
+  tuneStepKHz: 1,
   audioProofFrames: 5,
   noFrameTimeoutMs: 7000,
   keepaliveMs: 15000
@@ -17,18 +20,21 @@ const els = {
   power: document.querySelector('#power'),
   mute: document.querySelector('#mute'),
   canvas: document.querySelector('#rfCanvas'),
+  cursor: document.querySelector('.tune-cursor'),
   message: document.querySelector('#scopeMessage'),
   sndLamp: document.querySelector('#sndLamp'),
   wfLamp: document.querySelector('#wfLamp'),
   sessionLabel: document.querySelector('#sessionLabel'),
   receiverIdentity: document.querySelector('#receiverIdentity'),
   kiwiVersion: document.querySelector('#kiwiVersion'),
+  frequencyValue: document.querySelector('#frequencyValue'),
   signalValue: document.querySelector('#signalValue'),
   signalBar: document.querySelector('#signalBar'),
   sndFrames: document.querySelector('#sndFrames'),
   wfFrames: document.querySelector('#wfFrames'),
   uptime: document.querySelector('#uptime'),
   leftEdge: document.querySelector('#leftEdge'),
+  centerMark: document.querySelector('#centerMark'),
   rightEdge: document.querySelector('#rightEdge')
 };
 
@@ -55,7 +61,13 @@ const state = {
   startedAt: 0,
   muted: false,
   rfFloor: -122,
-  rfCeiling: -62
+  rfCeiling: -62,
+  tunedKHz: FIXED.initialFrequencyKHz,
+  viewportCenterKHz: FIXED.initialFrequencyKHz,
+  spectrumDb: null,
+  spectrumScratch: null,
+  pointerId: null,
+  lastTuneAt: 0
 };
 
 const ctx = els.canvas.getContext('2d', { alpha: false });
@@ -68,10 +80,24 @@ function visibleSpanKHz() {
   return FIXED.fullBandwidthKHz / (2 ** FIXED.zoom);
 }
 
-function updateEdges() {
+function viewportEdges() {
   const half = visibleSpanKHz() / 2;
-  els.leftEdge.textContent = formatMHz(FIXED.frequencyKHz - half);
-  els.rightEdge.textContent = formatMHz(FIXED.frequencyKHz + half);
+  return {
+    left: state.viewportCenterKHz - half,
+    right: state.viewportCenterKHz + half
+  };
+}
+
+function updateTuningUi() {
+  const { left, right } = viewportEdges();
+  els.leftEdge.textContent = formatMHz(left);
+  els.rightEdge.textContent = formatMHz(right);
+  els.centerMark.textContent = `VIEW ${state.viewportCenterKHz.toFixed(3)} kHz`;
+  els.frequencyValue.textContent = (state.tunedKHz / 1000).toFixed(3);
+  els.frequencyValue.parentElement?.setAttribute('aria-label', `${state.tunedKHz.toFixed(3)} kilohertz`);
+
+  const pct = ((state.tunedKHz - left) / (right - left)) * 100;
+  els.cursor.style.left = `${Math.max(0, Math.min(100, pct))}%`;
 }
 
 function setLamp(el, live) {
@@ -98,13 +124,13 @@ function escapeHtml(value) {
 function drawIdleScope() {
   const w = els.canvas.width;
   const h = els.canvas.height;
-  ctx.fillStyle = '#020405';
-  ctx.fillRect(0, 0, w, h);
-
   const spectrumH = 176;
   const scaleTop = 176;
   const scaleH = 42;
   const wfTop = scaleTop + scaleH;
+
+  ctx.fillStyle = '#020405';
+  ctx.fillRect(0, 0, w, h);
 
   ctx.strokeStyle = 'rgba(93, 137, 150, .16)';
   ctx.lineWidth = 1;
@@ -131,7 +157,7 @@ function drawIdleScope() {
 function drawFrequencyScale(top, height) {
   const w = els.canvas.width;
   const span = visibleSpanKHz();
-  const left = FIXED.frequencyKHz - span / 2;
+  const { left } = viewportEdges();
 
   ctx.fillStyle = '#060a0c';
   ctx.fillRect(0, top, w, height);
@@ -158,20 +184,19 @@ function drawFrequencyScale(top, height) {
 
 function waterfallStart() {
   const totalBins = FIXED.waterfallBins * (2 ** FIXED.zoom);
-  const raw = (FIXED.frequencyKHz / FIXED.fullBandwidthKHz) * totalBins - FIXED.waterfallBins / 2;
+  const raw = (state.viewportCenterKHz / FIXED.fullBandwidthKHz) * totalBins - FIXED.waterfallBins / 2;
   return Math.max(0, Math.min(totalBins - FIXED.waterfallBins, Math.round(raw)));
 }
 
 function updateRfRange(bins) {
   const values = Array.from(bins, (value) => value - 255).sort((a, b) => a - b);
   const floorSample = values[Math.floor(values.length * .22)] ?? -120;
-  const peakSample = values[Math.floor(values.length * .992)] ?? -70;
+  const peakSample = values[Math.floor(values.length * .995)] ?? -70;
   const targetFloor = Math.max(-145, Math.min(-85, floorSample - 3));
   const targetCeiling = Math.max(targetFloor + 30, Math.min(-25, peakSample + 4));
 
-  state.rfFloor = state.rfFloor * .86 + targetFloor * .14;
-  state.rfCeiling = state.rfCeiling * .82 + targetCeiling * .18;
-
+  state.rfFloor = state.rfFloor * .90 + targetFloor * .10;
+  state.rfCeiling = state.rfCeiling * .88 + targetCeiling * .12;
   if (state.rfCeiling - state.rfFloor < 34) state.rfCeiling = state.rfFloor + 34;
 }
 
@@ -198,6 +223,31 @@ function colorForDb(db) {
   return [255, Math.round(195 + 50 * t), Math.round(100 + 135 * t)];
 }
 
+function smoothSpectrum(bins) {
+  if (!state.spectrumDb || state.spectrumDb.length !== bins.length) {
+    state.spectrumDb = new Float32Array(bins.length);
+    state.spectrumScratch = new Float32Array(bins.length);
+    for (let i = 0; i < bins.length; i += 1) state.spectrumDb[i] = bins[i] - 255;
+  }
+
+  const radius = FIXED.spectrumRadius;
+  for (let i = 0; i < bins.length; i += 1) {
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - radius); j <= Math.min(bins.length - 1, i + radius); j += 1) {
+      sum += bins[j] - 255;
+      count += 1;
+    }
+    state.spectrumScratch[i] = sum / count;
+  }
+
+  const alpha = FIXED.spectrumAlpha;
+  for (let i = 0; i < bins.length; i += 1) {
+    state.spectrumDb[i] += (state.spectrumScratch[i] - state.spectrumDb[i]) * alpha;
+  }
+  return state.spectrumDb;
+}
+
 function renderRf(bins) {
   const w = els.canvas.width;
   const h = els.canvas.height;
@@ -209,6 +259,7 @@ function renderRf(bins) {
   const rowPx = FIXED.waterfallRowPx;
 
   updateRfRange(bins);
+  const spectrum = smoothSpectrum(bins);
 
   if (state.wfFrames > 1) {
     ctx.drawImage(els.canvas, 0, wfTop, w, wfH - rowPx, 0, wfTop + rowPx, w, wfH - rowPx);
@@ -252,7 +303,7 @@ function renderRf(bins) {
   ctx.beginPath();
   const range = Math.max(34, state.rfCeiling - state.rfFloor);
   for (let x = 0; x < w; x += 1) {
-    const db = bins[x] - 255;
+    const db = spectrum[x];
     const n = Math.max(0, Math.min(1, (db - state.rfFloor) / range));
     const y = spectrumH - 8 - n * (spectrumH - 18);
     if (x === 0) ctx.moveTo(x, y);
@@ -386,6 +437,11 @@ function handleCommonMessage(text, streamName) {
   return true;
 }
 
+function sendTune() {
+  if (!state.snd || state.snd.readyState !== WebSocket.OPEN) return;
+  send(state.snd, `SET mod=${FIXED.mode} low_cut=${FIXED.lowCut} high_cut=${FIXED.highCut} freq=${state.tunedKHz.toFixed(3)}`);
+}
+
 function configureSnd() {
   if (state.sndConfigured || !state.snd) return;
   state.sndConfigured = true;
@@ -393,7 +449,7 @@ function configureSnd() {
   send(state.snd, 'SERVER DE CLIENT FREQBEACON-ZERO SND');
   send(state.snd, 'SET ident_user=FREQBEACON ZERO');
   send(state.snd, `SET AR OK in=${Math.round(state.audioSampleRate)} out=${Math.round(state.audioContext.sampleRate)}`);
-  send(state.snd, `SET mod=${FIXED.mode} low_cut=${FIXED.lowCut} high_cut=${FIXED.highCut} freq=${FIXED.frequencyKHz.toFixed(3)}`);
+  sendTune();
   send(state.snd, 'SET agc=1 hang=0 thresh=-100 slope=6 decay=1000 manGain=50');
   send(state.snd, 'SET compression=0');
   send(state.snd, 'SET squelch=0 max=0');
@@ -488,9 +544,7 @@ function openSnd(generation) {
         setLamp(els.sndLamp, true);
       }
 
-      if (state.sndFrames >= FIXED.audioProofFrames && !state.wf) {
-        openWf(generation);
-      }
+      if (state.sndFrames >= FIXED.audioProofFrames && !state.wf) openWf(generation);
 
       if (!settled && state.sndFrames >= FIXED.audioProofFrames) {
         settled = true;
@@ -521,7 +575,6 @@ function openWf(generation) {
   const socket = new WebSocket(socketUrl('W/F'));
   socket.binaryType = 'arraybuffer';
   state.wf = socket;
-
   let frameWatchdog = null;
 
   socket.onopen = () => {
@@ -545,7 +598,6 @@ function openWf(generation) {
 
     if (tag !== 'W/F' || bytes.length < 16 + FIXED.waterfallBins) return;
 
-    // Current Kiwi uncompressed W/F packets carry a 16-byte header followed by 1024 dB bins.
     const bins = bytes.subarray(16, 16 + FIXED.waterfallBins);
     state.wfFrames += 1;
     els.wfFrames.textContent = String(state.wfFrames);
@@ -603,6 +655,11 @@ function resetCounters() {
   state.wfConfigured = false;
   state.rfFloor = -122;
   state.rfCeiling = -62;
+  state.tunedKHz = FIXED.initialFrequencyKHz;
+  state.viewportCenterKHz = FIXED.initialFrequencyKHz;
+  state.spectrumDb = null;
+  state.spectrumScratch = null;
+  state.pointerId = null;
   els.sndFrames.textContent = '0';
   els.wfFrames.textContent = '0';
   els.uptime.textContent = '00:00';
@@ -610,6 +667,7 @@ function resetCounters() {
   els.signalBar.style.width = '0';
   setLamp(els.sndLamp, false);
   setLamp(els.wfLamp, false);
+  updateTuningUi();
 }
 
 function startUptime() {
@@ -620,6 +678,33 @@ function startUptime() {
     const seconds = (total % 60).toString().padStart(2, '0');
     els.uptime.textContent = `${minutes}:${seconds}`;
   }, 1000);
+}
+
+function frequencyFromPointer(event) {
+  const rect = els.canvas.getBoundingClientRect();
+  if (!rect.width) return state.tunedKHz;
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const { left, right } = viewportEdges();
+  return left + ratio * (right - left);
+}
+
+function tuneTo(rawKHz) {
+  if (!state.audioProven || !state.snd || state.snd.readyState !== WebSocket.OPEN) return;
+  const { left, right } = viewportEdges();
+  const clamped = Math.max(left, Math.min(right, rawKHz));
+  const snapped = Math.round(clamped / FIXED.tuneStepKHz) * FIXED.tuneStepKHz;
+  if (Math.abs(snapped - state.tunedKHz) < 0.0005) return;
+
+  state.tunedKHz = snapped;
+  updateTuningUi();
+  sendTune();
+}
+
+function tuneFromPointer(event, force = false) {
+  const now = performance.now();
+  if (!force && now - state.lastTuneAt < 40) return;
+  state.lastTuneAt = now;
+  tuneTo(frequencyFromPointer(event));
 }
 
 async function start() {
@@ -688,6 +773,7 @@ async function stop({ preserveMessage = false } = {}) {
   state.gain = null;
   state.sessionTs = null;
   state.starting = false;
+  state.pointerId = null;
   els.power.disabled = false;
   els.power.setAttribute('aria-pressed', 'false');
   els.power.querySelector('span').textContent = 'START';
@@ -708,11 +794,8 @@ async function fatalStop(title, detail) {
 }
 
 els.power.addEventListener('click', () => {
-  if (els.power.getAttribute('aria-pressed') === 'true' && !state.starting) {
-    stop();
-  } else if (!state.starting) {
-    start();
-  }
+  if (els.power.getAttribute('aria-pressed') === 'true' && !state.starting) stop();
+  else if (!state.starting) start();
 });
 
 els.mute.addEventListener('click', () => {
@@ -722,11 +805,38 @@ els.mute.addEventListener('click', () => {
   if (state.gain) state.gain.gain.value = state.muted ? 0 : .82;
 });
 
+els.canvas.addEventListener('pointerdown', (event) => {
+  if (!state.audioProven) return;
+  event.preventDefault();
+  state.pointerId = event.pointerId;
+  try { els.canvas.setPointerCapture(event.pointerId); } catch {}
+  tuneFromPointer(event, true);
+});
+
+els.canvas.addEventListener('pointermove', (event) => {
+  if (state.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  tuneFromPointer(event);
+});
+
+function endPointer(event) {
+  if (state.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  tuneFromPointer(event, true);
+  try { els.canvas.releasePointerCapture(event.pointerId); } catch {}
+  state.pointerId = null;
+}
+
+els.canvas.addEventListener('pointerup', endPointer);
+els.canvas.addEventListener('pointercancel', (event) => {
+  if (state.pointerId === event.pointerId) state.pointerId = null;
+});
+
 window.addEventListener('pagehide', () => {
   state.stopping = true;
   clearTimers();
   closeSockets();
 });
 
-updateEdges();
+updateTuningUi();
 drawIdleScope();
