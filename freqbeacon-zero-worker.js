@@ -7,11 +7,12 @@ const RECEIVERS = Object.freeze({
     protocol: 'http:'
   }),
   bench: Object.freeze({
-    id: 'n0bqv-8073',
-    name: 'N0BQV',
-    place: 'Republic, Missouri',
-    host: 'n0bqv.proxy.kiwisdr.com:8073',
-    protocol: 'http:'
+    id: 'n2yo-8073',
+    name: 'N2YO',
+    place: 'Chantilly, Virginia',
+    host: 'kiwisdr.n2yo.net:8073',
+    protocol: 'http:',
+    requiredMode: 'rx4.wf4'
   })
 });
 
@@ -62,10 +63,16 @@ async function fetchUpstreamText(receiver, path, accept = 'text/plain') {
 
 async function bootstrap(receiver) {
   try {
-    const text = await fetchUpstreamText(receiver, '/VER', 'application/json');
+    const [versionText, statusText] = receiver.requiredMode
+      ? await Promise.all([
+          fetchUpstreamText(receiver, '/VER', 'application/json'),
+          fetchUpstreamText(receiver, '/status', 'text/plain')
+        ])
+      : [await fetchUpstreamText(receiver, '/VER', 'application/json'), null];
+
     let version;
     try {
-      version = JSON.parse(text);
+      version = JSON.parse(versionText);
     } catch {
       return json({ ok: false, error: 'RECEIVER VER INVALID' }, 502);
     }
@@ -73,6 +80,27 @@ async function bootstrap(receiver) {
     const sessionTs = String(version?.ts ?? '');
     if (!/^\d{8,20}$/.test(sessionTs)) {
       return json({ ok: false, error: 'RECEIVER SESSION TIMESTAMP MISSING' }, 502);
+    }
+
+    if (receiver.requiredMode) {
+      const status = parseStatusPairs(statusText);
+      const observedMode = String(status.mode || '').trim();
+      if (observedMode !== receiver.requiredMode) {
+        return json({
+          ok: false,
+          error: `QUALIFICATION RECEIVER MODE ${observedMode || 'UNKNOWN'}; NEED ${receiver.requiredMode}`,
+          receiver: {
+            id: receiver.id,
+            name: receiver.name,
+            place: receiver.place
+          },
+          status: {
+            mode: observedMode || null,
+            users: Number.isFinite(Number(status.users)) ? Number(status.users) : null,
+            usersMax: Number.isFinite(Number(status.users_max)) ? Number(status.users_max) : null
+          }
+        }, 409);
+      }
     }
 
     return json({
