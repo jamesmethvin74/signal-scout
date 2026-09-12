@@ -12,7 +12,7 @@ const RECEIVERS = Object.freeze({
     place: 'Chantilly, Virginia',
     host: 'kiwisdr.n2yo.net:8073',
     protocol: 'http:',
-    requiredMode: 'rx4.wf4'
+    requiredMode: 'rx4_wf4'
   })
 });
 
