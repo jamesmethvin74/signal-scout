@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#070a0d">
   <title>FREQBEACON Zero — Live RF</title>
   <link rel="stylesheet" href="/freqbeacon-zero.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-tuning.css?v=1">
 </head>
 <body>
   <main class="radio" aria-label="FREQBEACON Zero radio instrument">
@@ -22,15 +23,15 @@
 
     <section class="readout" aria-label="Receiver readout">
       <div class="readout-meta">
-        <span class="eyebrow">FIXED PROOF CHANNEL</span>
+        <span class="eyebrow">LIVE TUNING PROOF</span>
         <span id="receiverIdentity">KU4BY · ELIZABETH CITY, NC</span>
       </div>
-      <div class="frequency" aria-label="5 megahertz">
-        <span>5.000</span><em>MHz</em>
+      <div class="frequency" aria-label="5000 kilohertz">
+        <span id="frequencyValue">5.000</span><em>MHz</em>
       </div>
       <div class="readout-foot">
         <span class="mode">AM</span>
-        <span>WWV · 5000 kHz</span>
+        <span>TAP OR DRAG RF TO TUNE</span>
         <span id="kiwiVersion">KIWI · —</span>
       </div>
     </section>
@@ -43,10 +44,8 @@
       </div>
 
       <div class="scope">
-        <canvas id="rfCanvas" width="1024" height="540"></canvas>
-        <div class="tune-cursor" aria-hidden="true">
-          <span></span>
-        </div>
+        <canvas id="rfCanvas" width="1024" height="540" aria-label="Live RF spectrum and waterfall. Tap or drag horizontally to tune."></canvas>
+        <div class="tune-cursor" aria-hidden="true"><span></span></div>
         <div id="scopeMessage" class="scope-message">
           <strong>RF OFF</strong>
           <span>Press START to open one Kiwi receiver session.</span>
@@ -54,18 +53,15 @@
       </div>
 
       <div class="scale-footer">
-        <span id="leftEdge">4.985 MHz</span>
-        <span class="center-mark">5000.000 kHz</span>
-        <span id="rightEdge">5.015 MHz</span>
+        <span id="leftEdge">4.941 MHz</span>
+        <span id="centerMark" class="center-mark">VIEW 5000.000 kHz</span>
+        <span id="rightEdge">5.059 MHz</span>
       </div>
     </section>
 
     <section class="lower-deck" aria-label="Receiver controls">
       <div class="signal">
-        <div class="signal-label">
-          <span>SIGNAL</span>
-          <b id="signalValue">— dB</b>
-        </div>
+        <div class="signal-label"><span>SIGNAL</span><b id="signalValue">— dB</b></div>
         <div class="signal-track" aria-hidden="true"><i id="signalBar"></i></div>
         <div class="signal-scale"><span>S1</span><span>S5</span><span>S9</span><span>+20</span></div>
       </div>
@@ -78,17 +74,13 @@
 
       <div class="controls">
         <button id="mute" class="mute" type="button" aria-pressed="false">MUTE</button>
-        <button id="power" class="power" type="button" aria-pressed="false">
-          <i aria-hidden="true"></i><span>START</span>
-        </button>
+        <button id="power" class="power" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>START</span></button>
       </div>
     </section>
 
-    <footer class="bench-note">
-      ONE RECEIVER · ONE FREQUENCY · ONE MODE · NO FAILOVER
-    </footer>
+    <footer class="bench-note">ONE RECEIVER · ONE SESSION · LIVE TUNING · NO FAILOVER</footer>
   </main>
 
-  <script type="module" src="/freqbeacon-zero.js?v=1"></script>
+  <script type="module" src="/freqbeacon-zero.js?v=2"></script>
 </body>
 </html>
