@@ -1,5 +1,5 @@
 const FIXED = Object.freeze({
-  initialFrequencyKHz: 5000,
+  initialFrequencyKHz: 560,
   mode: 'am',
   lowCut: -5000,
   highCut: 5000,
