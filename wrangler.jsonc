@@ -1,4 +1,4 @@
-// SDR recovery: restore proven Aug. 27 runtime ownership while preserving current app/program layers.
+// FREQBEACON production Worker + isolated Zero clean-room SDR route.
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
@@ -16,7 +16,7 @@
     "directory": "./",
     "binding": "ASSETS",
     "run_worker_first": [
-      "/api/zero-sdr/*",
+      "/api/zero/*",
       "/zero",
       "/zero/",
       "/api/sdr/*",

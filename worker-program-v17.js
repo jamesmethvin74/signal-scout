@@ -1,18 +1,21 @@
 import baseWorker from './worker-program-v15.js';
-import { handleZeroSdr } from './zero-sdr-worker.js';
+import { handleFreqbeaconZero } from './freqbeacon-zero-worker.js';
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // FREQBEACON Zero is intentionally isolated from the legacy SDR stack.
-    if (url.pathname.startsWith('/api/zero-sdr/')) {
-      const zeroResponse = await handleZeroSdr(request);
-      if (zeroResponse) return zeroResponse;
+    // FREQBEACON Zero owns a completely separate transport namespace and client.
+    if (url.pathname.startsWith('/api/zero/')) {
+      return handleFreqbeaconZero(request);
     }
+
     if (request.method === 'GET' && (url.pathname === '/zero' || url.pathname === '/zero/')) {
-      const zeroUrl = new URL('/zero.html', request.url);
-      return env.ASSETS.fetch(new Request(zeroUrl.toString(), { method: 'GET', headers: request.headers }));
+      const zeroUrl = new URL('/freqbeacon-zero.html', request.url);
+      return env.ASSETS.fetch(new Request(zeroUrl.toString(), {
+        method: 'GET',
+        headers: request.headers
+      }));
     }
 
     const response = await baseWorker.fetch(request, env, ctx);
@@ -47,7 +50,10 @@ export default {
       headers
     });
   },
+
   async scheduled(event, env, ctx) {
-    if (typeof baseWorker.scheduled === 'function') return baseWorker.scheduled(event, env, ctx);
+    if (typeof baseWorker.scheduled === 'function') {
+      return baseWorker.scheduled(event, env, ctx);
+    }
   }
 };

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070a0d">
+  <title>FREQBEACON Zero — Live RF</title>
+  <link rel="stylesheet" href="/freqbeacon-zero.css?v=1">
+</head>
+<body>
+  <main class="radio" aria-label="FREQBEACON Zero radio instrument">
+    <header class="topline">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <b>FREQBEACON</b>
+          <small>ZERO · CLEANROOM RECEIVER</small>
+        </div>
+      </div>
+      <div class="tagline">Explore the airwaves.</div>
+    </header>
+
+    <section class="readout" aria-label="Receiver readout">
+      <div class="readout-meta">
+        <span class="eyebrow">FIXED PROOF CHANNEL</span>
+        <span id="receiverIdentity">KU4BY · ELIZABETH CITY, NC</span>
+      </div>
+      <div class="frequency" aria-label="5 megahertz">
+        <span>5.000</span><em>MHz</em>
+      </div>
+      <div class="readout-foot">
+        <span class="mode">AM</span>
+        <span>WWV · 5000 kHz</span>
+        <span id="kiwiVersion">KIWI · —</span>
+      </div>
+    </section>
+
+    <section class="scope-shell" aria-label="RF spectrum and waterfall">
+      <div class="scope-status" aria-live="polite">
+        <span><i id="sndLamp"></i>SND</span>
+        <span><i id="wfLamp"></i>W/F</span>
+        <span id="sessionLabel">PAIR —</span>
+      </div>
+
+      <div class="scope">
+        <canvas id="rfCanvas" width="1024" height="540"></canvas>
+        <div class="tune-cursor" aria-hidden="true">
+          <span></span>
+        </div>
+        <div id="scopeMessage" class="scope-message">
+          <strong>RF OFF</strong>
+          <span>Press START to open one Kiwi receiver session.</span>
+        </div>
+      </div>
+
+      <div class="scale-footer">
+        <span id="leftEdge">4.985 MHz</span>
+        <span class="center-mark">5000.000 kHz</span>
+        <span id="rightEdge">5.015 MHz</span>
+      </div>
+    </section>
+
+    <section class="lower-deck" aria-label="Receiver controls">
+      <div class="signal">
+        <div class="signal-label">
+          <span>SIGNAL</span>
+          <b id="signalValue">— dB</b>
+        </div>
+        <div class="signal-track" aria-hidden="true"><i id="signalBar"></i></div>
+        <div class="signal-scale"><span>S1</span><span>S5</span><span>S9</span><span>+20</span></div>
+      </div>
+
+      <div class="telemetry" aria-label="Session telemetry">
+        <span>SND <b id="sndFrames">0</b></span>
+        <span>RF <b id="wfFrames">0</b></span>
+        <span>UP <b id="uptime">00:00</b></span>
+      </div>
+
+      <div class="controls">
+        <button id="mute" class="mute" type="button" aria-pressed="false">MUTE</button>
+        <button id="power" class="power" type="button" aria-pressed="false">
+          <i aria-hidden="true"></i><span>START</span>
+        </button>
+      </div>
+    </section>
+
+    <footer class="bench-note">
+      ONE RECEIVER · ONE FREQUENCY · ONE MODE · NO FAILOVER
+    </footer>
+  </main>
+
+  <script type="module" src="/freqbeacon-zero.js?v=1"></script>
+</body>
+</html>
