@@ -1,8 +1,8 @@
-// FREQBEACON Zero qualification bench — high-band isolation test.
+// FREQBEACON Zero qualification bench — high-band isolation test v2.
 // Bench/test harness only. Uses existing preset/mode controls and cadence diagnostics.
 // No direct Kiwi protocol changes, no renderer changes, no socket lifecycle changes, no /zero changes.
 
-const HIGH_STAGES = Object.freeze([
+const HIGH2_STAGES = Object.freeze([
   { label: '20m · USB CONTROL', preset: '20m', mode: 'usb' },
   { label: 'CB 19 · AM', preset: 'cb', mode: 'am' },
   { label: '29.600 · AM', preset: '10fm', mode: 'am' },
@@ -13,96 +13,119 @@ const HIGH_STAGES = Object.freeze([
   { label: 'MW · AM RETURN', preset: 'mw', mode: 'am' }
 ]);
 
-const GOOD_RATIO = 0.70;
-const WARN_RATIO = 0.35;
-const HEALTHY_SAMPLES = 3;
-const RECOVERY_TIMEOUT_MS = 20000;
-const BASELINE_TIMEOUT_MS = 90000;
-const MEASURE_SAMPLES = 5;
-const sleepHigh = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const HIGH2_GOOD_RATIO = 0.70;
+const HIGH2_WARN_RATIO = 0.35;
+const HIGH2_WINDOW = 5;
+const HIGH2_REQUIRED_GOOD = 3;
+const HIGH2_RECOVERY_TIMEOUT_MS = 20000;
+const HIGH2_BASELINE_TIMEOUT_MS = 90000;
+const HIGH2_MEASURE_SAMPLES = 5;
+const HIGH2_SETTLE_MS = 1800;
+const high2Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function highNumber(text) {
+function high2Number(text) {
   const m = String(text || '').match(/-?\d+(?:\.\d+)?/);
   return m ? Number(m[0]) : NaN;
 }
 
-function highSnap() {
+function high2Snap() {
   const wfText = document.querySelector('[data-bench-wf-fps]')?.textContent || '';
   const parts = wfText.split('/');
   return {
-    wf: highNumber(parts[0]),
-    target: parts.length > 1 ? highNumber(parts[1]) : NaN,
-    snd: highNumber(document.querySelector('[data-bench-snd-fps]')?.textContent),
+    wf: high2Number(parts[0]),
+    target: parts.length > 1 ? high2Number(parts[1]) : NaN,
+    snd: high2Number(document.querySelector('[data-bench-snd-fps]')?.textContent),
     pair: document.querySelector('#pairProof')?.textContent?.trim() || '',
     sockets: document.querySelector('#socketProof')?.textContent?.trim() || ''
   };
 }
 
-function highPairStable(s = highSnap()) {
+function high2PairStable(s = high2Snap()) {
   return s.pair.includes('STABLE') && s.sockets === '1 SND · 1 W/F';
 }
 
-function highAvg(values) {
+function high2Avg(values) {
   const a = values.filter(Number.isFinite);
   return a.length ? a.reduce((sum, value) => sum + value, 0) / a.length : NaN;
 }
 
-function highFmt(value, digits = 1) {
+function high2Min(values) {
+  const a = values.filter(Number.isFinite);
+  return a.length ? Math.min(...a) : NaN;
+}
+
+function high2Max(values) {
+  const a = values.filter(Number.isFinite);
+  return a.length ? Math.max(...a) : NaN;
+}
+
+function high2Fmt(value, digits = 1) {
   return Number.isFinite(value) ? value.toFixed(digits) : '—';
 }
 
-async function highLoad() {
+async function high2Load() {
   try {
     const response = await fetch('/api/zero-bench/diagnostics', { cache: 'no-store' });
     const data = await response.json();
-    return {
-      users: Number(data?.status?.users),
-      max: Number(data?.status?.users_max)
-    };
+    return { users: Number(data?.status?.users), max: Number(data?.status?.users_max) };
   } catch {
     return { users: NaN, max: NaN };
   }
 }
 
-function highLoadText(load) {
+function high2LoadText(load) {
   return Number.isFinite(load.users) && Number.isFinite(load.max) ? `${load.users}/${load.max}` : '—';
 }
 
-const highAnchor = document.querySelector('#lastAction');
-const highPanel = document.createElement('section');
-highPanel.className = 'bench-auto bench-highband';
-highPanel.setAttribute('aria-label', 'High-band waterfall isolation');
-highPanel.innerHTML = `
+function high2WindowStats(samples, target) {
+  const finite = samples.filter(Number.isFinite);
+  const threshold = target * HIGH2_GOOD_RATIO;
+  const avg = high2Avg(finite);
+  const goodCount = finite.filter((value) => value >= threshold).length;
+  return {
+    avg,
+    min: high2Min(finite),
+    max: high2Max(finite),
+    goodCount,
+    healthy: finite.length >= HIGH2_WINDOW && avg >= threshold && goodCount >= HIGH2_REQUIRED_GOOD
+  };
+}
+
+const high2Anchor = document.querySelector('#lastAction');
+const high2Panel = document.createElement('section');
+high2Panel.className = 'bench-auto bench-highband';
+high2Panel.setAttribute('aria-label', 'High-band waterfall isolation v2');
+high2Panel.innerHTML = `
   <div class="bench-auto-head">
-    <div><small>HIGH-BAND ISOLATION</small><strong>Frequency vs mode vs elapsed-time proof</strong></div>
-    <button type="button" data-high-run>RUN HIGH-BAND TEST</button>
+    <div><small>HIGH-BAND ISOLATION V2</small><strong>Frequency vs mode vs elapsed-time proof</strong></div>
+    <button type="button" data-high2-run>RUN HIGH-BAND TEST</button>
   </div>
-  <div class="bench-auto-status" data-high-status>Starts from a healthy 20m USB control, checks CB and 29.600 MHz in multiple modes, then returns to lower bands to see whether cadence recovers.</div>
-  <div class="bench-auto-results" data-high-results hidden></div>
+  <div class="bench-auto-status" data-high2-status>Uses a 5-second rolling cadence window instead of requiring perfect consecutive seconds. Starts at 20m USB, tests 27–30 MHz in multiple modes, then returns lower.</div>
+  <div class="bench-auto-results" data-high2-results hidden></div>
 `;
-highAnchor?.insertAdjacentElement('beforebegin', highPanel);
+high2Anchor?.insertAdjacentElement('beforebegin', high2Panel);
 
-const highRunButton = highPanel.querySelector('[data-high-run]');
-const highStatus = highPanel.querySelector('[data-high-status]');
-const highResults = highPanel.querySelector('[data-high-results]');
-let highRunning = false;
+const high2RunButton = high2Panel.querySelector('[data-high2-run]');
+const high2Status = high2Panel.querySelector('[data-high2-status]');
+const high2Results = high2Panel.querySelector('[data-high2-results]');
+let high2Running = false;
 
-async function highEnsureStarted() {
+async function high2EnsureStarted() {
   const power = document.querySelector('#power');
   if (!power) throw new Error('START button not found');
-  if (!highPairStable()) {
+  if (!high2PairStable()) {
     const label = power.querySelector('span')?.textContent?.trim() || power.textContent.trim();
     if (/START/i.test(label) && !power.disabled) power.click();
   }
   const deadline = performance.now() + 20000;
   while (performance.now() < deadline) {
-    if (highPairStable()) return;
-    await sleepHigh(500);
+    if (high2PairStable()) return;
+    await high2Sleep(500);
   }
   throw new Error('Socket pair did not become stable within 20 seconds');
 }
 
-function clickHighStage(stage) {
+function clickHigh2Stage(stage) {
   if (stage.preset) {
     const preset = document.querySelector(`[data-preset="${stage.preset}"]`);
     if (!preset || preset.disabled) throw new Error(`Preset ${stage.preset} unavailable`);
@@ -115,40 +138,66 @@ function clickHighStage(stage) {
   }
 }
 
-async function waitHealthy(label, timeoutMs) {
+async function waitHealthyWindow(label, timeoutMs) {
   const started = performance.now();
   const deadline = started + timeoutMs;
-  let good = 0;
+  const rolling = [];
   let best = 0;
+  let bestWindowAvg = 0;
+
   while (performance.now() < deadline) {
-    const s = highSnap();
-    if (!highPairStable(s)) return { healthy: false, best, sec: (performance.now() - started) / 1000, pairStable: false };
-    const target = Number.isFinite(s.target) && s.target > 0 ? s.target : 23;
-    if (Number.isFinite(s.wf)) best = Math.max(best, s.wf);
-    good = Number.isFinite(s.wf) && s.wf / target >= GOOD_RATIO ? good + 1 : 0;
-    highStatus.textContent = `${label}: W/F ${highFmt(s.wf)} / ${highFmt(target, 0)} · healthy ${good}/${HEALTHY_SAMPLES} · best ${highFmt(best)}`;
-    if (good >= HEALTHY_SAMPLES) {
-      return { healthy: true, best, sec: (performance.now() - started) / 1000, pairStable: true };
+    const s = high2Snap();
+    if (!high2PairStable(s)) {
+      return { healthy: false, best, bestWindowAvg, sec: (performance.now() - started) / 1000, pairStable: false };
     }
-    await sleepHigh(1000);
+
+    const target = Number.isFinite(s.target) && s.target > 0 ? s.target : 23;
+    if (Number.isFinite(s.wf)) {
+      best = Math.max(best, s.wf);
+      rolling.push(s.wf);
+      if (rolling.length > HIGH2_WINDOW) rolling.shift();
+    }
+
+    const stats = high2WindowStats(rolling, target);
+    if (Number.isFinite(stats.avg)) bestWindowAvg = Math.max(bestWindowAvg, stats.avg);
+    high2Status.textContent = `${label}: W/F ${high2Fmt(s.wf)} / ${high2Fmt(target, 0)} · 5s avg ${high2Fmt(stats.avg)} · good ${stats.goodCount}/${HIGH2_WINDOW} · best ${high2Fmt(best)}`;
+
+    if (stats.healthy) {
+      return {
+        healthy: true,
+        best,
+        bestWindowAvg,
+        windowAvg: stats.avg,
+        windowMin: stats.min,
+        windowMax: stats.max,
+        goodCount: stats.goodCount,
+        sec: (performance.now() - started) / 1000,
+        pairStable: true
+      };
+    }
+    await high2Sleep(1000);
   }
-  return { healthy: false, best, sec: (performance.now() - started) / 1000, pairStable: highPairStable() };
+
+  return { healthy: false, best, bestWindowAvg, sec: (performance.now() - started) / 1000, pairStable: high2PairStable() };
 }
 
-async function measureHighStage(stage, index) {
-  highStatus.textContent = `Stage ${index + 1}/${HIGH_STAGES.length}: ${stage.label}`;
-  clickHighStage(stage);
-  const loadBefore = await highLoad();
-  const recovery = await waitHealthy(stage.label, RECOVERY_TIMEOUT_MS);
+async function measureHigh2Stage(stage, index) {
+  high2Status.textContent = `Stage ${index + 1}/${HIGH2_STAGES.length}: ${stage.label}`;
+  clickHigh2Stage(stage);
+  await high2Sleep(HIGH2_SETTLE_MS);
+  const loadBefore = await high2Load();
+  const recovery = await waitHealthyWindow(stage.label, HIGH2_RECOVERY_TIMEOUT_MS);
   const samples = [];
-  for (let i = 0; i < MEASURE_SAMPLES; i += 1) {
-    const s = highSnap();
+
+  for (let i = 0; i < HIGH2_MEASURE_SAMPLES; i += 1) {
+    const s = high2Snap();
     samples.push(s);
-    if (!highPairStable(s)) break;
-    highStatus.textContent = `Stage ${index + 1}/${HIGH_STAGES.length}: ${stage.label} · sample ${i + 1}/${MEASURE_SAMPLES} · W/F ${highFmt(s.wf)} / ${highFmt(s.target, 0)}`;
-    await sleepHigh(1000);
+    if (!high2PairStable(s)) break;
+    high2Status.textContent = `Stage ${index + 1}/${HIGH2_STAGES.length}: ${stage.label} · sample ${i + 1}/${HIGH2_MEASURE_SAMPLES} · W/F ${high2Fmt(s.wf)} / ${high2Fmt(s.target, 0)}`;
+    await high2Sleep(1000);
   }
-  const loadAfter = await highLoad();
+
+  const loadAfter = await high2Load();
   const target = samples.map((s) => s.target).find(Number.isFinite) ?? 23;
   return {
     ...stage,
@@ -156,23 +205,26 @@ async function measureHighStage(stage, index) {
     recovered: recovery.healthy,
     recoverySec: recovery.sec,
     best: recovery.best,
-    wfAvg: highAvg(samples.map((s) => s.wf)),
-    sndAvg: highAvg(samples.map((s) => s.snd)),
-    pairStable: samples.length === MEASURE_SAMPLES && samples.every(highPairStable),
+    recoveryWindowAvg: recovery.windowAvg ?? recovery.bestWindowAvg,
+    wfAvg: high2Avg(samples.map((s) => s.wf)),
+    wfMin: high2Min(samples.map((s) => s.wf)),
+    wfMax: high2Max(samples.map((s) => s.wf)),
+    sndAvg: high2Avg(samples.map((s) => s.snd)),
+    pairStable: samples.length === HIGH2_MEASURE_SAMPLES && samples.every(high2PairStable),
     loadBefore,
     loadAfter
   };
 }
 
-function highClassify(result) {
+function high2Classify(result) {
   if (!result.pairStable) return 'fail';
   const ratio = result.wfAvg / (result.target || 23);
-  if (result.recovered && ratio >= GOOD_RATIO) return 'pass';
-  if (ratio >= WARN_RATIO) return 'warn';
+  if (result.recovered && ratio >= HIGH2_GOOD_RATIO) return 'pass';
+  if (ratio >= HIGH2_WARN_RATIO) return 'warn';
   return 'fail';
 }
 
-function diagnoseHighPattern(results) {
+function diagnoseHigh2Pattern(results) {
   const byLabel = Object.fromEntries(results.map((r) => [r.label, r]));
   const control = byLabel['20m · USB CONTROL'];
   const cb = byLabel['CB 19 · AM'];
@@ -182,9 +234,9 @@ function diagnoseHighPattern(results) {
   const back20 = byLabel['20m · USB RETURN'];
   const backMw = byLabel['MW · AM RETURN'];
 
-  const good = (r) => r && r.wfAvg / (r.target || 23) >= GOOD_RATIO;
-  const low = (r) => r && r.wfAvg / (r.target || 23) < WARN_RATIO;
-  const degraded = (r) => r && r.wfAvg / (r.target || 23) < GOOD_RATIO;
+  const good = (r) => r && r.wfAvg / (r.target || 23) >= HIGH2_GOOD_RATIO;
+  const low = (r) => r && r.wfAvg / (r.target || 23) < HIGH2_WARN_RATIO;
+  const degraded = (r) => r && r.wfAvg / (r.target || 23) < HIGH2_GOOD_RATIO;
 
   if (good(control) && degraded(cb) && degraded(am296) && good(back20)) {
     return 'PATTERN: HIGH-FREQUENCY W/F DEGRADATION — cadence falls near 27–30 MHz and recovers after returning lower. Mode is not the primary trigger.';
@@ -201,52 +253,52 @@ function diagnoseHighPattern(results) {
   return 'PATTERN: MIXED — use the per-stage W/F and load values below; no single trigger dominates this run.';
 }
 
-function renderHighResults(results, baseline, baselineLoad) {
-  highResults.hidden = false;
+function renderHigh2Results(results, baseline, baselineLoad) {
+  high2Results.hidden = false;
   const rows = results.map((r) => {
-    const level = highClassify(r);
-    return `<div class="auto-row ${level}"><b>${r.label}</b><span>WF ${highFmt(r.wfAvg)}</span><span>REC ${highFmt(r.recoverySec)}s</span><span>LOAD ${highLoadText(r.loadAfter)}</span><span>${level.toUpperCase()}</span></div>`;
+    const level = high2Classify(r);
+    return `<div class="auto-row ${level}"><b>${r.label}</b><span>WF ${high2Fmt(r.wfAvg)}</span><span>REC ${high2Fmt(r.recoverySec)}s</span><span>LOAD ${high2LoadText(r.loadAfter)}</span><span>${level.toUpperCase()}</span></div>`;
   }).join('');
-  const pattern = diagnoseHighPattern(results);
+  const pattern = diagnoseHigh2Pattern(results);
   const pairOk = results.every((r) => r.pairStable);
   const klass = pattern.includes('MIXED') ? 'warn' : 'pass';
-  highResults.innerHTML = `${rows}<div class="auto-summary ${klass}">${pattern} · baseline ${highFmt(baseline.best)} / 23 FPS · baseline load ${highLoadText(baselineLoad)} · pair ${pairOk ? 'STABLE' : 'CHANGED'}</div>`;
-  highStatus.textContent = 'High-band isolation complete. Screenshot this result block.';
+  high2Results.innerHTML = `${rows}<div class="auto-summary ${klass}">${pattern} · baseline 5s avg ${high2Fmt(baseline.windowAvg ?? baseline.bestWindowAvg)} / 23 FPS · baseline best ${high2Fmt(baseline.best)} · load ${high2LoadText(baselineLoad)} · pair ${pairOk ? 'STABLE' : 'CHANGED'}</div>`;
+  high2Status.textContent = 'High-band isolation complete. Screenshot this result block.';
 }
 
-highRunButton?.addEventListener('click', async () => {
-  if (highRunning) return;
-  highRunning = true;
-  highRunButton.disabled = true;
-  highResults.hidden = true;
-  highResults.innerHTML = '';
+high2RunButton?.addEventListener('click', async () => {
+  if (high2Running) return;
+  high2Running = true;
+  high2RunButton.disabled = true;
+  high2Results.hidden = true;
+  high2Results.innerHTML = '';
   try {
-    await highEnsureStarted();
+    await high2EnsureStarted();
+    clickHigh2Stage({ preset: '20m', mode: 'usb' });
+    await high2Sleep(HIGH2_SETTLE_MS);
+    const baselineLoad = await high2Load();
+    const baseline = await waitHealthyWindow('20m USB baseline', HIGH2_BASELINE_TIMEOUT_MS);
 
-    // Establish the baseline at 20m USB so current page state cannot bias the run.
-    clickHighStage({ preset: '20m', mode: 'usb' });
-    const baselineLoad = await highLoad();
-    const baseline = await waitHealthy('20m USB baseline', BASELINE_TIMEOUT_MS);
     if (!baseline.healthy) {
-      highResults.hidden = false;
-      highResults.innerHTML = `<div class="auto-summary inconclusive">INCONCLUSIVE — 20m USB control never reached a healthy baseline · best ${highFmt(baseline.best)} / 23 FPS · load ${highLoadText(baselineLoad)} · pair ${baseline.pairStable ? 'STABLE' : 'CHANGED'}</div>`;
-      highStatus.textContent = 'INCONCLUSIVE: receiver cadence was degraded before the high-band isolation sequence.';
+      high2Results.hidden = false;
+      high2Results.innerHTML = `<div class="auto-summary inconclusive">INCONCLUSIVE — 20m USB did not sustain a healthy 5-second window · best ${high2Fmt(baseline.best)} / 23 FPS · best 5s avg ${high2Fmt(baseline.bestWindowAvg)} · load ${high2LoadText(baselineLoad)} · pair ${baseline.pairStable ? 'STABLE' : 'CHANGED'}</div>`;
+      high2Status.textContent = 'INCONCLUSIVE: a single high FPS sample is not enough; the control must sustain a healthy rolling window before the high-band sequence starts.';
       return;
     }
 
     const results = [];
-    for (let i = 0; i < HIGH_STAGES.length; i += 1) {
-      const result = await measureHighStage(HIGH_STAGES[i], i);
+    for (let i = 0; i < HIGH2_STAGES.length; i += 1) {
+      const result = await measureHigh2Stage(HIGH2_STAGES[i], i);
       results.push(result);
       if (!result.pairStable) break;
     }
-    renderHighResults(results, baseline, baselineLoad);
+    renderHigh2Results(results, baseline, baselineLoad);
   } catch (error) {
-    highStatus.textContent = `HIGH-BAND TEST STOPPED: ${error?.message || 'unknown error'}`;
-    highResults.hidden = false;
-    highResults.innerHTML = `<div class="auto-summary fail">FAIL — ${String(error?.message || 'unknown error')}</div>`;
+    high2Status.textContent = `HIGH-BAND TEST STOPPED: ${error?.message || 'unknown error'}`;
+    high2Results.hidden = false;
+    high2Results.innerHTML = `<div class="auto-summary fail">FAIL — ${String(error?.message || 'unknown error')}</div>`;
   } finally {
-    highRunning = false;
-    highRunButton.disabled = false;
+    high2Running = false;
+    high2RunButton.disabled = false;
   }
 });
