@@ -506,7 +506,7 @@ function configureWf() {
   send(state.wf, 'SERVER DE CLIENT FREQBEACON-ZERO W/F');
   send(state.wf, 'SET ident_user=FREQBEACON ZERO');
   send(state.wf, 'SET send_dB=1');
-  send(state.wf, `SET zoom=${FIXED.zoom} start=${waterfallStart()}`);
+  send(state.wf, `SET zoom=${FIXED.zoom} cf=${state.viewportCenterKHz.toFixed(3)}`);
   send(state.wf, 'SET maxdb=-35 mindb=-125');
   send(state.wf, 'SET wf_comp=0');
   send(state.wf, 'SET interp=13');
