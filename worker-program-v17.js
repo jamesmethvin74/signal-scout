@@ -1,11 +1,23 @@
 import baseWorker from './worker-program-v15.js';
+import { handleZeroSdr } from './zero-sdr-worker.js';
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // FREQBEACON Zero is intentionally isolated from the legacy SDR stack.
+    if (url.pathname.startsWith('/api/zero-sdr/')) {
+      const zeroResponse = await handleZeroSdr(request);
+      if (zeroResponse) return zeroResponse;
+    }
+    if (request.method === 'GET' && (url.pathname === '/zero' || url.pathname === '/zero/')) {
+      const zeroUrl = new URL('/zero.html', request.url);
+      return env.ASSETS.fetch(new Request(zeroUrl.toString(), { method: 'GET', headers: request.headers }));
+    }
+
     const response = await baseWorker.fetch(request, env, ctx);
     if (request.method !== 'GET') return response;
 
-    const url = new URL(request.url);
     const contentType = String(response.headers.get('content-type') || '');
     if ((url.pathname !== '/' && url.pathname !== '/index.html') || !contentType.includes('text/html')) {
       return response;
