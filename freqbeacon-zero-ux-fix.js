@@ -60,5 +60,22 @@
     });
   }
 
+  function loadKnobFollowAdapter() {
+    if (document.querySelector('script[data-zero-knob-follow]')) return;
+    const script = document.createElement('script');
+    script.src = '/freqbeacon-zero-knob-follow.js?v=1';
+    script.dataset.zeroKnobFollow = 'true';
+    document.body.appendChild(script);
+  }
+
+  // Zero's qualified dial is a deferred module. Wait until DOMContentLoaded so
+  // its direct-manipulation listeners are installed before the shell follow
+  // adapter attaches after them.
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', loadKnobFollowAdapter, { once: true });
+  } else {
+    loadKnobFollowAdapter();
+  }
+
   syncScopePower();
 })();
