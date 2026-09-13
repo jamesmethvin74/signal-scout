@@ -329,7 +329,7 @@ function renderRf(bins) {
   for (let y = 35; y < spectrumH; y += 35) {
     ctx.beginPath();
     ctx.moveTo(0, y + .5);
-    ctx.lineTo(w, y + .5, spectrumH);
+    ctx.lineTo(w, y + .5);
     ctx.stroke();
   }
 
