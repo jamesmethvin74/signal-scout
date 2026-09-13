@@ -22,11 +22,26 @@
   pointer-events: none;
 }
 
+.meter-scale {
+  z-index: 4;
+}
+
 .meter-scale span:nth-last-child(-n+2) {
   color: #df765e;
   text-shadow: 0 0 4px rgba(207, 86, 67, .22);
 }
 
+/*
+ * The meter face is intentionally wide and shallow. A short needle can have
+ * the right numeric angle but still appear under the wrong printed mark. Keep
+ * the needle long and let the meter window clip it at the face/arc boundary.
+ */
 .meter-needle {
+  z-index: 2;
+  height: 205%;
   transform: rotate(var(--meter-cal-angle, var(--meter-angle)));
+}
+
+.meter-pivot {
+  z-index: 5;
 }
