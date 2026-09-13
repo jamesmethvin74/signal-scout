@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Identify radio signals by frequency with FREQBEACON's shared MW, SW, LW, amateur, CB, aviation, utility and time-signal catalog.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/lookup-page.css?v=1">
+  <title>Signal Lookup — FREQBEACON</title>
+</head>
+<body>
+  <main class="lookup-app">
+    <header class="lookup-topbar">
+      <a class="lookup-brand" href="/" aria-label="FREQBEACON home">
+        <img src="/freqbeacon-logo.svg" alt="">
+        <span><strong>FREQBEACON</strong><small>Explore the airwaves.</small></span>
+      </a>
+      <a class="lookup-zero-link" href="/zero">OPEN ZERO</a>
+    </header>
+
+    <section class="lookup-hero">
+      <p class="lookup-kicker">SIGNAL LOOKUP</p>
+      <h1>What am I hearing?</h1>
+      <p class="lookup-intro">Type the number on the dial. FREQBEACON checks the same identification catalog used by Zero, then shows the most likely station, service, channel or band.</p>
+
+      <form id="lookupForm" class="lookup-form">
+        <label class="lookup-input-wrap" for="lookupFrequency">
+          <span class="lookup-input-label">FREQUENCY</span>
+          <span class="lookup-input-line">
+            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955" aria-describedby="lookupInputHint">
+            <b>kHz</b>
+          </span>
+        </label>
+        <button class="lookup-submit" type="submit">IDENTIFY</button>
+      </form>
+      <p class="lookup-hint" id="lookupInputHint">9955 or 9.955 MHz both work. Lookup uses static catalog data; it does not contact a schedule service while you listen.</p>
+
+      <div class="lookup-time-row">
+        <div class="lookup-time-chips" aria-label="Lookup time">
+          <button type="button" class="lookup-chip active" data-offset="0">NOW</button>
+          <button type="button" class="lookup-chip" data-offset="1">+1 HR</button>
+          <button type="button" class="lookup-chip" data-offset="3">+3 HR</button>
+          <button type="button" class="lookup-chip" data-offset="6">LATER</button>
+        </div>
+        <div class="lookup-clock" id="lookupClock">—</div>
+      </div>
+    </section>
+
+    <section class="lookup-quick" aria-label="Try a frequency">
+      <span>TRY</span>
+      <button type="button" data-quick="153">153 LW</button>
+      <button type="button" data-quick="9955">9955 SW</button>
+      <button type="button" data-quick="10000">10 MHz WWV</button>
+      <button type="button" data-quick="11175">11175 AIR</button>
+      <button type="button" data-quick="14200">14.200 HAM</button>
+      <button type="button" data-quick="27185">27.185 CB</button>
+    </section>
+
+    <section class="lookup-stage" id="lookupStage" aria-live="polite">
+      <div class="lookup-empty">
+        <div class="lookup-empty-rings" aria-hidden="true"><i></i><i></i><i></i></div>
+        <strong>Spin the dial. Bring me the number.</strong>
+        <p>Broadcasts, time standards, HFGCS, amateur bands, CB channels and known service ranges all use one shared identification engine.</p>
+      </div>
+    </section>
+
+    <footer class="lookup-footer">
+      <span>Shared FREQBEACON identification engine</span>
+      <span>A26 HFCC + EiBi static catalog</span>
+      <span>No live schedule polling</span>
+    </footer>
+  </main>
+
+  <script src="/freqbeacon-zero-am-catalog.js?v=1"></script>
+  <script src="/stations.js?v=1"></script>
+  <script src="/ham-bands.js?v=1"></script>
+  <script src="/freqbeacon-zero-identification-data.js?v=3"></script>
+  <script src="/freqbeacon-identification-engine.js?v=2"></script>
+  <script src="/lookup-page.js?v=1"></script>
+</body>
+</html>
