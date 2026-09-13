@@ -69,7 +69,15 @@
 
     const targetExponent = Math.floor(Math.log10(Math.max(1, step)));
     const signature = `${text}|${unit.textContent}|${step}|${targetExponent}`;
-    if (display.dataset.stepIndicatorSignature === signature) return;
+    const expectedDigits = (text.match(/\d/g) || []).length;
+    const digitSpans = display.querySelectorAll('.zero-frequency-digit');
+    const activeDigit = display.querySelector('.zero-frequency-digit.is-step-place');
+
+    if (
+      display.dataset.stepIndicatorSignature === signature &&
+      digitSpans.length === expectedDigits &&
+      activeDigit
+    ) return;
 
     const fragment = document.createDocumentFragment();
     let marked = false;
