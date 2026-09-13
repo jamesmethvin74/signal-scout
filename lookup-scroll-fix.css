@@ -1,0 +1,29 @@
+/* Dedicated vertical scroller for the standalone Lookup view.
+   Android/PWA browsers can be unreliable when this page depends on the root
+   document as the scroll container while a sticky bottom nav is present. */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+.lookup-app {
+  height: 100dvh;
+  min-height: 0 !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y pinch-zoom;
+}
+
+.lookup-results-shell,
+.lookup-stage {
+  overflow: visible;
+}
