@@ -36,7 +36,7 @@
         type: 'band', startKHz: 30, endKHz: 300,
         name: 'Longwave', shortName: 'LW', mode: 'AM / CW',
         categories: Object.freeze(['longwave', 'utility']),
-        description: 'Very-low-frequency radio used for beacons, navigation, time signals and some broadcasting outside North America.'
+        description: 'Low-frequency radio used for beacons, navigation, time signals and some broadcasting outside North America.'
       }),
       Object.freeze({
         type: 'band', startKHz: 520, endKHz: 1710,
