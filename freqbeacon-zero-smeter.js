@@ -16,7 +16,7 @@
   if (baseMarks[5]) baseMarks[5].textContent = '+10';
 
   if (meterScale.children.length < 8) {
-    for (const label of ['+40', '+60 dBm']) {
+    for (const label of ['+40', '+60']) {
       const mark = document.createElement('span');
       mark.textContent = label;
       mark.className = 'meter-over-mark';
