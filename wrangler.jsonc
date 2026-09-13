@@ -17,12 +17,12 @@
       }
     ]
   },
-  "exports": {
-    "ReceiverHealthStore": {
-      "type": "durable-object",
-      "storage": "sqlite"
+  "migrations": [
+    {
+      "tag": "explore-health-v1",
+      "new_sqlite_classes": ["ReceiverHealthStore"]
     }
-  },
+  ],
   "assets": {
     "directory": "./",
     "binding": "ASSETS",
