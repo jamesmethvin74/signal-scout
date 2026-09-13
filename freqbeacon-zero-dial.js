@@ -1,8 +1,15 @@
 // FREQBEACON Zero — direct-manipulation tuning surface.
 // This module only controls the already-open Zero SND/W/F sockets and RF canvas.
 
+function initialFrequencyKHz(defaultKHz = 560) {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('from') !== 'lookup') return defaultKHz;
+  const requested = Number(params.get('frequency') || params.get('freq'));
+  return Number.isFinite(requested) && requested >= 30 && requested <= 30000 ? requested : defaultKHz;
+}
+
 const CFG = Object.freeze({
-  initialKHz: 560,
+  initialKHz: initialFrequencyKHz(),
   zoom: 8,
   fullBandwidthKHz: 30000,
   stepKHz: 1,
