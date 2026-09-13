@@ -1,17 +1,16 @@
 (() => {
   'use strict';
 
-  // Display-only identification adapter. It reads the already-rendered tuned
-  // frequency and receiver identity, then performs a local in-memory lookup.
-  // It does not open sockets, retune, fetch schedules, or make network calls.
-  const catalog = window.FREQBEACON_ZERO_IDENTIFICATION_CATALOG;
+  // Zero display adapter only. The shared engine performs local lookup/ranking
+  // when the user taps the frequency. No work runs continuously while tuning.
+  const engine = window.FREQBEACON_IDENTIFICATION_ENGINE;
   const frequencyButton = document.querySelector('.zero-frequency');
   const frequencyDisplay = document.querySelector('#frequencyDisplay');
   const frequencyUnit = document.querySelector('#frequencyUnit');
   const frequencyBridge = document.querySelector('#frequencyValue');
   const receiverIdentity = document.querySelector('#receiverIdentity');
 
-  if (!catalog || !frequencyButton || !frequencyDisplay) return;
+  if (!engine || !frequencyButton || !frequencyDisplay) return;
 
   let backdrop = null;
   let titleEl = null;
@@ -34,97 +33,42 @@
     return Number.isFinite(bridgeMHz) && bridgeMHz > 0 ? bridgeMHz * 1000 : NaN;
   }
 
-  function currentReceiver() {
-    const identity = String(receiverIdentity?.textContent || '').trim();
-    const upper = identity.toUpperCase();
-    const known = (catalog.receivers || []).find((receiver) =>
-      upper.includes(String(receiver.match || '').toUpperCase())
-    );
-    return known ? { ...known, identity } : { identity };
+  function scheduleLabel(entry, schedule) {
+    if (!entry?.start || !entry?.end) return '';
+    const window = `${String(entry.start).padStart(4, '0')}–${String(entry.end).padStart(4, '0')} UTC`;
+    if (!schedule) return `static schedule ${window}`;
+    return `${schedule.active ? 'in' : 'outside'} static schedule ${window}`;
   }
 
-  function milesBetween(a, b) {
-    if (![a?.lat, a?.lon, b?.lat, b?.lon].every(Number.isFinite)) return Infinity;
-    const radians = Math.PI / 180;
-    const dLat = (b.lat - a.lat) * radians;
-    const dLon = (b.lon - a.lon) * radians;
-    const x = Math.sin(dLat / 2) ** 2
-      + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLon / 2) ** 2;
-    return 2 * 3958.8 * Math.asin(Math.sqrt(x));
-  }
-
-  function receiverLocalHour(receiver) {
-    if (!Number.isFinite(receiver?.lon)) return new Date().getHours();
-    const now = new Date();
-    const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
-    return (utcHour + receiver.lon / 15 + 24) % 24;
-  }
-
-  function stationPowerW(station, receiver) {
-    const localHour = receiverLocalHour(receiver);
-    const night = localHour < 6 || localHour >= 18;
-    const primary = night ? station.nightPowerW : station.dayPowerW;
-    if (Number.isFinite(primary)) return Number(primary);
-    const fallback = night ? station.dayPowerW : station.nightPowerW;
-    return Number.isFinite(fallback) ? Number(fallback) : 1000;
-  }
-
-  function stationRank(station, distance, receiver) {
-    const powerW = stationPowerW(station, receiver);
-    if (powerW <= 0) return -Infinity;
-    const distancePenalty = Number.isFinite(distance) ? distance : 5000;
-    const powerBonus = Math.log10(Math.max(1, powerW)) * 90;
-    const classABonus = station.classA ? 90 : 0;
-    return powerBonus + classABonus - distancePenalty;
-  }
-
-  function stationMatch(kHz, receiver) {
-    const tolerance = kHz < 2000 ? 0.6 : 0.25;
-    const matches = (catalog.stations || [])
-      .filter((station) => Math.abs(Number(station.frequencyKHz) - kHz) <= tolerance)
-      .map((station) => {
-        const distance = milesBetween(receiver, station);
-        return {
-          station,
-          distance,
-          rank: stationRank(station, distance, receiver)
-        };
-      })
-      // An incomplete static catalog should never manufacture certainty. This
-      // floor keeps strong regional/Class-A nighttime signals plausible while
-      // rejecting weak, distant entries that only happen to share a frequency.
-      .filter((candidate) => Number.isFinite(candidate.rank) && candidate.rank >= -175)
-      .sort((a, b) =>
-        b.rank - a.rank
-        || a.distance - b.distance
-        || String(a.station.name).localeCompare(String(b.station.name))
-      );
-
-    return matches[0] || null;
-  }
-
-  function rangeMatch(kHz) {
-    const matches = (catalog.ranges || [])
-      .filter((range) => kHz >= Number(range.startKHz) && kHz <= Number(range.endKHz))
-      .sort((a, b) =>
-        (Number(a.endKHz) - Number(a.startKHz))
-        - (Number(b.endKHz) - Number(b.startKHz))
-      );
-    return matches[0] || null;
-  }
-
-  function formatFrequency(kHz) {
-    if (!Number.isFinite(kHz)) return 'Unknown frequency';
-    if (kHz < 1000) {
-      const decimals = Math.abs(kHz - Math.round(kHz)) < 0.001 ? 0 : 1;
-      return `${kHz.toFixed(decimals)} kHz`;
+  function exactEyebrow(result) {
+    const entry = result.entry;
+    if (entry.type === 'station' && entry.band === 'MW') return 'LIKELY STATION';
+    if (entry.type === 'station' && entry.band === 'SW') {
+      return result.confidence === 'likely' ? 'LIKELY BROADCAST' : 'KNOWN BROADCAST';
     }
-    const decimals = Math.abs(kHz - Math.round(kHz)) < 0.001 ? 3 : 4;
-    return `${(kHz / 1000).toFixed(decimals)} MHz`;
+    if (entry.type === 'signal') return result.confidence === 'likely' ? 'LIKELY SIGNAL' : 'KNOWN SIGNAL';
+    if (entry.type === 'channel') return 'KNOWN CHANNEL';
+    if (entry.type === 'service') return 'KNOWN SERVICE';
+    return 'KNOWN SIGNAL';
   }
 
-  function formatRange(range) {
-    return `${formatFrequency(Number(range.startKHz))}–${formatFrequency(Number(range.endKHz))}`;
+  function exactMeta(entry) {
+    if (entry.type === 'station') {
+      return [
+        entry.callsign && entry.callsign !== entry.name ? entry.callsign : '',
+        entry.transmitter || entry.location,
+        entry.language,
+        entry.mode
+      ].filter(Boolean).join(' · ');
+    }
+    if (entry.type === 'signal') {
+      return [entry.callsign && entry.callsign !== entry.name ? entry.callsign : '', entry.location, entry.mode]
+        .filter(Boolean).join(' · ');
+    }
+    if (entry.type === 'channel') {
+      return [entry.callsign, entry.mode].filter(Boolean).join(' · ');
+    }
+    return [entry.shortName, entry.mode].filter(Boolean).join(' · ');
   }
 
   function createUi() {
@@ -155,42 +99,54 @@
     });
   }
 
+  function renderExact(result) {
+    const entry = result.entry;
+    eyebrowEl.textContent = exactEyebrow(result);
+    titleEl.textContent = entry.name;
+    metaEl.textContent = exactMeta(entry);
+    descriptionEl.textContent = entry.description || entry.format || 'Known cataloged signal.';
+
+    const details = [engine.formatFrequency(result.frequencyKHz)];
+    if (Number.isFinite(result.distance)) details.push(`about ${Math.round(result.distance)} mi from receiver`);
+    if (entry.classA) details.push('Class A / clear-channel');
+    const schedule = scheduleLabel(entry, result.schedule);
+    if (schedule) details.push(schedule);
+    if (entry.target) details.push(`target: ${entry.target}`);
+    if (result.alternatives?.length) details.push(`${result.alternatives.length} other exact-frequency candidate${result.alternatives.length === 1 ? '' : 's'}`);
+    noteEl.textContent = details.join(' · ');
+  }
+
+  function renderRange(result) {
+    const range = result.range;
+    eyebrowEl.textContent = range.type === 'band' || range.type === 'broadcast-band' ? 'BAND' : 'SERVICE';
+    titleEl.textContent = range.name;
+    metaEl.textContent = [engine.formatRange(range), range.mode].filter(Boolean).join(' · ');
+    descriptionEl.textContent = range.description;
+    noteEl.textContent = `${engine.formatFrequency(result.frequencyKHz)} · local frequency guide`;
+  }
+
+  function renderUnknown(result) {
+    eyebrowEl.textContent = 'FREQUENCY';
+    titleEl.textContent = engine.formatFrequency(result.frequencyKHz);
+    metaEl.textContent = 'No catalog match yet';
+    descriptionEl.textContent = 'This frequency is not in the local identification catalog yet. The radio continues to work normally while the catalog grows.';
+    noteEl.textContent = 'Local lookup only · no network request';
+  }
+
   function open() {
     if (!backdrop) createUi();
 
     const kHz = tunedKHz();
     if (!Number.isFinite(kHz)) return;
 
-    const receiver = currentReceiver();
-    const candidate = stationMatch(kHz, receiver);
+    const result = engine.identify(kHz, {
+      receiverIdentity: String(receiverIdentity?.textContent || '').trim()
+    });
+    if (!result) return;
 
-    if (candidate) {
-      const { station, distance } = candidate;
-      eyebrowEl.textContent = 'LIKELY STATION';
-      titleEl.textContent = station.name;
-      metaEl.textContent = [station.callsign, station.location, station.mode].filter(Boolean).join(' · ');
-      descriptionEl.textContent = station.description;
-
-      const details = [formatFrequency(kHz)];
-      if (Number.isFinite(distance)) details.push(`about ${Math.round(distance)} mi from receiver`);
-      if (station.classA) details.push('Class A / clear-channel');
-      noteEl.textContent = details.join(' · ');
-    } else {
-      const range = rangeMatch(kHz);
-      if (range) {
-        eyebrowEl.textContent = range.type === 'band' ? 'BAND' : 'SERVICE';
-        titleEl.textContent = range.name;
-        metaEl.textContent = [formatRange(range), range.mode].filter(Boolean).join(' · ');
-        descriptionEl.textContent = range.description;
-        noteEl.textContent = `${formatFrequency(kHz)} · local frequency guide`;
-      } else {
-        eyebrowEl.textContent = 'FREQUENCY';
-        titleEl.textContent = formatFrequency(kHz);
-        metaEl.textContent = 'No catalog match yet';
-        descriptionEl.textContent = 'This frequency is not in the local identification catalog yet. The radio continues to work normally while the catalog grows.';
-        noteEl.textContent = 'Local lookup only · no network request';
-      }
-    }
+    if (result.kind === 'exact') renderExact(result);
+    else if (result.kind === 'range') renderRange(result);
+    else renderUnknown(result);
 
     backdrop.hidden = false;
     window.requestAnimationFrame(() => closeButton?.focus({ preventScroll: true }));
