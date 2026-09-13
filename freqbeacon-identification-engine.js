@@ -78,7 +78,7 @@
     return powerBonus + classABonus - distancePenalty;
   }
 
-  function hfStationRank(entry, distance, receiver, now) {
+  function stationRank(entry, distance, receiver, now) {
     const powerW = Math.max(1, stationPowerW(entry, receiver, now));
     const powerBonus = Math.log10(powerW) * 35;
     const distancePenalty = Number.isFinite(distance)
@@ -93,9 +93,7 @@
     if (entry.type === 'station' && entry.band === 'MW') {
       return amRank(entry, distance, receiver, now);
     }
-    if (entry.type === 'station') {
-      return hfStationRank(entry, distance, receiver, now);
-    }
+    if (entry.type === 'station') return stationRank(entry, distance, receiver, now);
     if (entry.type === 'signal') {
       return 500 - (Number.isFinite(distance) ? Math.log10(Math.max(1, distance)) * 60 : 90);
     }
@@ -135,8 +133,12 @@
     const best = candidates[0];
     let confidence = 'known';
     if (best.entry.type === 'station' && best.entry.band === 'MW') confidence = 'likely';
-    if (best.entry.type === 'station' && best.entry.band === 'SW') {
-      confidence = best.schedule?.active === false ? 'known' : 'likely';
+    if (best.entry.type === 'station' && (best.entry.band === 'SW' || best.entry.band === 'LW')) {
+      confidence = best.schedule?.active === true
+        ? 'likely'
+        : best.schedule?.active === false
+          ? 'cataloged'
+          : 'known';
     }
     if (best.entry.type === 'signal' && candidates.length > 1) confidence = 'likely';
 
@@ -148,12 +150,23 @@
     };
   }
 
+  function rangePriority(range) {
+    const categories = new Set(range.categories || []);
+    if (categories.has('amateur')) return 130;
+    if (categories.has('cb')) return 125;
+    if (categories.has('aviation')) return 120;
+    if (categories.has('maritime') || categories.has('navigation') || categories.has('beacon')) return 115;
+    if (range.type === 'broadcast-band') return 110;
+    if (range.type === 'service-range') return 100;
+    return 0;
+  }
+
   function rangeMatch(kHz) {
     const matches = (catalog.ranges || [])
       .filter((range) => kHz >= Number(range.startKHz) && kHz <= Number(range.endKHz))
       .sort((a, b) =>
-        (Number(a.endKHz) - Number(a.startKHz))
-        - (Number(b.endKHz) - Number(b.startKHz))
+        rangePriority(b) - rangePriority(a)
+        || (Number(a.endKHz) - Number(a.startKHz)) - (Number(b.endKHz) - Number(b.startKHz))
         || String(a.name || '').localeCompare(String(b.name || ''))
       );
     return matches[0] || null;
