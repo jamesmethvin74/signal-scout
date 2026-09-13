@@ -116,11 +116,11 @@
 /* Slender ivory needle, matching the supplied reference. */
 .meter-needle {
   --meter-cal-angle: -66deg;
-  z-index: 3;
+  z-index: 6;
   left: 50%;
   bottom: -10px;
   width: 3px;
-  height: 155%;
+  height: 205%;
   margin-left: -1.5px;
   border-radius: 2px 2px 0 0;
   background: linear-gradient(90deg, #bfae7e 0%, #fff1bd 46%, #ead39d 100%);
@@ -131,7 +131,7 @@
 }
 
 .meter-pivot {
-  z-index: 5;
+  z-index: 7;
   bottom: -8px;
   width: 8px;
   height: 8px;
