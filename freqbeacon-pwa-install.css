@@ -1,0 +1,32 @@
+.lookup-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.lookup-install-button {
+  border: 1px solid rgba(119, 239, 173, .5);
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #c9fadd;
+  background: rgba(119, 239, 173, .07);
+  font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .09em;
+  cursor: pointer;
+}
+
+.lookup-install-button:hover {
+  border-color: rgba(119, 239, 173, .8);
+  background: rgba(119, 239, 173, .12);
+}
+
+.lookup-install-button:disabled {
+  opacity: .58;
+  cursor: default;
+}
+
+@media (max-width: 430px) {
+  .lookup-top-actions { gap: 5px; }
+  .lookup-install-button,
+  .lookup-zero-link { padding-inline: 9px; }
+}
