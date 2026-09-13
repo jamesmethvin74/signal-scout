@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/lookup-page.css?v=2">
   <link rel="stylesheet" href="/freqbeacon-pwa-install.css?v=1">
   <link rel="stylesheet" href="/lookup-ux-fix.css?v=1">
+  <link rel="stylesheet" href="/lookup-category-browser.css?v=1">
   <title>Signal Lookup — FREQBEACON</title>
 </head>
 <body>
@@ -55,6 +56,34 @@
       </div>
     </section>
 
+    <section class="lookup-browser" id="lookupCategoryBrowser" aria-labelledby="lookupBrowseTitle">
+      <div class="lookup-browser-head">
+        <p class="lookup-browser-kicker">DISCOVER BY CATEGORY</p>
+        <h2 id="lookupBrowseTitle">Don't know the frequency?</h2>
+        <p>Browse signals already in FREQBEACON. Pick something interesting, identify it, then jump straight into the radio.</p>
+      </div>
+      <div class="lookup-category-chips" data-category-chips role="group" aria-label="Signal categories">
+        <button class="lookup-category-chip" type="button" data-category="sports" aria-pressed="false">SPORTS</button>
+        <button class="lookup-category-chip" type="button" data-category="religious" aria-pressed="false">RELIGION</button>
+        <button class="lookup-category-chip" type="button" data-category="propaganda" aria-pressed="false">STATE / PROPAGANDA</button>
+        <button class="lookup-category-chip" type="button" data-category="news" aria-pressed="false">NEWS / WORLD</button>
+        <button class="lookup-category-chip" type="button" data-category="international" aria-pressed="false">INTERNATIONAL DX</button>
+        <button class="lookup-category-chip" type="button" data-category="time" aria-pressed="false">TIME SIGNALS</button>
+        <button class="lookup-category-chip" type="button" data-category="military" aria-pressed="false">MILITARY / AIR</button>
+        <button class="lookup-category-chip" type="button" data-category="maritime" aria-pressed="false">MARITIME</button>
+        <button class="lookup-category-chip" type="button" data-category="local" aria-pressed="false">AM / LOCAL</button>
+        <button class="lookup-category-chip" type="button" data-category="cb" aria-pressed="false">CB</button>
+      </div>
+      <div class="lookup-category-panel" data-category-panel hidden>
+        <div class="lookup-category-panel-head">
+          <div><h3 data-category-title>Category</h3><p data-category-summary></p></div>
+          <div class="lookup-category-status" data-category-status aria-live="polite"></div>
+        </div>
+        <div class="lookup-category-list" data-category-list></div>
+        <button class="lookup-category-more" type="button" data-category-more hidden>SHOW MORE STORED FREQUENCIES</button>
+      </div>
+    </section>
+
     <section class="lookup-quick" aria-label="Try a frequency">
       <span>TRY</span>
       <button type="button" data-quick="153">153 LW</button>
@@ -87,6 +116,7 @@
   <script src="/freqbeacon-identification-engine.js?v=2"></script>
   <script src="/freqbeacon-pwa-install.js?v=1"></script>
   <script src="/lookup-page.js?v=1"></script>
+  <script src="/lookup-category-browser.js?v=1"></script>
   <script src="/lookup-ux-fix.js?v=1"></script>
 </body>
 </html>
