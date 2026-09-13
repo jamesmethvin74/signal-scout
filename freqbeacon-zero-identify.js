@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  // Zero display adapter only. The shared engine performs local lookup/ranking
-  // when the user taps the frequency. No work runs continuously while tuning.
+  // Zero display adapter only. The shared engine performs lookup/ranking when
+  // the user taps the frequency. No work runs continuously while tuning.
   const engine = window.FREQBEACON_IDENTIFICATION_ENGINE;
   const frequencyButton = document.querySelector('.zero-frequency');
   const frequencyDisplay = document.querySelector('#frequencyDisplay');
@@ -19,16 +19,15 @@
   let descriptionEl = null;
   let noteEl = null;
   let closeButton = null;
+  let lookupToken = 0;
 
   function tunedKHz() {
     const value = Number(String(frequencyDisplay.textContent || '').replace(/,/g, '').trim());
     const unit = String(frequencyUnit?.textContent || '').trim().toLowerCase();
-
     if (Number.isFinite(value) && value > 0) {
       if (unit.includes('mhz')) return value * 1000;
       if (unit.includes('khz')) return value;
     }
-
     const bridgeMHz = Number(frequencyBridge?.textContent);
     return Number.isFinite(bridgeMHz) && bridgeMHz > 0 ? bridgeMHz * 1000 : NaN;
   }
@@ -67,9 +66,7 @@
       return [entry.callsign && entry.callsign !== entry.name ? entry.callsign : '', entry.location, entry.mode]
         .filter(Boolean).join(' · ');
     }
-    if (entry.type === 'channel') {
-      return [entry.callsign, entry.mode].filter(Boolean).join(' · ');
-    }
+    if (entry.type === 'channel') return [entry.callsign, entry.mode].filter(Boolean).join(' · ');
     return [entry.shortName, entry.mode].filter(Boolean).join(' · ');
   }
 
@@ -86,7 +83,6 @@
         <p class="zero-identify-description"></p>
         <div class="zero-identify-note"></div>
       </section>`;
-
     document.body.appendChild(backdrop);
     titleEl = backdrop.querySelector('.zero-identify-title');
     eyebrowEl = backdrop.querySelector('.zero-identify-eyebrow');
@@ -94,7 +90,6 @@
     descriptionEl = backdrop.querySelector('.zero-identify-description');
     noteEl = backdrop.querySelector('.zero-identify-note');
     closeButton = backdrop.querySelector('.zero-identify-close');
-
     closeButton.addEventListener('click', close);
     backdrop.addEventListener('click', (event) => {
       if (event.target === backdrop) close();
@@ -107,7 +102,6 @@
     titleEl.textContent = entry.name;
     metaEl.textContent = exactMeta(entry);
     descriptionEl.textContent = entry.description || entry.format || 'Known cataloged signal.';
-
     const details = [engine.formatFrequency(result.frequencyKHz)];
     if (Number.isFinite(result.distance)) details.push(`about ${Math.round(result.distance)} mi from receiver`);
     if (entry.classA) details.push('Class A / clear-channel');
@@ -131,30 +125,41 @@
     eyebrowEl.textContent = 'FREQUENCY';
     titleEl.textContent = engine.formatFrequency(result.frequencyKHz);
     metaEl.textContent = 'No catalog match yet';
-    descriptionEl.textContent = 'This frequency is not in the local identification catalog yet. The radio continues to work normally while the catalog grows.';
-    noteEl.textContent = 'Local lookup only · no network request';
+    descriptionEl.textContent = 'This frequency is not in the static identification catalog yet. The radio continues to work normally while the catalog grows.';
+    noteEl.textContent = 'Static catalog only · no live schedule request';
+  }
+
+  function render(result) {
+    if (!result) return;
+    if (result.kind === 'exact') renderExact(result);
+    else if (result.kind === 'range') renderRange(result);
+    else renderUnknown(result);
   }
 
   function open() {
     if (!backdrop) createUi();
-
     const kHz = tunedKHz();
     if (!Number.isFinite(kHz)) return;
+    const options = { receiverIdentity: String(receiverIdentity?.textContent || '').trim() };
+    const token = ++lookupToken;
 
-    const result = engine.identify(kHz, {
-      receiverIdentity: String(receiverIdentity?.textContent || '').trim()
-    });
-    if (!result) return;
-
-    if (result.kind === 'exact') renderExact(result);
-    else if (result.kind === 'range') renderRange(result);
-    else renderUnknown(result);
-
+    // Open immediately from the in-memory catalog; a static A26 shard may then
+    // enrich the same sheet. This request happens only because the user tapped.
+    render(engine.identify(kHz, options));
     backdrop.hidden = false;
     window.requestAnimationFrame(() => closeButton?.focus({ preventScroll: true }));
+
+    if (typeof engine.identifyAsync === 'function') {
+      engine.identifyAsync(kHz, options).then((result) => {
+        if (token !== lookupToken || !backdrop || backdrop.hidden) return;
+        if (Math.abs(tunedKHz() - kHz) > 0.25) return;
+        render(result);
+      }).catch(() => {});
+    }
   }
 
   function close() {
+    lookupToken += 1;
     if (!backdrop || backdrop.hidden) return;
     backdrop.hidden = true;
     frequencyButton.focus({ preventScroll: true });
@@ -164,14 +169,12 @@
   frequencyButton.setAttribute('tabindex', '0');
   frequencyButton.setAttribute('title', 'Tap to identify this frequency');
   frequencyButton.setAttribute('aria-label', 'Identify the tuned frequency');
-
   frequencyButton.addEventListener('click', open);
   frequencyButton.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     open();
   });
-
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && backdrop && !backdrop.hidden) close();
   });
