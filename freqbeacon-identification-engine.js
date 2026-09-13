@@ -45,7 +45,9 @@
   }
 
   function hhmmMinutes(value) {
-    const clean = String(value || '').replace(/[^0-9]/g, '').padStart(4, '0');
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const clean = raw.replace(/[^0-9]/g, '').padStart(4, '0');
     if (!clean || clean.length > 4) return null;
     const hours = Number(clean.slice(0, 2));
     const minutes = Number(clean.slice(2));
