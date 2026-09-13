@@ -37,39 +37,79 @@
   function currentReceiver() {
     const identity = String(receiverIdentity?.textContent || '').trim();
     const upper = identity.toUpperCase();
-    const known = (catalog.receivers || []).find((receiver) => upper.includes(String(receiver.match || '').toUpperCase()));
+    const known = (catalog.receivers || []).find((receiver) =>
+      upper.includes(String(receiver.match || '').toUpperCase())
+    );
     return known ? { ...known, identity } : { identity };
   }
 
   function milesBetween(a, b) {
     if (![a?.lat, a?.lon, b?.lat, b?.lon].every(Number.isFinite)) return Infinity;
-    const radiusMiles = 3958.8;
     const radians = Math.PI / 180;
     const dLat = (b.lat - a.lat) * radians;
     const dLon = (b.lon - a.lon) * radians;
     const x = Math.sin(dLat / 2) ** 2
       + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLon / 2) ** 2;
-    return 2 * radiusMiles * Math.asin(Math.sqrt(x));
+    return 2 * 3958.8 * Math.asin(Math.sqrt(x));
+  }
+
+  function receiverLocalHour(receiver) {
+    if (!Number.isFinite(receiver?.lon)) return new Date().getHours();
+    const now = new Date();
+    const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
+    return (utcHour + receiver.lon / 15 + 24) % 24;
+  }
+
+  function stationPowerW(station, receiver) {
+    const localHour = receiverLocalHour(receiver);
+    const night = localHour < 6 || localHour >= 18;
+    const primary = night ? station.nightPowerW : station.dayPowerW;
+    if (Number.isFinite(primary)) return Number(primary);
+    const fallback = night ? station.dayPowerW : station.nightPowerW;
+    return Number.isFinite(fallback) ? Number(fallback) : 1000;
+  }
+
+  function stationRank(station, distance, receiver) {
+    const powerW = stationPowerW(station, receiver);
+    if (powerW <= 0) return -Infinity;
+    const distancePenalty = Number.isFinite(distance) ? distance : 5000;
+    const powerBonus = Math.log10(Math.max(1, powerW)) * 90;
+    const classABonus = station.classA ? 90 : 0;
+    return powerBonus + classABonus - distancePenalty;
   }
 
   function stationMatch(kHz, receiver) {
     const tolerance = kHz < 2000 ? 0.6 : 0.25;
     const matches = (catalog.stations || [])
       .filter((station) => Math.abs(Number(station.frequencyKHz) - kHz) <= tolerance)
-      .map((station) => ({
-        station,
-        distance: milesBetween(receiver, station)
-      }));
+      .map((station) => {
+        const distance = milesBetween(receiver, station);
+        return {
+          station,
+          distance,
+          rank: stationRank(station, distance, receiver)
+        };
+      })
+      // An incomplete static catalog should never manufacture certainty. This
+      // floor keeps strong regional/Class-A nighttime signals plausible while
+      // rejecting weak, distant entries that only happen to share a frequency.
+      .filter((candidate) => Number.isFinite(candidate.rank) && candidate.rank >= -175)
+      .sort((a, b) =>
+        b.rank - a.rank
+        || a.distance - b.distance
+        || String(a.station.name).localeCompare(String(b.station.name))
+      );
 
-    if (!matches.length) return null;
-    matches.sort((a, b) => a.distance - b.distance || String(a.station.name).localeCompare(String(b.station.name)));
-    return matches[0];
+    return matches[0] || null;
   }
 
   function rangeMatch(kHz) {
     const matches = (catalog.ranges || [])
       .filter((range) => kHz >= Number(range.startKHz) && kHz <= Number(range.endKHz))
-      .sort((a, b) => (Number(a.endKHz) - Number(a.startKHz)) - (Number(b.endKHz) - Number(b.startKHz)));
+      .sort((a, b) =>
+        (Number(a.endKHz) - Number(a.startKHz))
+        - (Number(b.endKHz) - Number(b.startKHz))
+      );
     return matches[0] || null;
   }
 
@@ -79,9 +119,8 @@
       const decimals = Math.abs(kHz - Math.round(kHz)) < 0.001 ? 0 : 1;
       return `${kHz.toFixed(decimals)} kHz`;
     }
-    const mhz = kHz / 1000;
     const decimals = Math.abs(kHz - Math.round(kHz)) < 0.001 ? 3 : 4;
-    return `${mhz.toFixed(decimals)} MHz`;
+    return `${(kHz / 1000).toFixed(decimals)} MHz`;
   }
 
   function formatRange(range) {
@@ -126,14 +165,16 @@
     const candidate = stationMatch(kHz, receiver);
 
     if (candidate) {
-      const { station } = candidate;
+      const { station, distance } = candidate;
       eyebrowEl.textContent = 'LIKELY STATION';
       titleEl.textContent = station.name;
       metaEl.textContent = [station.callsign, station.location, station.mode].filter(Boolean).join(' · ');
       descriptionEl.textContent = station.description;
 
-      const receiverLabel = receiver.identity || receiver.name || 'current receiver';
-      noteEl.textContent = `${formatFrequency(kHz)} · likely match near ${receiverLabel}`;
+      const details = [formatFrequency(kHz)];
+      if (Number.isFinite(distance)) details.push(`about ${Math.round(distance)} mi from receiver`);
+      if (station.classA) details.push('Class A / clear-channel');
+      noteEl.textContent = details.join(' · ');
     } else {
       const range = rangeMatch(kHz);
       if (range) {
@@ -146,7 +187,7 @@
         eyebrowEl.textContent = 'FREQUENCY';
         titleEl.textContent = formatFrequency(kHz);
         metaEl.textContent = 'No catalog match yet';
-        descriptionEl.textContent = 'This frequency is not in the lightweight local identification catalog yet. The radio continues to work normally while the catalog grows.';
+        descriptionEl.textContent = 'This frequency is not in the local identification catalog yet. The radio continues to work normally while the catalog grows.';
         noteEl.textContent = 'Local lookup only · no network request';
       }
     }
