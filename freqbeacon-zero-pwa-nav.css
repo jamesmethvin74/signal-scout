@@ -1,0 +1,38 @@
+.zero-app-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 5px;
+}
+
+.zero-app-action,
+.zero-install-button {
+  min-height: 27px;
+  border: 1px solid rgba(99, 231, 225, .34);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #a7f3ef;
+  background: rgba(20, 86, 91, .12);
+  font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .08em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.zero-app-action:hover,
+.zero-install-button:hover {
+  border-color: rgba(99, 231, 225, .68);
+  background: rgba(20, 86, 91, .22);
+}
+
+.zero-install-button {
+  color: #c9fadd;
+  border-color: rgba(119, 239, 173, .44);
+  background: rgba(119, 239, 173, .06);
+}
+
+.zero-install-button:disabled {
+  opacity: .58;
+  cursor: default;
+}
