@@ -15,6 +15,7 @@
 
   let pendingKHz = NaN;
   let bridgeObserver = null;
+  let displayObserver = null;
 
   function radioOn() {
     return power?.getAttribute('aria-pressed') === 'true';
@@ -39,39 +40,60 @@
       && Math.abs(actualKHz - pendingKHz) <= 0.6;
   }
 
+  function stopWatching() {
+    bridgeObserver?.disconnect();
+    displayObserver?.disconnect();
+    bridgeObserver = null;
+    displayObserver = null;
+  }
+
   function paintPendingTarget() {
     if (!Number.isFinite(pendingKHz)) return;
 
+    const formatted = formatKHz(pendingKHz);
     if (targetReached()) {
-      display.textContent = formatKHz(pendingKHz);
+      if (display.textContent !== formatted) display.textContent = formatted;
       if (unit) unit.textContent = 'kHz';
       pendingKHz = NaN;
-      bridgeObserver?.disconnect();
-      bridgeObserver = null;
+      stopWatching();
       return;
     }
 
-    // Zero's deferred module initializes at 560 kHz and START also resets its
-    // bridge before the pending target is applied. Keep the requested target
-    // visible through both transitions so the user never sees a false 560 kHz.
-    display.textContent = formatKHz(pendingKHz);
+    // Zero's deferred module initializes at 560 kHz, and START can briefly
+    // repaint 560 again while the socket opens. Keep the requested target
+    // visible through both transitions until the real bridge reaches it.
+    if (display.textContent !== formatted) display.textContent = formatted;
     if (unit) unit.textContent = 'kHz';
   }
 
-  function watchBridge() {
-    if (!bridge || bridgeObserver) return;
-    bridgeObserver = new MutationObserver(paintPendingTarget);
-    bridgeObserver.observe(bridge, {
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
+  function watchPendingState() {
+    if (bridge && !bridgeObserver) {
+      bridgeObserver = new MutationObserver(paintPendingTarget);
+      bridgeObserver.observe(bridge, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
+
+    if (!displayObserver) {
+      displayObserver = new MutationObserver(() => {
+        if (!Number.isFinite(pendingKHz)) return;
+        const formatted = formatKHz(pendingKHz);
+        if (display.textContent !== formatted) paintPendingTarget();
+      });
+      displayObserver.observe(display, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
   }
 
   function queuePendingTarget(kHz) {
     if (!Number.isFinite(kHz)) return;
     pendingKHz = kHz;
-    watchBridge();
+    watchPendingState();
     paintPendingTarget();
   }
 
