@@ -95,15 +95,25 @@
     const start = hhmmMinutes(entry?.start);
     const end = hhmmMinutes(entry?.end);
     if (start === null || end === null) return null;
-    const scheduledToday = dayState(entry?.days, now);
-    if (scheduledToday === false) return { active: false, start, end, dayActive: false };
-    if (start === 0 && end === 1440) return { active: true, start, end, dayActive: scheduledToday };
 
     const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const active = start <= end
-      ? minute >= start && minute < end
-      : minute >= start || minute < end;
-    return { active, start, end, dayActive: scheduledToday };
+    let timeActive;
+    let operationDay = now;
+
+    if (start === 0 && end === 1440) {
+      timeActive = true;
+    } else if (start <= end) {
+      timeActive = minute >= start && minute < end;
+    } else {
+      timeActive = minute >= start || minute < end;
+      // For an overnight window such as 2300-0100, the portion after 0000
+      // belongs to the prior UTC operation day in HFCC/EiBi schedules.
+      if (timeActive && minute < end) operationDay = new Date(now.getTime() - 86400000);
+    }
+
+    const scheduledDay = dayState(entry?.days, operationDay);
+    const active = timeActive && scheduledDay !== false;
+    return { active, start, end, dayActive: scheduledDay };
   }
 
   function amRank(entry, distance, receiver, now) {
