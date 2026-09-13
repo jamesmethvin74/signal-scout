@@ -153,7 +153,7 @@ function drawBandOverlay() {
   ctx.clearRect(0, 0, w, overlay.height);
   ctx.fillStyle = '#060a0c';
   ctx.fillRect(0, scaleY, w, scaleH);
-  ctx.fillStyle = '#2b1732';
+  ctx.fillStyle = '#060a0c';
   ctx.fillRect(0, scaleY, w, bandH);
 
   const bands = visibleBands();
