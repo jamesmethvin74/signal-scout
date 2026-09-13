@@ -3,17 +3,29 @@
 
   // Display-only S-meter calibration. The Kiwi dBm telemetry remains
   // authoritative. This adapter maps that value to the actual printed meter
-  // marks on screen, so responsive/mobile geometry cannot skew the reading.
+  // marks on screen so the compact analog face stays numerically meaningful.
   const signalValue = document.querySelector('#signalValue');
   const meterNeedle = document.querySelector('#meterNeedle');
   const analogMeter = document.querySelector('.analog-meter');
   const meterWindow = document.querySelector('.meter-window');
-  const scaleMarks = [...document.querySelectorAll('.meter-scale span')];
+  const meterScale = document.querySelector('.meter-scale');
 
-  if (!signalValue || !meterNeedle || !meterWindow || scaleMarks.length < 6) return;
+  if (!signalValue || !meterNeedle || !meterWindow || !meterScale) return;
 
-  const DBM_MARKS = Object.freeze([-121, -109, -97, -85, -73, -53]);
-  const FALLBACK_ANGLES = Object.freeze([-68, -48, -27, -6, 18, 62]);
+  // The base shell already supplies S1, 3, 5, 7, 9 and +20. Extend the
+  // classic strong-signal scale to +40 and +60 like a traditional receiver.
+  if (meterScale.children.length < 8) {
+    for (const label of ['+40', '+60']) {
+      const mark = document.createElement('span');
+      mark.textContent = label;
+      mark.className = 'meter-over-mark';
+      meterScale.append(mark);
+    }
+  }
+
+  const scaleMarks = [...meterScale.querySelectorAll('span')].slice(0, 8);
+  const DBM_MARKS = Object.freeze([-121, -109, -97, -85, -73, -53, -33, -13]);
+  const FALLBACK_ANGLES = Object.freeze([-66, -49, -31, -12, 8, 29, 48, 65]);
   let markAngles = [...FALLBACK_ANGLES];
   let resizeFrame = 0;
 
@@ -27,14 +39,16 @@
 
     const pivotX = windowRect.left + windowRect.width / 2;
     const pivotY = windowRect.bottom - 1;
-    const measured = scaleMarks.slice(0, 6).map((mark) => {
+    const measured = scaleMarks.map((mark) => {
       const rect = mark.getBoundingClientRect();
       const targetX = rect.left + rect.width / 2;
       const targetY = rect.top + rect.height / 2;
       return Math.atan2(targetX - pivotX, pivotY - targetY) * 180 / Math.PI;
     });
 
-    if (measured.every(Number.isFinite)) markAngles = measured;
+    if (measured.length === DBM_MARKS.length && measured.every(Number.isFinite)) {
+      markAngles = measured;
+    }
   }
 
   function angleForDbm(dbm) {
