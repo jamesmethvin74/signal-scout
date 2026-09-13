@@ -82,7 +82,7 @@
   transform: translateX(-50%);
 }
 
-/* S1, S3, S5, S7, S9, then +20, +40, +60. */
+/* S1, S3, S5, S7, S9, then +10, +40, +60 dBm. */
 .meter-scale span:nth-child(1) { left: 8%; }
 .meter-scale span:nth-child(2) { left: 24%; }
 .meter-scale span:nth-child(3) { left: 40%; }
@@ -94,12 +94,6 @@
 
 .meter-scale span:nth-child(n+6) {
   color: #dc594e;
-}
-
-.meter-scale span:nth-child(8)::after {
-  content: " dBm";
-  color: #e7d8ab;
-  font-weight: 600;
 }
 
 /* Tick marks drop to the straight scale line. */
@@ -119,7 +113,7 @@
   background: #dc594e;
 }
 
-/* Slender ivory needle exactly like the supplied reference. */
+/* Slender ivory needle, matching the supplied reference. */
 .meter-needle {
   --meter-cal-angle: -66deg;
   z-index: 3;
