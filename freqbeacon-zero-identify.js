@@ -90,7 +90,10 @@
           rank: stationRank(station, distance, receiver)
         };
       })
-      .filter((candidate) => Number.isFinite(candidate.rank))
+      // An incomplete static catalog should never manufacture certainty. This
+      // floor keeps strong regional/Class-A nighttime signals plausible while
+      // rejecting weak, distant entries that only happen to share a frequency.
+      .filter((candidate) => Number.isFinite(candidate.rank) && candidate.rank >= -175)
       .sort((a, b) =>
         b.rank - a.rank
         || a.distance - b.distance
