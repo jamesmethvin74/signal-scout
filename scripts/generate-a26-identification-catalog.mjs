@@ -170,7 +170,7 @@ function groupKey(row) {
     Math.round(row.frequencyHz),
     row.on,
     row.off,
-    normalize(row.origin || row.txCountry),
+    countryAlias(row.origin || row.txCountry),
     normalize(row.mode || 'AM')
   ].join('|');
 }
