@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  // Shared, local-only identification catalog for FREQBEACON Zero and future
-  // Lookup/Explore surfaces. Zero never loads full-data.js, so no HFCC/EiBi
-  // network request occurs while listening. Instead we reuse FREQBEACON's
-  // static SW seed schedule (stations.js), AM snapshot, and ham-band guide.
+  // Shared, local-only identification catalog for Zero and future Lookup/Explore.
+  // Zero does not load full-data.js: there are no HFCC/EiBi network calls while
+  // listening. We reuse the AM snapshot, static SW schedule seeds, ham guide,
+  // and a compact set of reliable A26/fixed-service identities and ranges.
   const amStations = Array.isArray(window.FREQBEACON_ZERO_AM_CATALOG)
     ? window.FREQBEACON_ZERO_AM_CATALOG
     : [];
@@ -19,6 +19,17 @@
     ...entry,
     categories: Object.freeze([...(entry.categories || [])])
   });
+
+  function swCategories(station) {
+    const text = `${station.name || ''} ${station.format || ''}`.toLowerCase();
+    const categories = ['shortwave', 'broadcast'];
+    if (/international|world service|pacific service|radio exterior|radio romania|china radio/.test(text)) categories.push('international');
+    if (/news|world service/.test(text)) categories.push('news');
+    if (/relig/.test(text)) categories.push('religious');
+    if (/sports/.test(text)) categories.push('sports');
+    if (/bbc world service|radio romania international|rnz pacific|radio exterior de españa|china radio international/.test(text)) categories.push('state-broadcaster');
+    return [...new Set(categories)];
+  }
 
   const mappedAm = amStations.map((station) => freezeEntry({
     ...station,
@@ -41,12 +52,7 @@
       lon: Number(station.lon),
       mode: /DRM/i.test(String(station.format || '')) ? 'DRM' : 'AM',
       language: station.language,
-      categories: [
-        'shortwave',
-        'broadcast',
-        ...(/relig/i.test(String(station.format || '')) ? ['religious'] : []),
-        ...(/news|world service|international/i.test(`${station.format || ''} ${station.name || ''}`) ? ['international'] : [])
-      ],
+      categories: swCategories(station),
       description: station.note || station.format || 'Shortwave broadcast service.',
       powerW: Number.isFinite(Number(station.power)) ? Number(station.power) * 1000 : undefined,
       start: station.start,
@@ -56,6 +62,32 @@
       format: station.format || '',
       source: 'FREQBEACON stations.js static SW schedule seed'
     }));
+
+  // Reliable longwave broadcasters carried in the A26 merged schedule source.
+  // These are baked locally so Zero never loads or fetches the full schedule.
+  const longwaveBroadcasts = [
+    [153, 'Antena Satelor', 'Brasov/Bod Colonie, Romania', 'Romania', 'Romanian', 100000, '0355', '2000', 'Romanian public longwave service.'],
+    [171, "Radio Mediterranee Int'l", 'Nador, Morocco', 'Morocco', 'French / Arabic', 600000, '0500', '2400', 'Longwave international service from Morocco.'],
+    [198, 'BBC Radio 4 Long Wave', 'Droitwich, United Kingdom', 'United Kingdom', 'English', 250000, '0500', '0100', 'BBC Radio 4 longwave service from Droitwich.'],
+    [207, 'RÚV Rás 1/2', 'Gufuskalar, Iceland', 'Iceland', 'Icelandic', 100000, '0000', '2400', 'Icelandic public-service longwave transmission.'],
+    [252, 'Radio Algérienne Chaîne 3', 'Tipaza, Algeria', 'Algeria', 'French', 750000, '0000', '2400', 'High-power Algerian longwave broadcast service.']
+  ].map((row) => freezeEntry({
+    type: 'station',
+    band: 'LW',
+    frequencyKHz: row[0],
+    name: row[1],
+    location: row[2],
+    country: row[3],
+    transmitter: row[2],
+    language: row[4],
+    powerW: row[5],
+    start: row[6],
+    end: row[7],
+    mode: 'AM',
+    categories: ['longwave', 'broadcast', 'international', 'state-broadcaster'],
+    description: row[8],
+    source: 'A26 merged schedule static snapshot'
+  }));
 
   const fixedSignals = [];
   const pushSignal = (frequencyKHz, name, fields = {}) => fixedSignals.push(freezeEntry({
@@ -68,54 +100,42 @@
 
   // Standard-frequency/time stations. Multiple transmitters may share a
   // frequency; the lookup engine ranks them from the active SDR receiver.
-  [2500, 5000, 10000, 15000, 20000, 25000].forEach((frequencyKHz) => pushSignal(
-    frequencyKHz,
-    'WWV',
-    {
-      callsign: 'WWV',
-      location: 'Fort Collins, Colorado',
-      country: 'United States',
-      transmitter: 'Fort Collins, Colorado',
-      lat: 40.6781,
-      lon: -105.0469,
-      mode: 'AM',
-      categories: ['time-signal', 'utility', 'standard-frequency'],
-      description: 'NIST standard time and frequency broadcast with precise timing tones, announcements and propagation information.',
-      source: 'NIST standard-frequency service'
-    }
-  ));
-  [2500, 5000, 10000, 15000].forEach((frequencyKHz) => pushSignal(
-    frequencyKHz,
-    'WWVH',
-    {
-      callsign: 'WWVH',
-      location: 'Kekaha, Hawaii',
-      country: 'United States',
-      transmitter: 'Kekaha, Hawaii',
-      lat: 21.9893,
-      lon: -159.7646,
-      mode: 'AM',
-      categories: ['time-signal', 'utility', 'standard-frequency'],
-      description: 'NIST Pacific standard time and frequency broadcast sharing several channels with WWV.',
-      source: 'NIST standard-frequency service'
-    }
-  ));
-  [3330, 7850, 14670].forEach((frequencyKHz) => pushSignal(
-    frequencyKHz,
-    'CHU',
-    {
-      callsign: 'CHU',
-      location: 'Ottawa, Ontario',
-      country: 'Canada',
-      transmitter: 'Ottawa, Ontario',
-      lat: 45.2944,
-      lon: -75.7578,
-      mode: 'AM / USB',
-      categories: ['time-signal', 'utility', 'standard-frequency'],
-      description: 'Canadian time-signal station transmitting continuous UTC time announcements and timing codes.',
-      source: 'National Research Council Canada time service'
-    }
-  ));
+  [2500, 5000, 10000, 15000, 20000, 25000].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'WWV', {
+    callsign: 'WWV',
+    location: 'Fort Collins, Colorado',
+    country: 'United States',
+    transmitter: 'Fort Collins, Colorado',
+    lat: 40.6781,
+    lon: -105.0469,
+    mode: 'AM',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'NIST standard time and frequency broadcast with precise timing tones, announcements and propagation information.',
+    source: 'NIST standard-frequency service'
+  }));
+  [2500, 5000, 10000, 15000].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'WWVH', {
+    callsign: 'WWVH',
+    location: 'Kekaha, Hawaii',
+    country: 'United States',
+    transmitter: 'Kekaha, Hawaii',
+    lat: 21.9893,
+    lon: -159.7646,
+    mode: 'AM',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'NIST Pacific standard time and frequency broadcast sharing several channels with WWV.',
+    source: 'NIST standard-frequency service'
+  }));
+  [3330, 7850, 14670].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'CHU', {
+    callsign: 'CHU',
+    location: 'Ottawa, Ontario',
+    country: 'Canada',
+    transmitter: 'Ottawa, Ontario',
+    lat: 45.2944,
+    lon: -75.7578,
+    mode: 'AM / USB',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'Canadian time-signal station transmitting continuous UTC time announcements and timing codes.',
+    source: 'National Research Council Canada time service'
+  }));
   pushSignal(60, 'WWVB', {
     callsign: 'WWVB',
     location: 'Fort Collins, Colorado',
@@ -199,7 +219,7 @@
 
   const rawRanges = [
     ['band', 30, 300, 'Longwave', 'LW', 'AM / CW / Digital', 'longwave|utility', 'Low-frequency spectrum used for time standards, navigation beacons, utility signals and some broadcasting outside North America.'],
-    ['service-range', 190, 535, 'Aeronautical NDB / Beacon Region', 'NDB', 'AM / CW ident', 'aviation|navigation|beacon', 'Legacy and regional non-directional aeronautical beacons may be heard in this part of the LF/MF spectrum; many individual beacons have been decommissioned.'],
+    ['service-range', 190, 500, 'Aeronautical NDB / Beacon Region', 'NDB', 'AM / CW ident', 'aviation|navigation|beacon', 'Legacy and regional non-directional aeronautical beacons may be heard in this part of the LF/MF spectrum; many individual beacons have been decommissioned.'],
     ['band', 520, 1710, 'Medium Wave / AM Broadcast', 'AM BC', 'AM', 'broadcast', 'Traditional AM broadcasting. Local stations dominate by day; distant stations can travel much farther after dark.'],
     ['broadcast-band', 2300, 2495, '120 Meter Shortwave Broadcast Band', '120m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Tropical-band shortwave broadcasting and regional international services.'],
     ['broadcast-band', 3200, 3400, '90 Meter Shortwave Broadcast Band', '90m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Tropical-band shortwave broadcasting, especially useful after dark.'],
@@ -227,7 +247,7 @@
     ['aviation-range', 17900, 18030, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
     ['aviation-range', 21870, 22000, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
     ['service-range', 26965, 27405, 'Citizens Band Radio', 'CB', 'AM / SSB / FM', 'cb|voice', 'The 40-channel U.S. Citizens Band. Exact channel frequencies are identified individually.'],
-    ['band', 2300, 26100, 'Shortwave / HF', 'Shortwave', 'AM / SSB / CW / Digital', 'shortwave|broadcast|utility', 'High-frequency radio carrying international broadcasting, amateur, aviation, maritime, military and utility signals around the world.']
+    ['band', 2300, 30000, 'Shortwave / HF', 'Shortwave', 'AM / SSB / CW / Digital', 'shortwave|broadcast|utility', 'High-frequency radio carrying international broadcasting, amateur, aviation, maritime, military and utility signals around the world.']
   ];
 
   const staticRanges = rawRanges.map((row) => freezeEntry({
@@ -249,16 +269,30 @@
     name: `${band.name} Amateur Band`,
     shortName: band.short,
     mode: String(band.modes || '').replace(/ · /g, ' / '),
-    categories: ['amateur', ...(/SSB|AM/i.test(String(band.modes || '')) ? ['voice'] : []), ...(/digital/i.test(String(band.modes || '')) ? ['digital'] : [])],
+    categories: [
+      'amateur',
+      ...(/SSB|AM/i.test(String(band.modes || '')) ? ['voice'] : []),
+      ...(/digital/i.test(String(band.modes || '')) ? ['digital'] : [])
+    ],
     description: band.note || band.character || 'Amateur radio allocation.',
     source: 'FREQBEACON ham-bands.js'
   }));
 
+  const entries = Object.freeze([
+    ...mappedAm,
+    ...mappedShortwave,
+    ...longwaveBroadcasts,
+    ...fixedSignals,
+    ...knownServices,
+    ...cbChannels
+  ]);
+
   const catalog = Object.freeze({
-    version: 3,
+    version: 4,
     generatedFrom: Object.freeze([
       'freqbeacon-zero-am-catalog.js',
       'stations.js static SW schedule seed',
+      'A26 merged schedule static LW snapshot',
       'ham-bands.js',
       'FREQBEACON fixed-service guide'
     ]),
@@ -271,11 +305,12 @@
         lon: -77.4311
       })
     ]),
-    stations: Object.freeze([...mappedAm, ...mappedShortwave, ...fixedSignals, ...knownServices, ...cbChannels]),
+    entries,
+    // Compatibility property for the first Zero identification implementation.
+    stations: entries,
     ranges: Object.freeze([...hamRanges, ...staticRanges])
   });
 
   window.FREQBEACON_IDENTIFICATION_CATALOG = catalog;
-  // Compatibility alias for the existing Zero UI.
   window.FREQBEACON_ZERO_IDENTIFICATION_CATALOG = catalog;
 })();
