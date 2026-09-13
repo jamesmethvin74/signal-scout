@@ -66,11 +66,10 @@
   // Reliable longwave broadcasters carried in the A26 merged schedule source.
   // These are baked locally so Zero never loads or fetches the full schedule.
   const longwaveBroadcasts = [
-    [153, 'Antena Satelor', 'Brasov/Bod Colonie, Romania', 'Romania', 'Romanian', 100000, '0355', '2000', 'Romanian public longwave service.'],
-    [171, "Radio Mediterranee Int'l", 'Nador, Morocco', 'Morocco', 'French / Arabic', 600000, '0500', '2400', 'Longwave international service from Morocco.'],
-    [198, 'BBC Radio 4 Long Wave', 'Droitwich, United Kingdom', 'United Kingdom', 'English', 250000, '0500', '0100', 'BBC Radio 4 longwave service from Droitwich.'],
-    [207, 'RÚV Rás 1/2', 'Gufuskalar, Iceland', 'Iceland', 'Icelandic', 100000, '0000', '2400', 'Icelandic public-service longwave transmission.'],
-    [252, 'Radio Algérienne Chaîne 3', 'Tipaza, Algeria', 'Algeria', 'French', 750000, '0000', '2400', 'High-power Algerian longwave broadcast service.']
+    [153, 'Antena Satelor', 'Brasov/Bod Colonie, Romania', 'Romania', 'Romanian', 200000, '0355', '2000', 'Romanian public longwave service.', true],
+    [171, "Radio Mediterranee Int'l", 'Nador, Morocco', 'Morocco', 'French / Arabic', 600000, '0500', '2400', 'Longwave international service from Morocco.', false],
+    [207, 'RÚV Rás 1/2', 'Gufuskalar, Iceland', 'Iceland', 'Icelandic', 100000, '0000', '2400', 'Icelandic public-service longwave transmission.', true],
+    [252, 'Radio Algérienne Chaîne 3', 'Tipaza, Algeria', 'Algeria', 'French', 750000, '0000', '2400', 'High-power Algerian longwave broadcast service.', true]
   ].map((row) => freezeEntry({
     type: 'station',
     band: 'LW',
@@ -84,7 +83,7 @@
     start: row[6],
     end: row[7],
     mode: 'AM',
-    categories: ['longwave', 'broadcast', 'international', 'state-broadcaster'],
+    categories: ['longwave', 'broadcast', 'international', ...(row[9] ? ['state-broadcaster'] : [])],
     description: row[8],
     source: 'A26 merged schedule static snapshot'
   }));
