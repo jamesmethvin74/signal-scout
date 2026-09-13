@@ -73,10 +73,9 @@
     const raw = String(days ?? '').trim();
     if (!raw || raw === '1234567' || /^daily$/i.test(raw)) return null;
 
-    // HFCC numeric convention: 1=Monday ... 7=Sunday.
+    // HFCC numeric convention is Sun=1 through Sat=7.
     if (/^[1-7]+$/.test(raw)) {
-      const jsDay = now.getUTCDay();
-      const hfccDay = jsDay === 0 ? 7 : jsDay;
+      const hfccDay = now.getUTCDay() + 1;
       return raw.includes(String(hfccDay));
     }
 
@@ -141,12 +140,14 @@
   function exactRank(entry, distance, receiver, now) {
     if (entry.type === 'station' && entry.band === 'MW') return amRank(entry, distance, receiver, now);
     if (entry.type === 'station') return stationRank(entry, distance, receiver, now);
+    // Curated fixed signals/services are stronger evidence than a generated
+    // broadcaster row that happens to share the same nominal frequency.
     if (entry.type === 'signal') {
-      return 500 - (Number.isFinite(distance) ? Math.log10(Math.max(1, distance)) * 60 : 90);
+      return 1000 - (Number.isFinite(distance) ? Math.log10(Math.max(1, distance)) * 60 : 90);
     }
-    if (entry.type === 'channel') return 480;
-    if (entry.type === 'service') return 460;
-    return 400;
+    if (entry.type === 'channel') return 950;
+    if (entry.type === 'service') return 900;
+    return 800;
   }
 
   function candidateKey(entry) {
