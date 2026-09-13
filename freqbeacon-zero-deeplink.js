@@ -36,6 +36,22 @@
   if (originalMode == null) delete button.dataset.bandMode;
   else button.dataset.bandMode = originalMode;
 
+  // When Zero is still OFF, the shell queues a band target but its readout stays
+  // on the default 560 kHz until the receiver starts. Lookup must hand the chosen
+  // frequency into the visible radio immediately, so prime both the visible
+  // readout and the existing hidden frequency bridge after module startup.
+  function primeLookupTarget() {
+    const display = document.querySelector('#frequencyDisplay');
+    const bridge = document.querySelector('#frequencyValue');
+    if (display) display.textContent = targetKHz.toFixed(3);
+    if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(3);
+  }
+
+  primeLookupTarget();
+  window.addEventListener('load', () => {
+    window.requestAnimationFrame(primeLookupTarget);
+  }, { once: true });
+
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.style.cssText = [
