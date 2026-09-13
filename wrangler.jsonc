@@ -1,16 +1,27 @@
-// FREQBEACON production Worker + isolated Zero clean-room SDR route.
+// FREQBEACON production Worker + trusted Explore receiver health.
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v17.js",
+  "main": "worker-program-v18.js",
   "routes": [
-    {
-      "pattern": "freqbeacon.methvindigitalworks.com",
-      "custom_domain": true
-    }
+    { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
   ],
   "triggers": {
     "crons": ["17 */6 * * *"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RECEIVER_HEALTH",
+        "class_name": "ReceiverHealthStore"
+      }
+    ]
+  },
+  "exports": {
+    "ReceiverHealthStore": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
   },
   "assets": {
     "directory": "./",
@@ -21,6 +32,9 @@
       "/zero/",
       "/zero-bench",
       "/zero-bench/",
+      "/api/explore/*",
+      "/explore",
+      "/explore/",
       "/api/sdr/*",
       "/api/program-guide",
       "/api/program-guide/*",
