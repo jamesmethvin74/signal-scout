@@ -4,21 +4,17 @@
   const engine = window.FREQBEACON_IDENTIFICATION_ENGINE;
   const form = document.querySelector('#lookupForm');
   const input = document.querySelector('#lookupFrequency');
-  const stage = document.querySelector('#lookupStage');
-  const clock = document.querySelector('#lookupClock');
-  if (!engine || !form || !input || !stage) return;
+  const clearButton = document.querySelector('#lookupClear');
+  const stage = document.querySelector('#lookupResults');
+  const count = document.querySelector('#lookupResultCount');
+  const status = document.querySelector('#lookupStatus');
+  if (!engine || !form || !input || !stage || !count) return;
 
   const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
-  let offsetHours = 0;
   let lookupToken = 0;
 
-  function escapeHtml(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+  function esc(value) {
+    return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   }
 
   function parseFrequency(raw) {
@@ -40,36 +36,7 @@
       const lon = Number(payload?.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
       return { lat, lon, identity: payload?.label || 'Your listening location' };
-    } catch {
-      return null;
-    }
-  }
-
-  function lookupDate() {
-    return new Date(Date.now() + offsetHours * 3600000);
-  }
-
-  function updateClock() {
-    const date = lookupDate();
-    const utc = `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
-    const local = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }).format(date);
-    if (clock) clock.textContent = `${local} · ${utc}`;
-  }
-
-  function scheduleText(entry, schedule) {
-    if (!entry?.start || !entry?.end) return 'Not time-specific';
-    const start = String(entry.start).padStart(4, '0');
-    const end = String(entry.end).padStart(4, '0');
-    const label = `${start.slice(0, 2)}:${start.slice(2)}–${end === '2400' ? '24:00' : `${end.slice(0, 2)}:${end.slice(2)}`} UTC`;
-    if (!schedule) return label;
-    return `${schedule.active ? 'On schedule' : 'Outside schedule'} · ${label}`;
-  }
-
-  function powerText(entry) {
-    const watts = Number(entry?.powerW);
-    if (!Number.isFinite(watts) || watts <= 0) return 'Not listed';
-    if (watts >= 1000) return `${(watts / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} kW`;
-    return `${Math.round(watts)} W`;
+    } catch { return null; }
   }
 
   function inferredMode(item, frequencyKHz) {
@@ -78,129 +45,108 @@
     if (mode.includes('lsb')) return 'lsb';
     if (mode.includes('nbfm') || mode === 'fm') return 'nbfm';
     if (mode.includes('cw') && !mode.includes('am')) return 'cw';
-    const categories = new Set(item?.categories || []);
+    const categories = new Set((item?.categories || []).map((value) => String(value).toLowerCase()));
     if (categories.has('amateur')) return Number(frequencyKHz) < 10000 ? 'lsb' : 'usb';
     return 'am';
   }
 
-  function statusLabel(result) {
-    const entry = result.entry;
-    if (entry.type === 'station' && entry.band === 'MW') return 'LIKELY STATION';
-    if (entry.type === 'station') {
-      if (result.confidence === 'likely') return 'LIKELY BROADCAST';
-      if (result.confidence === 'cataloged') return 'CATALOGED BROADCAST';
-      return 'KNOWN BROADCAST';
-    }
-    if (entry.type === 'signal') return result.confidence === 'likely' ? 'LIKELY SIGNAL' : 'KNOWN SIGNAL';
-    if (entry.type === 'channel') return 'KNOWN CHANNEL';
-    if (entry.type === 'service') return 'KNOWN SERVICE';
-    return 'KNOWN SIGNAL';
-  }
-
-  function resultMeta(entry) {
-    return [
-      entry.callsign && entry.callsign !== entry.name ? entry.callsign : '',
-      entry.transmitter || entry.location || entry.country,
-      entry.language,
-      entry.mode
-    ].filter(Boolean).join(' · ');
-  }
-
   function tuneHref(frequencyKHz, item) {
-    const mode = inferredMode(item, frequencyKHz);
-    return `/zero?frequency=${encodeURIComponent(Number(frequencyKHz).toFixed(3))}&mode=${encodeURIComponent(mode)}&from=lookup`;
+    return `/zero?frequency=${encodeURIComponent(Number(frequencyKHz).toFixed(3))}&mode=${encodeURIComponent(inferredMode(item, frequencyKHz))}&from=lookup`;
   }
 
-  function tagsHtml(categories = []) {
-    return [...new Set(categories)].slice(0, 8).map((category) => `<span class="lookup-tag">${escapeHtml(String(category).replaceAll('-', ' '))}</span>`).join('');
+  function categoryLabel(entry) {
+    const cats = new Set((entry?.categories || []).map((value) => String(value).toLowerCase()));
+    if (cats.has('religious')) return 'Religious';
+    if (cats.has('sports')) return 'Sports';
+    if (cats.has('news')) return 'News';
+    if (cats.has('aviation')) return 'Aviation';
+    if (cats.has('cb')) return 'CB';
+    if (cats.has('amateur') && cats.has('voice')) return 'Amateur Voice';
+    if (cats.has('digital')) return 'Digital';
+    if (cats.has('utility')) return 'Utility';
+    if (cats.has('international')) return 'International';
+    if (entry?.band === 'MW') return 'AM Broadcast';
+    if (entry?.band === 'SW') return 'Shortwave';
+    if (entry?.band === 'LW') return 'Longwave';
+    return entry?.type ? String(entry.type).replace('-', ' ') : 'Radio service';
   }
 
-  function detail(label, value) {
-    if (!value) return '';
-    return `<div class="lookup-detail"><small>${escapeHtml(label)}</small><b>${escapeHtml(value)}</b></div>`;
+  function statusLabel(candidate, isBest) {
+    if (candidate.schedule?.active === true) return { text: 'ON NOW', now: true };
+    if (candidate.schedule?.active === false) return { text: 'SCHEDULED', now: false };
+    if (candidate.entry?.type === 'station' && isBest) return { text: 'LIKELY NOW', now: false };
+    return { text: candidate.entry?.type === 'station' ? 'POSSIBLE' : 'KNOWN', now: false };
   }
 
-  function alternativeHtml(candidate, frequencyKHz) {
+  function candidateCard(candidate, frequencyKHz, index) {
     const entry = candidate.entry;
-    const schedule = candidate.schedule;
-    return `<div class="lookup-alternative">
-      <div>
-        <strong>${escapeHtml(entry.name || 'Catalog candidate')}</strong>
-        <span>${escapeHtml([entry.transmitter || entry.location || entry.country, entry.language, entry.mode].filter(Boolean).join(' · '))}</span>
+    const statusState = statusLabel(candidate, index === 0);
+    const place = entry.transmitter || entry.location || entry.country || '';
+    const meta = [engine.formatFrequency(frequencyKHz), entry.language || '', categoryLabel(entry)].filter(Boolean);
+    const description = entry.description || entry.format || 'Known FREQBEACON catalog entry.';
+    const guideClass = entry.type === 'station' && String(entry.band || '').toUpperCase() === 'SW' ? ' lookup-result' : '';
+    return `<article class="lookup-result-card${guideClass} ${index === 0 ? 'is-best' : ''}">
+      <div class="lookup-card-body">
+        ${index === 0 ? '<span class="lookup-best-badge">BEST MATCH</span>' : ''}
+        <div class="lookup-card-title-row">
+          <h3 class="lookup-card-title station-name">${esc(entry.name || entry.callsign || 'Known signal')}</h3>
+          <span class="lookup-status-pill ${statusState.now ? 'is-now' : ''}"><i aria-hidden="true"></i>${esc(statusState.text)}</span>
+        </div>
+        <div class="lookup-result-frequency" hidden>${esc(Number(frequencyKHz).toFixed(3))} kHz</div>
+        <div class="lookup-card-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>
+        ${place ? `<div class="lookup-card-location">${esc(place)}</div>` : ''}
+        <div class="lookup-card-divider"></div>
+        <div class="lookup-card-program-label">${candidate.schedule?.active === true ? 'Now Playing' : 'Identification'}</div>
+        <p class="lookup-card-description">${esc(description)}</p>
+        <div class="lookup-tags"><span class="lookup-tag">${esc(categoryLabel(entry))}</span>${entry.language ? `<span class="lookup-tag">${esc(entry.language)}</span>` : ''}</div>
       </div>
-      <span class="lookup-alt-status">${escapeHtml(schedule?.active === true ? 'ON SCHEDULE' : schedule?.active === false ? 'CATALOGED' : engine.formatFrequency(frequencyKHz))}</span>
-    </div>`;
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(tuneHref(frequencyKHz, entry))}">TUNE</a></div>
+    </article>`;
+  }
+
+  function categorySelected() {
+    return window.FREQBEACON_LOOKUP_CATEGORIES?.selected?.() || window.FREQBEACON_LOOKUP_SELECTED_CATEGORY || '';
+  }
+
+  function categoryMatches(entry, key) {
+    if (!key) return true;
+    try { return window.FREQBEACON_LOOKUP_CATEGORIES?.matches?.(entry, key) !== false; }
+    catch { return true; }
+  }
+
+  function orderedCandidates(result) {
+    const candidates = [{ entry: result.entry, distance: result.distance, schedule: result.schedule, rank: result.rank }, ...(result.alternatives || [])];
+    const selected = categorySelected();
+    if (!selected) return candidates;
+    const matching = candidates.filter((candidate) => categoryMatches(candidate.entry, selected));
+    return matching.length ? matching : candidates;
   }
 
   function renderExact(result) {
-    const entry = result.entry;
-    const categories = entry.categories || [];
-    const alternatives = (result.alternatives || []).slice(0, 6);
-    const location = storedLocation();
-    const distance = Number.isFinite(result.distance) && result.distance !== Infinity
-      ? `${entry.locationApproximate ? '≈' : ''}${Math.round(result.distance).toLocaleString()} mi${location ? ' from your saved location' : ''}`
-      : '';
-    const schedule = scheduleText(entry, result.schedule);
-
-    stage.innerHTML = `
-      <article class="lookup-result-card">
-        <div class="lookup-result-top">
-          <div class="lookup-result-eyebrow"><span>${escapeHtml(statusLabel(result))}</span><span>SHARED IDENTIFICATION ENGINE</span></div>
-          <div class="lookup-result-frequency">${escapeHtml(engine.formatFrequency(result.frequencyKHz))}</div>
-          <h2>${escapeHtml(entry.name || 'Known signal')}</h2>
-          <p class="lookup-result-meta">${escapeHtml(resultMeta(entry) || 'Known catalog entry')}</p>
-          <p class="lookup-result-description">${escapeHtml(entry.description || entry.format || 'Known cataloged signal or service.')}</p>
-          <div class="lookup-tags">${tagsHtml(categories)}</div>
-        </div>
-        <div class="lookup-detail-grid">
-          ${detail('Schedule', schedule)}
-          ${detail('Transmitter', entry.transmitter || entry.location || entry.country || 'Not listed')}
-          ${detail('Language', entry.language || 'Not listed')}
-          ${detail('Power', powerText(entry))}
-          ${detail('Target', entry.target || '')}
-          ${detail('Distance', distance)}
-          ${detail('Source', entry.source || entry.season || 'FREQBEACON catalog')}
-          ${detail('Other candidates', alternatives.length ? `${alternatives.length} shown${(result.alternatives || []).length > alternatives.length ? ` of ${(result.alternatives || []).length}` : ''}` : 'None at this exact frequency')}
-        </div>
-        <div class="lookup-actions">
-          <a class="lookup-action-primary" href="${escapeHtml(tuneHref(result.frequencyKHz, entry))}"><i aria-hidden="true"></i>Tune this in Zero</a>
-          <a class="lookup-action-secondary" href="/">Back to discovery</a>
-        </div>
-      </article>
-      ${alternatives.length ? `<div class="lookup-alternatives"><h3>Other exact-frequency candidates</h3>${alternatives.map((candidate) => alternativeHtml(candidate, result.frequencyKHz)).join('')}</div>` : ''}`;
+    const candidates = orderedCandidates(result);
+    count.textContent = `${candidates.length} result${candidates.length === 1 ? '' : 's'} for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
+    stage.innerHTML = candidates.slice(0, 8).map((candidate, index) => candidateCard(candidate, result.frequencyKHz, index)).join('');
   }
 
   function renderRange(result) {
     const range = result.range;
-    stage.innerHTML = `
-      <article class="lookup-result-card lookup-range-card">
-        <div class="lookup-result-top">
-          <div class="lookup-result-eyebrow"><span>${range.type === 'band' || range.type === 'broadcast-band' ? 'BAND' : 'SERVICE RANGE'}</span><span>FREQUENCY GUIDE</span></div>
-          <div class="lookup-result-frequency">${escapeHtml(engine.formatFrequency(result.frequencyKHz))}</div>
-          <h2>${escapeHtml(range.name)}</h2>
-          <p class="lookup-result-meta">${escapeHtml([engine.formatRange(range), range.mode].filter(Boolean).join(' · '))}</p>
-          <p class="lookup-result-description">${escapeHtml(range.description || 'Known radio allocation or service range.')}</p>
-          <div class="lookup-tags">${tagsHtml(range.categories || [])}</div>
-        </div>
-        <div class="lookup-detail-grid">
-          ${detail('Allocation', engine.formatRange(range))}
-          ${detail('Typical mode', range.mode || 'Varies')}
-          ${detail('Source', range.source || 'FREQBEACON band guide')}
-        </div>
-        <div class="lookup-actions">
-          <a class="lookup-action-primary" href="${escapeHtml(tuneHref(result.frequencyKHz, range))}"><i aria-hidden="true"></i>Tune this in Zero</a>
-          <a class="lookup-action-secondary" href="/">Back to discovery</a>
-        </div>
-      </article>`;
+    count.textContent = `1 result for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
+    stage.innerHTML = `<article class="lookup-result-card is-best">
+      <div class="lookup-card-body">
+        <span class="lookup-best-badge">BEST MATCH</span>
+        <div class="lookup-card-title-row"><h3 class="lookup-card-title">${esc(range.name)}</h3><span class="lookup-status-pill"><i aria-hidden="true"></i>KNOWN RANGE</span></div>
+        <div class="lookup-card-meta"><span>${esc(engine.formatFrequency(result.frequencyKHz))}</span><span>${esc(range.mode || 'Varies')}</span><span>${esc(categoryLabel(range))}</span></div>
+        <div class="lookup-card-divider"></div>
+        <div class="lookup-card-program-label">Frequency Guide</div>
+        <p class="lookup-card-description">${esc(range.description || 'Known radio allocation or service range.')}</p>
+      </div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(tuneHref(result.frequencyKHz, range))}">TUNE</a></div>
+    </article>`;
   }
 
   function renderUnknown(result) {
-    stage.innerHTML = `<div class="lookup-empty">
-      <div class="lookup-empty-rings" aria-hidden="true"><i></i><i></i><i></i></div>
-      <strong>${escapeHtml(engine.formatFrequency(result.frequencyKHz))}</strong>
-      <p>No exact station, signal, channel or known range is in the shared static catalog yet. Zero can still tune it normally.</p>
-      <div class="lookup-actions" style="justify-content:center"><a class="lookup-action-primary" href="${escapeHtml(tuneHref(result.frequencyKHz, {}))}"><i aria-hidden="true"></i>Tune in Zero</a></div>
-    </div>`;
+    count.textContent = `No catalog match for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
+    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact identity is stored yet. You can still tune the frequency in Radio.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="${esc(tuneHref(result.frequencyKHz, {}))}">TUNE</a></div></div>`;
   }
 
   function render(result) {
@@ -212,31 +158,35 @@
 
   async function runLookup({ updateUrl = true } = {}) {
     const frequencyKHz = parseFrequency(input.value);
-    updateClock();
     if (!frequencyKHz || frequencyKHz < 30 || frequencyKHz > 30000) {
-      stage.innerHTML = `<div class="lookup-empty"><strong>Enter a frequency from 30 to 30,000 kHz.</strong><p>Examples: 153, 9955, 10 MHz, 11175, 14.200 MHz or 27185.</p></div>`;
+      status.className = 'lookup-status is-error';
+      status.textContent = 'Enter a frequency from 30 to 30,000 kHz.';
+      count.textContent = '';
+      stage.innerHTML = '<div class="lookup-empty"><strong>Frequency not recognized.</strong><p>Try a value such as 9955, 9.955 MHz, 11175 or 27185.</p></div>';
       return;
     }
 
     const token = ++lookupToken;
-    const now = lookupDate();
     const receiver = storedLocation();
-    const options = { now, ...(receiver ? { receiver } : {}) };
-    const normalized = Number.isInteger(frequencyKHz) ? String(frequencyKHz) : String(Number(frequencyKHz.toFixed(3)));
-    input.value = normalized;
-    if (updateUrl) history.replaceState(null, '', `/lookup.html?frequency=${encodeURIComponent(normalized)}${offsetHours ? `&offset=${offsetHours}` : ''}`);
+    const options = { now: new Date(), ...(receiver ? { receiver } : {}) };
+    input.value = Number(frequencyKHz).toFixed(3);
+    if (updateUrl) history.replaceState(null, '', `/lookup.html?frequency=${encodeURIComponent(input.value)}`);
+    status.className = 'lookup-status is-working';
+    status.textContent = 'Checking the FREQBEACON identification catalog…';
 
     render(engine.identify(frequencyKHz, options));
-    if (typeof engine.identifyAsync !== 'function') return;
-
-    stage.insertAdjacentHTML('beforeend', '<div class="lookup-loading" id="lookupLoading"><i></i>CHECKING STATIC A26 CATALOG…</div>');
-    try {
-      const result = await engine.identifyAsync(frequencyKHz, options);
-      if (token !== lookupToken) return;
-      render(result);
-    } catch {
-      document.querySelector('#lookupLoading')?.remove();
+    if (typeof engine.identifyAsync === 'function') {
+      try {
+        const result = await engine.identifyAsync(frequencyKHz, options);
+        if (token !== lookupToken) return;
+        render(result);
+      } catch (error) {
+        console.warn('FREQBEACON lookup enrichment failed:', error);
+      }
     }
+    if (token !== lookupToken) return;
+    status.className = 'lookup-status';
+    status.textContent = categorySelected() ? 'Frequency results prioritized by the selected category when a matching candidate exists.' : 'Lookup complete.';
   }
 
   form.addEventListener('submit', (event) => {
@@ -244,35 +194,22 @@
     runLookup();
   });
 
-  document.querySelectorAll('[data-offset]').forEach((button) => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('[data-offset]').forEach((peer) => peer.classList.toggle('active', peer === button));
-      offsetHours = Number(button.dataset.offset || 0);
-      updateClock();
-      if (parseFrequency(input.value)) runLookup();
-    });
-  });
-
-  document.querySelectorAll('[data-quick]').forEach((button) => {
-    button.addEventListener('click', () => {
-      input.value = button.dataset.quick || '';
-      runLookup();
-      input.focus({ preventScroll: true });
-    });
+  clearButton?.addEventListener('click', () => {
+    lookupToken += 1;
+    input.value = '';
+    window.FREQBEACON_LOOKUP_CATEGORIES?.clearSelection?.();
+    status.className = 'lookup-status';
+    status.textContent = '';
+    count.textContent = '';
+    stage.innerHTML = '<div class="lookup-empty"><strong>Enter a frequency or choose a category.</strong><p>FREQBEACON will use its real identification catalog and schedule data to show the best matches.</p></div>';
+    history.replaceState(null, '', '/lookup.html');
+    input.focus({ preventScroll: true });
   });
 
   const params = new URLSearchParams(location.search);
   const incoming = params.get('frequency') || params.get('q') || params.get('lookup');
-  const incomingOffset = Number(params.get('offset'));
-  if ([0, 1, 3, 6].includes(incomingOffset)) {
-    offsetHours = incomingOffset;
-    document.querySelectorAll('[data-offset]').forEach((button) => button.classList.toggle('active', Number(button.dataset.offset) === offsetHours));
-  }
-  updateClock();
   if (incoming) {
     input.value = incoming;
     runLookup({ updateUrl: false });
-  } else {
-    window.setTimeout(() => input.focus({ preventScroll: true }), 50);
   }
 })();
