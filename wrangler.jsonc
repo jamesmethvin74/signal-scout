@@ -9,18 +9,9 @@
   "triggers": {
     "crons": ["17 */6 * * *"]
   },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "RECEIVER_HEALTH",
-        "class_name": "ReceiverHealthStore"
-      }
-    ]
-  },
-  "migrations": [
+  "d1_databases": [
     {
-      "tag": "explore-health-v1",
-      "new_sqlite_classes": ["ReceiverHealthStore"]
+      "binding": "RECEIVER_HEALTH_DB"
     }
   ],
   "assets": {

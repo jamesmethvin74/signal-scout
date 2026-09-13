@@ -1,13 +1,10 @@
 import baseWorker from './worker-program-v17.js';
-import { ReceiverHealthStore } from './receiver-health-store.js';
 import {
   handleExploreApi,
   handleExploreZeroRequest,
   runExploreHealthCycle,
   selectedExploreReceiverId
-} from './receiver-health.js';
-
-export { ReceiverHealthStore };
+} from './receiver-health-d1.js';
 
 function injectExploreNav(response) {
   const contentType = String(response.headers.get('content-type') || '');
