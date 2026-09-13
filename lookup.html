@@ -10,12 +10,13 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/lookup-page.css?v=2">
   <link rel="stylesheet" href="/freqbeacon-pwa-install.css?v=1">
+  <link rel="stylesheet" href="/lookup-ux-fix.css?v=1">
   <title>Signal Lookup — FREQBEACON</title>
 </head>
 <body>
   <main class="lookup-app">
     <header class="lookup-topbar">
-      <a class="lookup-brand" href="/" aria-label="FREQBEACON home">
+      <a class="lookup-brand" href="/zero" aria-label="Return to FREQBEACON radio">
         <img src="/freqbeacon-logo.svg" alt="">
         <span><strong>FREQBEACON</strong><small>Explore the airwaves.</small></span>
       </a>
@@ -34,13 +35,14 @@
         <label class="lookup-input-wrap" for="lookupFrequency">
           <span class="lookup-input-label">FREQUENCY</span>
           <span class="lookup-input-line">
-            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955" aria-describedby="lookupInputHint">
+            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955" aria-describedby="lookupInputHint lookupStatus">
             <b>kHz</b>
           </span>
         </label>
         <button class="lookup-submit" type="submit">IDENTIFY</button>
       </form>
       <p class="lookup-hint" id="lookupInputHint">9955 or 9.955 MHz both work. Lookup uses static catalog data; it does not contact a schedule service while you listen.</p>
+      <div class="lookup-status" id="lookupStatus" role="status" aria-live="polite" aria-atomic="true"></div>
 
       <div class="lookup-time-row">
         <div class="lookup-time-chips" aria-label="Lookup time">
@@ -85,5 +87,6 @@
   <script src="/freqbeacon-identification-engine.js?v=2"></script>
   <script src="/freqbeacon-pwa-install.js?v=1"></script>
   <script src="/lookup-page.js?v=1"></script>
+  <script src="/lookup-ux-fix.js?v=1"></script>
 </body>
 </html>
