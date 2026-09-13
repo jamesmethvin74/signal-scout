@@ -80,7 +80,7 @@
       return `${kHz.toFixed(decimals)} kHz`;
     }
     const mhz = kHz / 1000;
-    const decimals = Math.abs(kHz * 10 - Math.round(kHz * 10)) < 0.001 ? 3 : 4;
+    const decimals = Math.abs(kHz - Math.round(kHz)) < 0.001 ? 3 : 4;
     return `${mhz.toFixed(decimals)} MHz`;
   }
 
@@ -126,15 +126,14 @@
     const candidate = stationMatch(kHz, receiver);
 
     if (candidate) {
-      const { station, distance } = candidate;
+      const { station } = candidate;
       eyebrowEl.textContent = 'LIKELY STATION';
       titleEl.textContent = station.name;
       metaEl.textContent = [station.callsign, station.location, station.mode].filter(Boolean).join(' · ');
       descriptionEl.textContent = station.description;
 
       const receiverLabel = receiver.identity || receiver.name || 'current receiver';
-      const distanceText = Number.isFinite(distance) ? ` · about ${Math.round(distance)} mi from receiver` : '';
-      noteEl.textContent = `${formatFrequency(kHz)} · likely match for ${receiverLabel}${distanceText}`;
+      noteEl.textContent = `${formatFrequency(kHz)} · likely match near ${receiverLabel}`;
     } else {
       const range = rangeMatch(kHz);
       if (range) {
