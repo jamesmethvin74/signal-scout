@@ -73,6 +73,19 @@
   font-weight: 700;
 }
 
+/* Keep the unit separate from +60 so the final two marks never collide or clip. */
+.meter-scale::after {
+  content: "dBm";
+  position: absolute;
+  right: 3.5%;
+  bottom: 11%;
+  color: #dc594e;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
 .meter-scale span {
   position: absolute;
   top: 18%;
@@ -82,7 +95,7 @@
   transform: translateX(-50%);
 }
 
-/* S1, S3, S5, S7, S9, then +10, +40, +60 dBm. */
+/* S1, S3, S5, S7, S9, then +10, +40, +60. */
 .meter-scale span:nth-child(1) { left: 8%; }
 .meter-scale span:nth-child(2) { left: 24%; }
 .meter-scale span:nth-child(3) { left: 40%; }
