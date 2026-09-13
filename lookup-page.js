@@ -84,7 +84,8 @@
     const place = entry.transmitter || entry.location || entry.country || '';
     const meta = [engine.formatFrequency(frequencyKHz), entry.language || '', categoryLabel(entry)].filter(Boolean);
     const description = entry.description || entry.format || 'Known FREQBEACON catalog entry.';
-    return `<article class="lookup-result lookup-result-card ${index === 0 ? 'is-best' : ''}">
+    const guideClass = entry.type === 'station' && String(entry.band || '').toUpperCase() === 'SW' ? ' lookup-result' : '';
+    return `<article class="lookup-result-card${guideClass} ${index === 0 ? 'is-best' : ''}">
       <div class="lookup-card-body">
         ${index === 0 ? '<span class="lookup-best-badge">BEST MATCH</span>' : ''}
         <div class="lookup-card-title-row">
