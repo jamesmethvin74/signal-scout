@@ -1,26 +1,300 @@
 (() => {
   'use strict';
 
-  // Shared local catalog for Zero's tap-to-identify UI and future Lookup/Explore.
-  // AM stations are loaded from the static AM catalog before this file.
+  // Shared, local-only identification catalog for Zero and future Lookup/Explore.
+  // Zero does not load full-data.js: there are no HFCC/EiBi network calls while
+  // listening. We reuse the AM snapshot, static SW schedule seeds, ham guide,
+  // and a compact set of reliable A26/fixed-service identities and ranges.
   const amStations = Array.isArray(window.FREQBEACON_ZERO_AM_CATALOG)
     ? window.FREQBEACON_ZERO_AM_CATALOG
     : [];
+  const stationSeeds = Array.isArray(window.SIGNAL_SCOUT_STATIONS)
+    ? window.SIGNAL_SCOUT_STATIONS
+    : [];
+  const hamBands = Array.isArray(window.SIGNAL_SCOUT_HAM_BANDS)
+    ? window.SIGNAL_SCOUT_HAM_BANDS
+    : [];
 
-  const rawRanges = [["band",30,300,"Longwave","LW","AM / CW","longwave|utility","Low-frequency radio used for beacons, navigation, time signals and some broadcasting outside North America."],["band",520,1710,"Medium Wave / AM Broadcast","AM BC","AM","broadcast","Traditional AM broadcasting. Local stations dominate by day; distant stations can travel much farther after dark."],["band",1800,2000,"160 Meter Amateur Band","160m","LSB / CW / Digital","amateur|voice","The lowest common HF amateur band, known for regional voice and long-distance nighttime activity."],["band",3500,4000,"80 Meter Amateur Band","80m","LSB / CW / Digital","amateur|voice","A popular amateur band for regional voice contacts at night and shorter-range communication during the day."],["band",5330.5,5406.5,"60 Meter Amateur Band","60m","USB / CW / Digital","amateur|voice","A small amateur allocation with channelized or limited-frequency operation depending on country."],["band",7000,7300,"40 Meter Amateur Band","40m","LSB / CW / Digital","amateur|voice","One of the busiest amateur bands, with regional and long-distance voice, Morse and digital activity."],["service-window",8890,9095,"HF Utility","Utility","USB","utility","A useful exploration window for non-broadcast HF traffic such as aeronautical, maritime and other utility communications."],["band",10100,10150,"30 Meter Amateur Band","30m","CW / Digital","amateur|digital","A narrow amateur band used primarily for Morse and digital modes rather than voice."],["service-window",11050,11300,"HF Aviation","Aviation","USB","aviation|utility","A long-distance aeronautical communications window where aircraft and ground stations may be heard in upper sideband."],["band",14000,14350,"20 Meter Amateur Band","20m","USB / CW / Digital","amateur|voice","A premier long-distance amateur band, often active worldwide during daylight and favorable propagation."],["band",18068,18168,"17 Meter Amateur Band","17m","USB / CW / Digital","amateur|voice","A quieter HF amateur band that can provide excellent long-distance contacts when propagation is open."],["band",21000,21450,"15 Meter Amateur Band","15m","USB / CW / Digital","amateur|voice","A higher HF amateur band capable of strong worldwide signals when solar conditions support it."],["band",24890,24990,"12 Meter Amateur Band","12m","USB / CW / Digital","amateur|voice","A compact higher-HF amateur band that can suddenly open for long-distance communication."],["service",26965,27405,"Citizens Band Radio","CB","AM / SSB","cb|voice","The 40-channel U.S. Citizens Band. Channel 19 at 27.185 MHz is widely used for highway traffic."],["band",28000,29700,"10 Meter Amateur Band","10m","USB / CW / FM / Digital","amateur|voice","The highest traditional HF amateur band, capable of dramatic worldwide openings when propagation is favorable."],["band",2300,26100,"Shortwave / HF","Shortwave","AM / SSB / CW / Digital","shortwave|broadcast|utility","High-frequency radio carrying international broadcasting, amateur, aviation, maritime, military and utility signals around the world."]];
-  const ranges = rawRanges.map((row) => Object.freeze({
+  const freezeEntry = (entry) => Object.freeze({
+    ...entry,
+    categories: Object.freeze([...(entry.categories || [])])
+  });
+
+  function swCategories(station) {
+    const text = `${station.name || ''} ${station.format || ''}`.toLowerCase();
+    const categories = ['shortwave', 'broadcast'];
+    if (/international|world service|pacific service|radio exterior|radio romania|china radio/.test(text)) categories.push('international');
+    if (/news|world service/.test(text)) categories.push('news');
+    if (/relig/.test(text)) categories.push('religious');
+    if (/sports/.test(text)) categories.push('sports');
+    if (/bbc world service|radio romania international|rnz pacific|radio exterior de españa|china radio international/.test(text)) categories.push('state-broadcaster');
+    return [...new Set(categories)];
+  }
+
+  const mappedAm = amStations.map((station) => freezeEntry({
+    ...station,
+    band: 'MW',
+    source: station.source || 'FREQBEACON static AM catalog'
+  }));
+
+  const mappedShortwave = stationSeeds
+    .filter((station) => station.band === 'SW')
+    .map((station) => freezeEntry({
+      type: 'station',
+      band: 'SW',
+      frequencyKHz: Number(station.frequency),
+      callsign: /^[A-Z0-9]{3,6}$/.test(String(station.name || '')) ? station.name : '',
+      name: station.name,
+      location: station.transmitter,
+      country: station.country,
+      transmitter: station.transmitter,
+      lat: Number(station.lat),
+      lon: Number(station.lon),
+      mode: /DRM/i.test(String(station.format || '')) ? 'DRM' : 'AM',
+      language: station.language,
+      categories: swCategories(station),
+      description: station.note || station.format || 'Shortwave broadcast service.',
+      powerW: Number.isFinite(Number(station.power)) ? Number(station.power) * 1000 : undefined,
+      start: station.start,
+      end: station.end,
+      days: station.days,
+      target: station.target || '',
+      format: station.format || '',
+      source: 'FREQBEACON stations.js static SW schedule seed'
+    }));
+
+  // Reliable longwave broadcasters carried in the A26 merged schedule source.
+  // These are baked locally so Zero never loads or fetches the full schedule.
+  const longwaveBroadcasts = [
+    [153, 'Antena Satelor', 'Brasov/Bod Colonie, Romania', 'Romania', 'Romanian', 200000, '0355', '2000', 'Romanian public longwave service.', true],
+    [171, "Radio Mediterranee Int'l", 'Nador, Morocco', 'Morocco', 'French / Arabic', 600000, '0500', '2400', 'Longwave international service from Morocco.', false],
+    [207, 'RÚV Rás 1/2', 'Gufuskalar, Iceland', 'Iceland', 'Icelandic', 100000, '0000', '2400', 'Icelandic public-service longwave transmission.', true],
+    [252, 'Radio Algérienne Chaîne 3', 'Tipaza, Algeria', 'Algeria', 'French', 750000, '0000', '2400', 'High-power Algerian longwave broadcast service.', true]
+  ].map((row) => freezeEntry({
+    type: 'station',
+    band: 'LW',
+    frequencyKHz: row[0],
+    name: row[1],
+    location: row[2],
+    country: row[3],
+    transmitter: row[2],
+    language: row[4],
+    powerW: row[5],
+    start: row[6],
+    end: row[7],
+    mode: 'AM',
+    categories: ['longwave', 'broadcast', 'international', ...(row[9] ? ['state-broadcaster'] : [])],
+    description: row[8],
+    source: 'A26 merged schedule static snapshot'
+  }));
+
+  const fixedSignals = [];
+  const pushSignal = (frequencyKHz, name, fields = {}) => fixedSignals.push(freezeEntry({
+    type: 'signal',
+    frequencyKHz,
+    name,
+    categories: ['utility'],
+    ...fields
+  }));
+
+  // Standard-frequency/time stations. Multiple transmitters may share a
+  // frequency; the lookup engine ranks them from the active SDR receiver.
+  [2500, 5000, 10000, 15000, 20000, 25000].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'WWV', {
+    callsign: 'WWV',
+    location: 'Fort Collins, Colorado',
+    country: 'United States',
+    transmitter: 'Fort Collins, Colorado',
+    lat: 40.6781,
+    lon: -105.0469,
+    mode: 'AM',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'NIST standard time and frequency broadcast with precise timing tones, announcements and propagation information.',
+    source: 'NIST standard-frequency service'
+  }));
+  [2500, 5000, 10000, 15000].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'WWVH', {
+    callsign: 'WWVH',
+    location: 'Kekaha, Hawaii',
+    country: 'United States',
+    transmitter: 'Kekaha, Hawaii',
+    lat: 21.9893,
+    lon: -159.7646,
+    mode: 'AM',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'NIST Pacific standard time and frequency broadcast sharing several channels with WWV.',
+    source: 'NIST standard-frequency service'
+  }));
+  [3330, 7850, 14670].forEach((frequencyKHz) => pushSignal(frequencyKHz, 'CHU', {
+    callsign: 'CHU',
+    location: 'Ottawa, Ontario',
+    country: 'Canada',
+    transmitter: 'Ottawa, Ontario',
+    lat: 45.2944,
+    lon: -75.7578,
+    mode: 'AM / USB',
+    categories: ['time-signal', 'utility', 'standard-frequency'],
+    description: 'Canadian time-signal station transmitting continuous UTC time announcements and timing codes.',
+    source: 'National Research Council Canada time service'
+  }));
+  pushSignal(60, 'WWVB', {
+    callsign: 'WWVB',
+    location: 'Fort Collins, Colorado',
+    country: 'United States',
+    transmitter: 'Fort Collins, Colorado',
+    lat: 40.6781,
+    lon: -105.0469,
+    mode: 'Time code',
+    categories: ['longwave', 'time-signal', 'utility'],
+    description: 'NIST 60 kHz standard-frequency and time-code transmission used by radio-controlled clocks across North America.',
+    source: 'NIST LF time service'
+  });
+  pushSignal(60, 'MSF', {
+    callsign: 'MSF',
+    location: 'Anthorn, England',
+    country: 'United Kingdom',
+    transmitter: 'Anthorn, England',
+    lat: 54.9111,
+    lon: -3.2783,
+    mode: 'Time code',
+    categories: ['longwave', 'time-signal', 'utility'],
+    description: 'United Kingdom 60 kHz time-code service transmitted from Anthorn.',
+    source: 'UK national time service'
+  });
+  pushSignal(77.5, 'DCF77', {
+    callsign: 'DCF77',
+    location: 'Mainflingen, Germany',
+    country: 'Germany',
+    transmitter: 'Mainflingen, Germany',
+    lat: 50.0156,
+    lon: 9.0106,
+    mode: 'Time code',
+    categories: ['longwave', 'time-signal', 'utility'],
+    description: 'German 77.5 kHz standard-frequency and time-code service used by radio-controlled clocks across Europe.',
+    source: 'German national time service'
+  });
+
+  const knownServices = [
+    [490, 'NAVTEX 490 kHz', 'Maritime safety information', 'FSK', ['maritime', 'utility', 'digital'], 'National-language NAVTEX channel used for navigational and meteorological safety information.'],
+    [518, 'NAVTEX 518 kHz', 'International maritime safety', 'FSK', ['maritime', 'utility', 'digital'], 'International NAVTEX channel carrying maritime safety, navigation and weather messages.'],
+    [2182, '2182 kHz Maritime Calling / Distress', 'Maritime service', 'USB / AM', ['maritime', 'utility', 'safety'], 'International maritime radiotelephony calling, distress and safety frequency.'],
+    [4724, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'Known HFGCS channel used by U.S. military aircraft and ground stations for long-range HF communications.'],
+    [6739, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'Known HFGCS channel used by U.S. military aircraft and ground stations for long-range HF communications.'],
+    [8992, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'Major HFGCS channel where long-range military aviation traffic and Emergency Action Messages may be heard.'],
+    [11175, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'One of the best-known HFGCS channels for long-range U.S. military aviation and command communications.'],
+    [13200, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'Known HFGCS channel used by U.S. military aircraft and ground stations for long-range HF communications.'],
+    [15016, 'USAF HFGCS', 'High Frequency Global Communications System', 'USB', ['aviation', 'utility', 'military'], 'Known HFGCS channel used by U.S. military aircraft and ground stations for long-range HF communications.']
+  ].map((row) => freezeEntry({
+    type: 'service',
+    frequencyKHz: row[0],
+    name: row[1],
+    shortName: row[2],
+    mode: row[3],
+    categories: row[4],
+    description: row[5],
+    source: 'FREQBEACON documented fixed-service guide'
+  }));
+
+  const cbFrequencies = [
+    26965, 26975, 26985, 27005, 27015, 27025, 27035, 27055, 27065, 27075,
+    27085, 27105, 27115, 27125, 27135, 27155, 27165, 27175, 27185, 27205,
+    27215, 27225, 27255, 27235, 27245, 27265, 27275, 27285, 27295, 27305,
+    27315, 27325, 27335, 27345, 27355, 27365, 27375, 27385, 27395, 27405
+  ];
+  const cbChannels = cbFrequencies.map((frequencyKHz, index) => {
+    const channel = index + 1;
+    return freezeEntry({
+      type: 'channel',
+      band: 'CB',
+      frequencyKHz,
+      callsign: `CB ${channel}`,
+      name: `CB Channel ${channel}`,
+      mode: 'AM / SSB / FM',
+      categories: ['cb', 'voice'],
+      description: channel === 19
+        ? 'U.S. Citizens Band Channel 19, widely used for highway and trucking traffic.'
+        : `U.S. Citizens Band Channel ${channel}.`,
+      source: 'U.S. 40-channel CB frequency plan'
+    });
+  });
+
+  const rawRanges = [
+    ['band', 30, 300, 'Longwave', 'LW', 'AM / CW / Digital', 'longwave|utility', 'Low-frequency spectrum used for time standards, navigation beacons, utility signals and some broadcasting outside North America.'],
+    ['service-range', 190, 500, 'Aeronautical NDB / Beacon Region', 'NDB', 'AM / CW ident', 'aviation|navigation|beacon', 'Legacy and regional non-directional aeronautical beacons may be heard in this part of the LF/MF spectrum; many individual beacons have been decommissioned.'],
+    ['band', 520, 1710, 'Medium Wave / AM Broadcast', 'AM BC', 'AM', 'broadcast', 'Traditional AM broadcasting. Local stations dominate by day; distant stations can travel much farther after dark.'],
+    ['broadcast-band', 2300, 2495, '120 Meter Shortwave Broadcast Band', '120m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Tropical-band shortwave broadcasting and regional international services.'],
+    ['broadcast-band', 3200, 3400, '90 Meter Shortwave Broadcast Band', '90m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Tropical-band shortwave broadcasting, especially useful after dark.'],
+    ['broadcast-band', 3900, 4000, '75 Meter Shortwave Broadcast Band', '75m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Shortwave broadcasting allocation shared regionally with other HF activity.'],
+    ['broadcast-band', 4750, 5060, '60 Meter Shortwave Broadcast Band', '60m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Tropical-band broadcasting and regional shortwave services.'],
+    ['broadcast-band', 5900, 6200, '49 Meter Shortwave Broadcast Band', '49m SW', 'AM / DRM', 'shortwave|broadcast|international', 'One of the most-used nighttime international broadcast bands.'],
+    ['broadcast-band', 7200, 7450, '41 Meter Shortwave Broadcast Band', '41m SW', 'AM / DRM', 'shortwave|broadcast|international', 'International shortwave broadcasting; overlaps amateur allocations in some regions.'],
+    ['broadcast-band', 9400, 9900, '31 Meter Shortwave Broadcast Band', '31m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Major international broadcast band with strong evening and nighttime activity.'],
+    ['broadcast-band', 11600, 12100, '25 Meter Shortwave Broadcast Band', '25m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Major daytime and transitional international broadcast band.'],
+    ['broadcast-band', 13570, 13870, '22 Meter Shortwave Broadcast Band', '22m SW', 'AM / DRM', 'shortwave|broadcast|international', 'International broadcast band often useful during daylight and early evening.'],
+    ['broadcast-band', 15100, 15830, '19 Meter Shortwave Broadcast Band', '19m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Busy higher-HF international broadcast band, strongest when daytime propagation supports it.'],
+    ['broadcast-band', 17480, 17900, '16 Meter Shortwave Broadcast Band', '16m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Daytime international shortwave broadcasting band.'],
+    ['broadcast-band', 18900, 19020, '15 Meter Shortwave Broadcast Band', '15m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Smaller high-frequency international broadcast allocation.'],
+    ['broadcast-band', 21450, 21850, '13 Meter Shortwave Broadcast Band', '13m SW', 'AM / DRM', 'shortwave|broadcast|international', 'High-frequency international broadcasting, most useful during strong daytime propagation.'],
+    ['broadcast-band', 25600, 26100, '11 Meter Shortwave Broadcast Band', '11m SW', 'AM / DRM', 'shortwave|broadcast|international', 'Highest traditional international shortwave broadcast band.'],
+    ['aviation-range', 2850, 3155, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 3400, 3500, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 4650, 4750, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 5450, 5730, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 6525, 6765, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 8815, 9040, 'HF Aeronautical / Utility Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'Long-distance aeronautical and related utility communications window.'],
+    ['aviation-range', 10005, 10100, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 13200, 13360, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 15010, 15100, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 17900, 18030, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['aviation-range', 21870, 22000, 'HF Aeronautical Route Communications', 'HF AIR', 'USB', 'aviation|utility|voice', 'International aeronautical mobile route communications window.'],
+    ['service-range', 26965, 27405, 'Citizens Band Radio', 'CB', 'AM / SSB / FM', 'cb|voice', 'The 40-channel U.S. Citizens Band. Exact channel frequencies are identified individually.'],
+    ['band', 2300, 30000, 'Shortwave / HF', 'Shortwave', 'AM / SSB / CW / Digital', 'shortwave|broadcast|utility', 'High-frequency radio carrying international broadcasting, amateur, aviation, maritime, military and utility signals around the world.']
+  ];
+
+  const staticRanges = rawRanges.map((row) => freezeEntry({
     type: row[0],
     startKHz: row[1],
     endKHz: row[2],
     name: row[3],
     shortName: row[4],
     mode: row[5],
-    categories: Object.freeze(String(row[6] || '').split('|').filter(Boolean)),
-    description: row[7]
+    categories: String(row[6] || '').split('|').filter(Boolean),
+    description: row[7],
+    source: 'FREQBEACON service/band guide'
   }));
 
-  window.FREQBEACON_ZERO_IDENTIFICATION_CATALOG = Object.freeze({
-    version: 2,
+  const hamRanges = hamBands.map((band) => freezeEntry({
+    type: 'band',
+    startKHz: Number(band.minMHz) * 1000,
+    endKHz: Number(band.maxMHz) * 1000,
+    name: `${band.name} Amateur Band`,
+    shortName: band.short,
+    mode: String(band.modes || '').replace(/ · /g, ' / '),
+    categories: [
+      'amateur',
+      ...(/SSB|AM/i.test(String(band.modes || '')) ? ['voice'] : []),
+      ...(/digital/i.test(String(band.modes || '')) ? ['digital'] : [])
+    ],
+    description: band.note || band.character || 'Amateur radio allocation.',
+    source: 'FREQBEACON ham-bands.js'
+  }));
+
+  const entries = Object.freeze([
+    ...mappedAm,
+    ...mappedShortwave,
+    ...longwaveBroadcasts,
+    ...fixedSignals,
+    ...knownServices,
+    ...cbChannels
+  ]);
+
+  const catalog = Object.freeze({
+    version: 4,
+    generatedFrom: Object.freeze([
+      'freqbeacon-zero-am-catalog.js',
+      'stations.js static SW schedule seed',
+      'A26 merged schedule static LW snapshot',
+      'ham-bands.js',
+      'FREQBEACON fixed-service guide'
+    ]),
     receivers: Object.freeze([
       Object.freeze({
         match: 'N2YO',
@@ -30,7 +304,12 @@
         lon: -77.4311
       })
     ]),
-    stations: Object.freeze([...amStations]),
-    ranges: Object.freeze(ranges)
+    entries,
+    // Compatibility property for the first Zero identification implementation.
+    stations: entries,
+    ranges: Object.freeze([...hamRanges, ...staticRanges])
   });
+
+  window.FREQBEACON_IDENTIFICATION_CATALOG = catalog;
+  window.FREQBEACON_ZERO_IDENTIFICATION_CATALOG = catalog;
 })();
