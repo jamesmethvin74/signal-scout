@@ -1,0 +1,7 @@
+{
+  "name": "freqbeacon",
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/generate-a26-identification-catalog.mjs"
+  }
+}
