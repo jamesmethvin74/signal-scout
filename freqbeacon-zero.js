@@ -1,5 +1,12 @@
+function initialFrequencyKHz(defaultKHz = 560) {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('from') !== 'lookup') return defaultKHz;
+  const requested = Number(params.get('frequency') || params.get('freq'));
+  return Number.isFinite(requested) && requested >= 30 && requested <= 30000 ? requested : defaultKHz;
+}
+
 const FIXED = Object.freeze({
-  initialFrequencyKHz: 560,
+  initialFrequencyKHz: initialFrequencyKHz(),
   mode: 'am',
   lowCut: -5000,
   highCut: 5000,
@@ -322,7 +329,7 @@ function renderRf(bins) {
   for (let y = 35; y < spectrumH; y += 35) {
     ctx.beginPath();
     ctx.moveTo(0, y + .5);
-    ctx.lineTo(w, y + .5);
+    ctx.lineTo(w, y + .5, spectrumH);
     ctx.stroke();
   }
 
