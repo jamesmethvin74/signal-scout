@@ -1,57 +1,54 @@
 .analog-meter {
-  padding: 3px;
-  border: 1px solid #090909;
-  border-radius: 7px;
-  background:
-    linear-gradient(180deg, #f5e9bb 0%, #d5c58d 50%, #aa9866 100%);
+  padding: 4px;
+  border: 1px solid #080908;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #24251f, #0c0e0c);
   box-shadow:
-    inset 0 1px rgba(255,255,255,.7),
-    inset 0 -2px rgba(61,48,25,.38),
+    inset 0 1px rgba(255,255,255,.07),
+    inset 0 -1px rgba(0,0,0,.75),
     0 2px 5px rgba(0,0,0,.42);
 }
 
 .meter-window {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(76,60,30,.42);
-  border-radius: 4px;
+  border: 1px solid #302b20;
+  border-radius: 5px;
   background:
-    radial-gradient(ellipse at 50% 108%, rgba(167,143,83,.16), transparent 56%),
-    linear-gradient(180deg, #fffdf0 0%, #f8f1d6 58%, #eadfba 100%);
+    radial-gradient(ellipse at 50% 115%, rgba(159,124,54,.16), transparent 54%),
+    linear-gradient(180deg, #282216 0%, #17140d 58%, #0d0c09 100%);
   box-shadow:
-    inset 0 0 8px rgba(92,70,28,.15),
-    inset 0 1px rgba(255,255,255,.88);
+    inset 0 0 12px rgba(0,0,0,.78),
+    inset 0 1px rgba(255,224,160,.08);
 }
 
-/* Main black scale arc. */
+/* Straight ivory S-meter scale line, matching the supplied reference. */
 .meter-window::before {
   content: "";
   position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: 4%;
-  height: 76%;
-  border-top: 2px solid #202020;
-  border-radius: 50% 50% 0 0;
-  opacity: .96;
-  transform: perspective(120px) rotateX(22deg);
+  z-index: 1;
+  left: 7%;
+  right: 7%;
+  top: 48%;
+  height: 2px;
+  border-radius: 2px;
+  background: #ead9a7;
+  box-shadow: 0 0 3px rgba(234,217,167,.16);
   pointer-events: none;
 }
 
-/* Strong-signal red arc beginning at S9. */
+/* Red strong-signal section of the same straight scale line. */
 .meter-window::after {
   content: "";
   position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: 4%;
-  height: 76%;
-  border-top: 3px solid #b6201e;
-  border-radius: 50% 50% 0 0;
-  opacity: .98;
-  transform: perspective(120px) rotateX(22deg);
-  clip-path: inset(0 0 0 66%);
-  filter: drop-shadow(0 0 1px rgba(182,32,30,.2));
+  z-index: 2;
+  left: 69%;
+  right: 7%;
+  top: 48%;
+  height: 2px;
+  border-radius: 2px;
+  background: #d1463c;
+  box-shadow: 0 0 4px rgba(209,70,60,.28);
   pointer-events: none;
 }
 
@@ -60,61 +57,74 @@
   inset: 0;
   display: block;
   z-index: 4;
-  color: #181818;
   font-family: Arial, Helvetica, sans-serif;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 8px;
   line-height: 1;
 }
 
 .meter-scale::before {
-  content: "dB";
+  content: "S";
   position: absolute;
-  top: 5%;
-  left: 4%;
-  color: #b6201e;
+  left: 3.5%;
+  bottom: 11%;
+  color: #d8c89a;
   font-size: 7px;
-  font-weight: 800;
-  letter-spacing: .02em;
+  font-weight: 700;
 }
 
 .meter-scale span {
   position: absolute;
+  top: 18%;
   width: max-content;
-  transform: translate(-50%, -50%);
-  color: #171717;
-  text-shadow: none;
+  color: #e7d8ab;
+  text-shadow: 0 0 2px rgba(231,216,171,.18);
+  transform: translateX(-50%);
 }
 
-/* Lower black S scale, following the arc. */
-.meter-scale span:nth-child(1) { left: 7%;  top: 61%; }
-.meter-scale span:nth-child(2) { left: 24%; top: 45%; }
-.meter-scale span:nth-child(3) { left: 41%; top: 35%; }
-.meter-scale span:nth-child(4) { left: 57%; top: 31%; }
-.meter-scale span:nth-child(5) { left: 70%; top: 35%; }
-
-/* Upper red over-S9 scale: +20 / +40 / +60. */
-.meter-scale span:nth-child(6) { left: 77%; top: 14%; }
-.meter-scale span:nth-child(7) { left: 87%; top: 10%; }
-.meter-scale span:nth-child(8) { left: 95%; top: 16%; }
+/* S1, S3, S5, S7, S9, then +10, +40, +60 dBm. */
+.meter-scale span:nth-child(1) { left: 8%; }
+.meter-scale span:nth-child(2) { left: 24%; }
+.meter-scale span:nth-child(3) { left: 40%; }
+.meter-scale span:nth-child(4) { left: 55%; }
+.meter-scale span:nth-child(5) { left: 69%; }
+.meter-scale span:nth-child(6) { left: 79%; }
+.meter-scale span:nth-child(7) { left: 88%; }
+.meter-scale span:nth-child(8) { left: 96%; }
 
 .meter-scale span:nth-child(n+6) {
-  color: #b6201e;
-  font-weight: 800;
+  color: #dc594e;
 }
 
-/* Broad tapered pointer, matching the classic analog meter reference. */
+/* Tick marks drop to the straight scale line. */
+.meter-scale span::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 145%;
+  width: 1px;
+  height: 10px;
+  margin-left: -.5px;
+  background: #e7d8ab;
+  box-shadow: 0 0 2px rgba(231,216,171,.12);
+}
+
+.meter-scale span:nth-child(n+6)::after {
+  background: #dc594e;
+}
+
+/* Slender ivory needle, matching the supplied reference. */
 .meter-needle {
   --meter-cal-angle: -66deg;
   z-index: 3;
   left: 50%;
-  bottom: -3px;
-  width: 10px;
-  height: 164%;
-  margin-left: -5px;
-  background: #171717;
-  box-shadow: 0 0 1px rgba(0,0,0,.55);
-  clip-path: polygon(50% 0, 67% 67%, 100% 100%, 0 100%, 33% 67%);
+  bottom: -10px;
+  width: 3px;
+  height: 155%;
+  margin-left: -1.5px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, #bfae7e 0%, #fff1bd 46%, #ead39d 100%);
+  box-shadow: 0 0 2px rgba(255,239,190,.34);
   transform-origin: 50% 100%;
   transform: rotate(var(--meter-cal-angle, var(--meter-angle)));
   transition: transform .11s linear;
@@ -122,13 +132,11 @@
 
 .meter-pivot {
   z-index: 5;
-  bottom: -6px;
-  width: 14px;
-  height: 14px;
-  margin-left: -7px;
-  border: 1px solid #080808;
-  background: radial-gradient(circle at 38% 32%, #414141 0 18%, #171717 42%, #030303 100%);
-  box-shadow:
-    inset 0 1px rgba(255,255,255,.16),
-    0 1px 2px rgba(0,0,0,.5);
+  bottom: -8px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border: 0;
+  background: #17130d;
+  box-shadow: none;
 }
