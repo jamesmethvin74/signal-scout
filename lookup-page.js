@@ -39,7 +39,7 @@
       const lat = Number(payload?.lat);
       const lon = Number(payload?.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return { lat, lon, identity: payload?.name || 'Your listening location' };
+      return { lat, lon, identity: payload?.label || 'Your listening location' };
     } catch {
       return null;
     }
