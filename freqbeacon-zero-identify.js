@@ -43,8 +43,10 @@
   function exactEyebrow(result) {
     const entry = result.entry;
     if (entry.type === 'station' && entry.band === 'MW') return 'LIKELY STATION';
-    if (entry.type === 'station' && entry.band === 'SW') {
-      return result.confidence === 'likely' ? 'LIKELY BROADCAST' : 'KNOWN BROADCAST';
+    if (entry.type === 'station' && (entry.band === 'SW' || entry.band === 'LW')) {
+      if (result.confidence === 'likely') return 'LIKELY BROADCAST';
+      if (result.confidence === 'cataloged') return 'CATALOGED BROADCAST';
+      return 'KNOWN BROADCAST';
     }
     if (entry.type === 'signal') return result.confidence === 'likely' ? 'LIKELY SIGNAL' : 'KNOWN SIGNAL';
     if (entry.type === 'channel') return 'KNOWN CHANNEL';
