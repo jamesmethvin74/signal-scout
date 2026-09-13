@@ -173,7 +173,7 @@ function drawBandOverlay() {
     })
     .slice(0, 2);
 
-  ctx.font = '700 14px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   labels.forEach((band, index) => {
@@ -184,7 +184,7 @@ function drawBandOverlay() {
 
   ctx.strokeStyle = 'rgba(114, 144, 154, .45)';
   ctx.fillStyle = 'rgba(185, 204, 210, .82)';
-  ctx.font = '17px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.font = '19px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textBaseline = 'top';
   for (let i = 0; i <= 8; i += 1) {
     const x = (i / 8) * w;
