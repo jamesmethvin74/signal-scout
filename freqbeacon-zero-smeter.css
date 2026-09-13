@@ -1,0 +1,32 @@
+.meter-window {
+  background:
+    linear-gradient(90deg, transparent 0 77%, rgba(170, 54, 45, .08) 82%, rgba(170, 54, 45, .18) 100%),
+    linear-gradient(180deg, rgba(255,205,107,.12), transparent 48%),
+    #181711;
+}
+
+/* Red strong-signal arc: S9 through S9+20. */
+.meter-window::after {
+  content: "";
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  bottom: 12%;
+  height: 46%;
+  border-top: 2px solid #c95f50;
+  border-radius: 50% 50% 0 0;
+  opacity: .96;
+  transform: perspective(90px) rotateX(25deg);
+  clip-path: inset(0 0 0 80%);
+  filter: drop-shadow(0 0 2px rgba(201, 95, 80, .28));
+  pointer-events: none;
+}
+
+.meter-scale span:nth-last-child(-n+2) {
+  color: #df765e;
+  text-shadow: 0 0 4px rgba(207, 86, 67, .22);
+}
+
+.meter-needle {
+  transform: rotate(var(--meter-cal-angle, var(--meter-angle)));
+}
