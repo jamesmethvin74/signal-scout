@@ -180,6 +180,15 @@
     });
   }
 
+  function scrollResultsIntoView() {
+    const target = document.querySelector('.lookup-results-shell');
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 8);
+      window.scrollTo({ top, behavior: 'smooth' });
+    });
+  }
+
   async function selectCategory(key) {
     const def = CATEGORY_DEFS[key];
     if (!def) return;
@@ -197,6 +206,7 @@
     }
     count.textContent = def.label;
     stage.innerHTML = '<div class="lookup-loading">CHECKING THE FREQBEACON CATALOG…</div>';
+    scrollResultsIntoView();
 
     const base = Array.isArray(catalog.entries) ? catalog.entries : (Array.isArray(catalog.stations) ? catalog.stations : []);
     let entries = [...base];
@@ -216,7 +226,6 @@
       status.className = 'lookup-status';
       status.textContent = selectedEntries.length ? `${def.label}: showing real stored catalog matches.` : `${def.label}: no stored matches yet.`;
     }
-    document.querySelector('#lookupResultsTitle')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   chips.addEventListener('click', (event) => {
