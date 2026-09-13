@@ -2,8 +2,7 @@
   'use strict';
 
   // Display-only S-meter calibration. The Kiwi dBm telemetry remains
-  // authoritative. This adapter maps that value to the actual printed meter
-  // marks on screen so the compact analog face stays numerically meaningful.
+  // authoritative. This adapter maps that value to the rendered meter marks.
   const signalValue = document.querySelector('#signalValue');
   const meterNeedle = document.querySelector('#meterNeedle');
   const analogMeter = document.querySelector('.analog-meter');
@@ -12,10 +11,12 @@
 
   if (!signalValue || !meterNeedle || !meterWindow || !meterScale) return;
 
-  // The base shell already supplies S1, 3, 5, 7, 9 and +20. Extend the
-  // classic strong-signal scale to +40 and +60 like a traditional receiver.
+  const baseMarks = [...meterScale.querySelectorAll('span')];
+  if (baseMarks[0]) baseMarks[0].textContent = '1';
+  if (baseMarks[5]) baseMarks[5].textContent = '+10';
+
   if (meterScale.children.length < 8) {
-    for (const label of ['+40', '+60']) {
+    for (const label of ['+40', '+60 dBm']) {
       const mark = document.createElement('span');
       mark.textContent = label;
       mark.className = 'meter-over-mark';
@@ -24,8 +25,11 @@
   }
 
   const scaleMarks = [...meterScale.querySelectorAll('span')].slice(0, 8);
-  const DBM_MARKS = Object.freeze([-121, -109, -97, -85, -73, -53, -33, -13]);
-  const FALLBACK_ANGLES = Object.freeze([-66, -49, -31, -12, 8, 29, 48, 65]);
+
+  // Conventional HF S-meter reference: S9 = -73 dBm and 6 dB per S-unit
+  // below S9. Above S9, the printed over-S9 marks are literal dB offsets.
+  const DBM_MARKS = Object.freeze([-121, -109, -97, -85, -73, -63, -33, -13]);
+  const FALLBACK_ANGLES = Object.freeze([-66, -49, -31, -12, 8, 22, 47, 65]);
   let markAngles = [...FALLBACK_ANGLES];
   let resizeFrame = 0;
 
@@ -42,7 +46,7 @@
     const measured = scaleMarks.map((mark) => {
       const rect = mark.getBoundingClientRect();
       const targetX = rect.left + rect.width / 2;
-      const targetY = rect.top + rect.height / 2;
+      const targetY = windowRect.top + windowRect.height * 0.48;
       return Math.atan2(targetX - pivotX, pivotY - targetY) * 180 / Math.PI;
     });
 
