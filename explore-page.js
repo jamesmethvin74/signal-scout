@@ -7,6 +7,11 @@
   const RESUME_DELAY_MS = 4200;
   const AUTO_DEGREES_PER_MS = 0.0022;
   const MAX_DPR = 2;
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 4;
+  const BUTTON_ZOOM_FACTOR = 1.5;
+  const DOUBLE_TAP_ZOOM_FACTOR = 1.7;
+  const DOUBLE_TAP_MS = 340;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const els = {
@@ -14,6 +19,8 @@
     canvas: document.getElementById('receiverGlobe'),
     loading: document.getElementById('globeLoading'),
     affordance: document.getElementById('globeAffordance'),
+    zoomIn: document.getElementById('globeZoomIn'),
+    zoomOut: document.getElementById('globeZoomOut'),
     receiverCount: document.getElementById('receiverCount'),
     networkState: document.getElementById('networkState'),
     networkProof: document.getElementById('networkProof'),
@@ -45,12 +52,20 @@
     width: 0,
     height: 0,
     dpr: 1,
-    radius: 0,
+    baseRadius: 0,
+    zoom: 1,
+    zoomTween: null,
     hitPoints: [],
+    pointers: new Map(),
     dragging: false,
-    pointerId: null,
+    pinching: false,
+    gestureHadPinch: false,
     dragStart: null,
     rotateStart: null,
+    pinchStartDistance: 0,
+    pinchStartZoom: 1,
+    lastTapAt: 0,
+    lastTapPoint: null,
     lastFrameAt: performance.now(),
     lastInteractionAt: 0,
     focusTween: null,
@@ -63,6 +78,35 @@
     while (value > 180) value -= 360;
     while (value < -180) value += 360;
     return value;
+  }
+
+  function clampZoom(value) {
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number(value) || MIN_ZOOM));
+  }
+
+  function setZoom(value) {
+    state.zoom = clampZoom(value);
+    state.zoomTween = null;
+    updateZoomControls();
+  }
+
+  function animateZoomTo(value, duration = 190) {
+    const target = clampZoom(value);
+    if (Math.abs(target - state.zoom) < 0.001) return;
+    state.zoomTween = {
+      start: performance.now(),
+      duration: reducedMotion.matches ? 1 : duration,
+      from: state.zoom,
+      target
+    };
+    state.lastInteractionAt = performance.now();
+    els.affordance?.classList.add('is-hidden');
+  }
+
+  function updateZoomControls() {
+    if (els.zoomOut) els.zoomOut.disabled = state.zoom <= MIN_ZOOM + 0.01;
+    if (els.zoomIn) els.zoomIn.disabled = state.zoom >= MAX_ZOOM - 0.01;
+    els.shell.style.setProperty('--globe-zoom', state.zoom.toFixed(2));
   }
 
   function regionFor(lat, lon) {
@@ -158,10 +202,12 @@
     els.canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const radius = Math.max(80, Math.min(width, height) * (width > 620 ? 0.425 : 0.44));
-    state.radius = radius;
+    state.baseRadius = Math.max(80, Math.min(width, height) * (width > 620 ? 0.425 : 0.44));
     if (state.projection) {
-      state.projection.translate([width / 2, height / 2]).scale(radius).rotate(state.rotation);
+      state.projection
+        .translate([width / 2, height / 2])
+        .scale(state.baseRadius * state.zoom)
+        .rotate(state.rotation);
     }
   }
 
@@ -179,6 +225,7 @@
   function drawSelectedCallout(point) {
     const receiver = state.selected;
     if (!receiver || !point) return;
+    if (point.x < -18 || point.x > state.width + 18 || point.y < -18 || point.y > state.height + 18) return;
     const mobile = state.width < 500;
     const line1 = shortText(receiver.name, mobile ? 24 : 34);
     const line2 = shortText(receiver.location, mobile ? 29 : 42);
@@ -210,13 +257,13 @@
 
   function drawGlobe(now) {
     if (!state.projection || !state.path || !state.land) return;
-    state.projection.rotate(state.rotation);
+    state.projection.rotate(state.rotation).scale(state.baseRadius * state.zoom);
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
     ctx.clearRect(0, 0, state.width, state.height);
 
     const cx = state.width / 2;
     const cy = state.height / 2;
-    const r = state.radius;
+    const r = state.baseRadius * state.zoom;
     const ocean = ctx.createRadialGradient(cx - r * .28, cy - r * .34, r * .12, cx, cy, r);
     ocean.addColorStop(0, '#173039');
     ocean.addColorStop(.53, '#0c1b21');
@@ -281,6 +328,7 @@
       if (!projected) continue;
       const [x, y] = projected;
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < -24 || x > state.width + 24 || y < -24 || y > state.height + 24) continue;
       const selected = receiver.id === selectedId;
 
       ctx.save();
@@ -353,6 +401,17 @@
     const delta = Math.min(50, Math.max(0, now - state.lastFrameAt));
     state.lastFrameAt = now;
 
+    if (state.zoomTween) {
+      const t = Math.min(1, (now - state.zoomTween.start) / state.zoomTween.duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      state.zoom = state.zoomTween.from + (state.zoomTween.target - state.zoomTween.from) * eased;
+      if (t >= 1) {
+        state.zoom = state.zoomTween.target;
+        state.zoomTween = null;
+      }
+      updateZoomControls();
+    }
+
     if (state.focusTween) {
       const t = Math.min(1, (now - state.focusTween.start) / state.focusTween.duration);
       const eased = 1 - Math.pow(1 - t, 3);
@@ -360,7 +419,9 @@
       if (t >= 1) state.focusTween = null;
     } else if (
       state.ready &&
+      state.pointers.size === 0 &&
       !state.dragging &&
+      !state.pinching &&
       !reducedMotion.matches &&
       now - state.lastInteractionAt > RESUME_DELAY_MS
     ) {
@@ -473,25 +534,97 @@
     return best;
   }
 
-  function onPointerDown(event) {
-    if (!state.ready || state.pointerId != null) return;
-    state.pointerId = event.pointerId;
+  function pointerDistance() {
+    const points = [...state.pointers.values()];
+    if (points.length < 2) return 0;
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  }
+
+  function beginSinglePointerDrag(point) {
     state.dragging = true;
-    state.dragStart = [event.clientX, event.clientY];
+    state.pinching = false;
+    state.dragStart = [point.x, point.y];
     state.rotateStart = [...state.rotation];
+  }
+
+  function beginPinch() {
+    state.dragging = false;
+    state.pinching = true;
+    state.gestureHadPinch = true;
+    state.pinchStartDistance = Math.max(1, pointerDistance());
+    state.pinchStartZoom = state.zoom;
+    state.zoomTween = null;
+  }
+
+  function handleTap(clientX, clientY) {
+    const receiver = pickReceiverAt(clientX, clientY);
+    if (receiver) {
+      state.lastTapAt = 0;
+      state.lastTapPoint = null;
+      selectReceiver(receiver, { focus: false, scroll: true });
+      return;
+    }
+
+    const now = performance.now();
+    const previous = state.lastTapPoint;
+    const isDoubleTap = previous &&
+      now - state.lastTapAt <= DOUBLE_TAP_MS &&
+      Math.hypot(clientX - previous[0], clientY - previous[1]) <= 38;
+
+    if (isDoubleTap) {
+      animateZoomTo(state.zoom * DOUBLE_TAP_ZOOM_FACTOR, 220);
+      state.lastTapAt = 0;
+      state.lastTapPoint = null;
+    } else {
+      state.lastTapAt = now;
+      state.lastTapPoint = [clientX, clientY];
+    }
+  }
+
+  function onPointerDown(event) {
+    if (!state.ready) return;
+    if (state.pointers.size === 0) state.gestureHadPinch = false;
+    state.pointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY
+    });
     state.focusTween = null;
+    state.zoomTween = null;
     state.lastInteractionAt = performance.now();
     els.canvas.classList.add('is-dragging');
-    els.affordance.classList.add('is-hidden');
-    els.canvas.setPointerCapture?.(event.pointerId);
+    els.affordance?.classList.add('is-hidden');
+    try { els.canvas.setPointerCapture?.(event.pointerId); } catch {}
+
+    if (state.pointers.size === 1) {
+      beginSinglePointerDrag(state.pointers.get(event.pointerId));
+    } else if (state.pointers.size === 2) {
+      beginPinch();
+    }
     event.preventDefault();
   }
 
   function onPointerMove(event) {
-    if (!state.dragging || event.pointerId !== state.pointerId) return;
+    const point = state.pointers.get(event.pointerId);
+    if (!point) return;
+    point.x = event.clientX;
+    point.y = event.clientY;
+
+    if (state.pointers.size >= 2) {
+      if (!state.pinching) beginPinch();
+      const distance = Math.max(1, pointerDistance());
+      setZoom(state.pinchStartZoom * (distance / state.pinchStartDistance));
+      state.lastInteractionAt = performance.now();
+      event.preventDefault();
+      return;
+    }
+
+    if (!state.dragging || !state.dragStart) return;
     const dx = event.clientX - state.dragStart[0];
     const dy = event.clientY - state.dragStart[1];
-    const degreesPerPixel = 82 / Math.max(120, state.radius);
+    const effectiveRadius = state.baseRadius * state.zoom;
+    const degreesPerPixel = 82 / Math.max(120, effectiveRadius);
     state.rotation[0] = normalizeLon(state.rotateStart[0] + dx * degreesPerPixel);
     state.rotation[1] = Math.max(-85, Math.min(85, state.rotateStart[1] - dy * degreesPerPixel));
     state.lastInteractionAt = performance.now();
@@ -499,19 +632,36 @@
   }
 
   function finishPointer(event) {
-    if (event.pointerId !== state.pointerId) return;
-    const moved = state.dragStart
-      ? Math.hypot(event.clientX - state.dragStart[0], event.clientY - state.dragStart[1])
-      : Infinity;
-    state.dragging = false;
-    state.pointerId = null;
+    const point = state.pointers.get(event.pointerId);
+    if (!point) return;
+    const moved = Math.hypot(event.clientX - point.startX, event.clientY - point.startY);
+    const wasPinch = state.gestureHadPinch;
+    state.pointers.delete(event.pointerId);
     state.lastInteractionAt = performance.now();
-    els.canvas.classList.remove('is-dragging');
     try { els.canvas.releasePointerCapture?.(event.pointerId); } catch {}
-    if (moved < 7) {
-      const receiver = pickReceiverAt(event.clientX, event.clientY);
-      if (receiver) selectReceiver(receiver, { focus: false, scroll: true });
+
+    if (state.pointers.size === 1) {
+      const remaining = [...state.pointers.values()][0];
+      remaining.startX = remaining.x;
+      remaining.startY = remaining.y;
+      beginSinglePointerDrag(remaining);
+    } else if (state.pointers.size === 0) {
+      state.dragging = false;
+      state.pinching = false;
+      state.dragStart = null;
+      els.canvas.classList.remove('is-dragging');
+      if (!wasPinch && moved < 7) handleTap(event.clientX, event.clientY);
     }
+    event.preventDefault();
+  }
+
+  function onWheel(event) {
+    if (!state.ready) return;
+    const direction = Math.exp(-event.deltaY * 0.0014);
+    setZoom(state.zoom * direction);
+    state.lastInteractionAt = performance.now();
+    state.focusTween = null;
+    els.affordance?.classList.add('is-hidden');
     event.preventDefault();
   }
 
@@ -553,10 +703,11 @@
       .precision(.45)
       .clipAngle(90)
       .translate([state.width / 2, state.height / 2])
-      .scale(state.radius)
+      .scale(state.baseRadius * state.zoom)
       .rotate(state.rotation);
     state.path = window.d3.geoPath(state.projection, ctx);
     state.graticule = window.d3.geoGraticule10();
+    updateZoomControls();
 
     try {
       const [receiverResponse, worldResponse] = await Promise.all([
@@ -602,10 +753,14 @@
     location.assign('/zero?from=explore');
   });
 
+  els.zoomIn?.addEventListener('click', () => animateZoomTo(state.zoom * BUTTON_ZOOM_FACTOR));
+  els.zoomOut?.addEventListener('click', () => animateZoomTo(state.zoom / BUTTON_ZOOM_FACTOR));
+
   els.canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
   els.canvas.addEventListener('pointermove', onPointerMove, { passive: false });
   els.canvas.addEventListener('pointerup', finishPointer, { passive: false });
   els.canvas.addEventListener('pointercancel', finishPointer, { passive: false });
+  els.canvas.addEventListener('wheel', onWheel, { passive: false });
   els.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
   const resizeObserver = new ResizeObserver(() => resizeCanvas());
