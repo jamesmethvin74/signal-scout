@@ -41,7 +41,7 @@
 
   let fullEntries = null;
   let fullLoad = null;
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const text = (e) => [e?.name,e?.format,e?.description,e?.country,e?.language,e?.target,e?.transmitter].filter(Boolean).join(' ').toLowerCase();
   const freq = (e) => Number(e?.frequencyKHz ?? e?.frequency);
   const normalized = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
