@@ -1,0 +1,75 @@
+:root {
+  --fb-nav-amber: #ffc864;
+  --fb-nav-muted: #77858a;
+  --fb-nav-line: #2a373d;
+  --fb-nav-bg-top: rgba(20,29,33,.98);
+  --fb-nav-bg-bottom: rgba(8,12,14,.995);
+}
+
+.has-fb-bottom-nav {
+  padding-bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+}
+
+.fb-bottom-nav {
+  position: fixed;
+  z-index: 100;
+  left: 50%;
+  bottom: 0;
+  width: min(100%, 860px);
+  min-height: calc(66px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--fb-nav-line);
+  background: linear-gradient(180deg, var(--fb-nav-bg-top), var(--fb-nav-bg-bottom));
+  box-shadow: 0 -10px 24px rgba(0,0,0,.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.fb-nav-item {
+  position: relative;
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  color: var(--fb-nav-muted);
+  text-decoration: none;
+  font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .04em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fb-nav-item svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fb-nav-item.active {
+  color: var(--fb-nav-amber);
+  background: linear-gradient(180deg, rgba(255,200,100,.12), rgba(255,200,100,.025));
+}
+
+.fb-nav-item.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  background: var(--fb-nav-amber);
+  box-shadow: 0 0 8px rgba(255,200,100,.42);
+}
+
+.fb-nav-item:focus-visible {
+  outline: 2px solid rgba(255,200,100,.65);
+  outline-offset: -3px;
+}
