@@ -1,0 +1,253 @@
+.receiver-launchpad {
+  margin: 10px 12px 0;
+  padding: 12px 13px;
+  border: 1px solid #354148;
+  border-left: 3px solid var(--amber-dim, #a97a34);
+  border-radius: 11px;
+  background:
+    linear-gradient(115deg, rgba(255,200,100,.075), transparent 38%),
+    linear-gradient(180deg, rgba(20,27,30,.98), rgba(8,12,14,.99));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 8px 24px rgba(0,0,0,.2);
+}
+
+.launchpad-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launchpad-kicker {
+  margin: 0 0 5px;
+  color: #77868b;
+  font: 850 7px/1 var(--mono, monospace);
+  letter-spacing: .15em;
+}
+
+.launchpad-heading h2 {
+  margin: 0;
+  color: #e4e8e6;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: -.01em;
+  font-weight: 860;
+}
+
+.launchpad-network {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #26352f;
+  border-radius: 999px;
+  background: rgba(7,12,10,.72);
+  color: #87a394;
+  font: 800 6px/1 var(--mono, monospace);
+  letter-spacing: .09em;
+  white-space: nowrap;
+}
+
+.launchpad-network i,
+.launchpad-health i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green, #55d987);
+  box-shadow: 0 0 8px rgba(85,217,135,.58);
+}
+
+.receiver-launchpad.is-network-error .launchpad-network {
+  border-color: rgba(255,107,100,.3);
+  color: #bd7772;
+}
+
+.receiver-launchpad.is-network-error .launchpad-network i {
+  background: var(--danger, #ff6b64);
+  box-shadow: none;
+}
+
+.launchpad-status {
+  margin: 7px 0 0;
+  color: #859297;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.launchpad-previous {
+  margin-top: 9px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255,107,100,.24);
+  border-radius: 7px;
+  background: rgba(54,20,18,.18);
+}
+
+.launchpad-previous > span,
+.launchpad-choice-copy > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #747f84;
+  font: 850 6px/1 var(--mono, monospace);
+  letter-spacing: .13em;
+}
+
+.launchpad-previous strong,
+.launchpad-previous small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launchpad-previous strong {
+  color: #c8cecf;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.launchpad-previous small {
+  margin-top: 3px;
+  color: #707e83;
+  font-size: 8px;
+}
+
+.launchpad-choice {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid #4f4229;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255,200,100,.09), rgba(255,200,100,.018) 52%, rgba(0,0,0,.08));
+}
+
+.launchpad-choice-copy {
+  min-width: 0;
+}
+
+.launchpad-choice-copy > span {
+  color: var(--amber, #ffc864);
+}
+
+.launchpad-choice-copy strong,
+.launchpad-choice-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launchpad-choice-copy strong {
+  color: #e5e8e5;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 810;
+}
+
+.launchpad-choice-copy small {
+  margin-top: 4px;
+  color: #7d898e;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.launchpad-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green, #55d987);
+  font: 850 7px/1 var(--mono, monospace);
+  letter-spacing: .1em;
+}
+
+.launchpad-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 7px;
+}
+
+.launchpad-primary,
+.launchpad-secondary {
+  min-height: 42px;
+  border-radius: 7px;
+  cursor: pointer;
+  font: 900 8px/1 var(--mono, monospace);
+  letter-spacing: .09em;
+}
+
+.launchpad-primary {
+  flex: 1 1 auto;
+  border: 1px solid #765d31;
+  background: linear-gradient(180deg, #3b2e1a, #21190f);
+  color: var(--amber, #ffc864);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.launchpad-primary:disabled {
+  cursor: default;
+  opacity: .42;
+  filter: saturate(.65);
+}
+
+.launchpad-primary:not(:disabled):active,
+.launchpad-secondary:active {
+  transform: translateY(1px);
+}
+
+.launchpad-secondary {
+  flex: 0 0 auto;
+  padding-inline: 13px;
+  border: 1px solid #34434a;
+  background: linear-gradient(180deg, #171f22, #0d1214);
+  color: #9ba6a9;
+}
+
+.launchpad-helper {
+  margin: 7px 2px 0;
+  color: #5e6d73;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.globe-shell.is-change-target {
+  border-color: rgba(255,200,100,.75);
+  box-shadow:
+    0 0 0 2px rgba(255,200,100,.12),
+    inset 0 0 0 1px rgba(255,255,255,.025),
+    inset 0 -35px 70px rgba(0,0,0,.4),
+    0 10px 28px rgba(0,0,0,.28);
+}
+
+@media (min-width: 720px) {
+  .receiver-launchpad {
+    margin-inline: 12px;
+  }
+}
+
+@media (max-width: 440px) {
+  .receiver-launchpad {
+    margin-inline: 8px;
+    padding: 10px;
+  }
+
+  .launchpad-heading {
+    gap: 8px;
+  }
+
+  .launchpad-network {
+    padding-inline: 6px;
+    letter-spacing: .04em;
+  }
+
+  .launchpad-actions {
+    gap: 6px;
+  }
+
+  .launchpad-secondary {
+    padding-inline: 9px;
+  }
+}
