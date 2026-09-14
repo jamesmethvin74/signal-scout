@@ -12,7 +12,9 @@ import {
   runExploreBackfillCycle
 } from './receiver-health-backfill.js';
 import {
+  acquireReceiverBootstrapLease,
   receiverScreenSummary,
+  releaseReceiverBootstrapLease,
   runReceiverScreenCycle
 } from './receiver-health-screen.js';
 import {
@@ -60,30 +62,45 @@ async function runReceiverHealthCron(event, env) {
     };
   }
 
-  const screening = await runReceiverScreenCycle(env, {
-    limit: SCREEN_BATCH_SIZE,
-    concurrency: 6
-  });
-  const backfill = await runExploreBackfillCycle(env, {
-    limit: FULL_PROOF_BATCH_SIZE,
-    screenedOnly: true
-  });
+  const acquired = await acquireReceiverBootstrapLease(env);
+  if (!acquired) {
+    return {
+      mode: 'overlap-skip',
+      trustedReceivers: before.trustedReceivers,
+      inventory: before.inventory,
+      untested: before.untested,
+      promotionQueue: before.promotionQueue
+    };
+  }
 
-  return {
-    mode: bootstrapping ? 'bootstrap' : 'maintenance',
-    screened: screening.screenedNow,
-    screenReachable: screening.reachableNow,
-    screenUnreachable: screening.unreachableNow,
-    screenPending: screening.pending,
-    tested: backfill.tested,
-    successful: backfill.successful,
-    promoted: backfill.promoted,
-    demoted: backfill.demoted,
-    trustedReceivers: backfill.trustedReceivers,
-    inventory: backfill.inventory,
-    untested: backfill.untested,
-    promotionQueue: backfill.promotionQueue
-  };
+  try {
+    const screening = await runReceiverScreenCycle(env, {
+      limit: SCREEN_BATCH_SIZE,
+      concurrency: 6
+    });
+    const backfill = await runExploreBackfillCycle(env, {
+      limit: FULL_PROOF_BATCH_SIZE,
+      screenedOnly: true
+    });
+
+    return {
+      mode: bootstrapping ? 'bootstrap' : 'maintenance',
+      screened: screening.screenedNow,
+      screenReachable: screening.reachableNow,
+      screenUnreachable: screening.unreachableNow,
+      screenPending: screening.pending,
+      tested: backfill.tested,
+      successful: backfill.successful,
+      promoted: backfill.promoted,
+      demoted: backfill.demoted,
+      trustedReceivers: backfill.trustedReceivers,
+      inventory: backfill.inventory,
+      untested: backfill.untested,
+      promotionQueue: backfill.promotionQueue
+    };
+  } finally {
+    await releaseReceiverBootstrapLease(env);
+  }
 }
 
 async function persistHealthRun(env, run) {
