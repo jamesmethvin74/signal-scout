@@ -9,9 +9,9 @@
   if (!base || !engine || !stage || !count) return;
 
   const BROADCAST = new Set(['news','sports','religious','propaganda','international']);
-  const NEWS = /bbc world service|british broadcasting corporation|voice of america|usagm|united states agency for global media|radio free asia|radio free europe|radio liberty|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|kbs world|china radio international|rnz pacific|world service|\bnews\b/i;
-  const INTERNATIONAL = /bbc world service|british broadcasting corporation|voice of america|usagm|radio free asia|radio free europe|radio liberty|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|kbs world|china radio international|rnz pacific|voice of turkey/i;
-  const STATE = /china radio international|voice of korea|radio pyongyang|radio havana|voice of america|radio romania international|radio exterior de españa|bbc world service|rnz pacific|radio france internationale|deutsche welle|voice of turkey|kbs world|nhk world|usagm|radio free/i;
+  const NEWS = /\bbbc\b|bbc world service|british broadcasting corporation|voice of america|usagm|united states agency for global media|radio free asia|radio free europe|radio liberty|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|kbs world|china radio international|rnz pacific|world service|\bnews\b/i;
+  const INTERNATIONAL = /\bbbc\b|bbc world service|british broadcasting corporation|voice of america|usagm|radio free asia|radio free europe|radio liberty|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|kbs world|china radio international|rnz pacific|voice of turkey/i;
+  const STATE = /china radio international|voice of korea|radio pyongyang|radio havana|voice of america|radio romania international|radio exterior de españa|\bbbc\b|bbc world service|rnz pacific|radio france internationale|deutsche welle|voice of turkey|kbs world|nhk world|usagm|radio free/i;
   const RELIGIOUS = /relig|gospel|bible|catholic|christian|adventist|ministry|ministries|evangel|vatican|overcomer/i;
   const TARGETS = [
     ['europe', /\b(eur|europe|weu|eeu|ceu|gbr|britain|united kingdom|uk)\b/i],
@@ -41,7 +41,7 @@
 
   let fullEntries = null;
   let fullLoad = null;
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
   const text = (e) => [e?.name,e?.format,e?.description,e?.country,e?.language,e?.target,e?.transmitter].filter(Boolean).join(' ').toLowerCase();
   const freq = (e) => Number(e?.frequencyKHz ?? e?.frequency);
   const normalized = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
@@ -59,6 +59,7 @@
   }
   function targetRegion(value) { return TARGETS.find(([,re]) => re.test(String(value||'')))?.[0] || ''; }
   function miles(entry,receiver) {
+    if (entry?.locationApproximate === true) return Infinity;
     const a=[Number(entry?.lat),Number(entry?.lon),Number(receiver?.lat),Number(receiver?.lon)];
     if (!a.every(Number.isFinite)) return Infinity;
     try { return engine.milesBetween?.({lat:a[2],lon:a[3]},{lat:a[0],lon:a[1]}) ?? Infinity; } catch { return Infinity; }
@@ -89,7 +90,9 @@
     return false;
   }
   function asEntry(s) {
-    return {frequencyKHz:Number(s.frequency),name:String(s.name||'Shortwave broadcaster'),country:String(s.country||''),transmitter:String(s.transmitter||''),lat:Number(s.lat),lon:Number(s.lon),mode:/DRM/i.test(String(s.format||''))?'DRM':'AM',language:String(s.language||'Unknown'),description:String(s.note||s.format||''),format:String(s.format||''),start:s.start,end:s.end,days:s.days,target:String(s.target||'')};
+    const rawName=String(s.name||'Shortwave broadcaster');
+    const name=normalized(rawName)==='bbc'?'BBC World Service':rawName;
+    return {frequencyKHz:Number(s.frequency),name,country:String(s.country||''),transmitter:String(s.transmitter||''),lat:Number(s.lat),lon:Number(s.lon),locationApproximate:s.locationApproximate===true,mode:/DRM/i.test(String(s.format||''))?'DRM':'AM',language:String(s.language||'Unknown'),description:String(s.note||s.format||''),format:String(s.format||''),start:s.start,end:s.end,days:s.days,target:String(s.target||'')};
   }
   async function loadFull() {
     if (fullEntries) return fullEntries;
