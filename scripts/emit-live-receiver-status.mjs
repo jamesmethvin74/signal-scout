@@ -1,4 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+
+const snapshotPath = new URL('../receiver-status-live.json', import.meta.url);
+if (existsSync(snapshotPath)) {
+  console.log('LIVE_RECEIVER_STATUS snapshot already committed; skipping relay push');
+  process.exit(0);
+}
 
 const urls = [
   'https://freqbeacon.methvindigitalworks.com/api/explore/status',
@@ -20,28 +28,27 @@ for (const url of urls) {
   }
 }
 
-let name = 'fb-status-fetch-failed';
-if (payload) {
-  const b = payload.bootstrap || {};
-  const n = (v) => Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
-  name = [
-    'fb',
-    `i${n(payload.inventory)}`,
-    `s${n(b.screened)}`,
-    `r${n(b.reachable)}`,
-    `d${n(b.unreachable)}`,
-    `q${n(payload.promotionQueue)}`,
-    `t${n(payload.trustedReceivers)}`,
-    `x${n(payload.testedLast24h)}`
-  ].join('-');
-  console.log('LIVE_RECEIVER_STATUS_SOURCE=' + source);
-  console.log('LIVE_RECEIVER_STATUS=' + JSON.stringify(payload));
-} else {
+if (!payload) {
   console.error('LIVE_RECEIVER_STATUS_ERROR=' + (lastError?.stack || lastError));
+  process.exit(43);
 }
 
-const path = new URL('../wrangler.jsonc', import.meta.url);
-let text = await readFile(path, 'utf8');
-text = text.replace(/"name"\s*:\s*"[^"]+"/, `"name": "${name}"`);
-await writeFile(path, text);
-console.log('LIVE_RECEIVER_STATUS_SCRIPT=' + name);
+const snapshot = {
+  capturedAt: new Date().toISOString(),
+  source,
+  ...payload
+};
+await writeFile(snapshotPath, JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
+console.log('LIVE_RECEIVER_STATUS=' + JSON.stringify(snapshot));
+
+try {
+  execFileSync('git', ['config', 'user.name', 'FREQBEACON Cloudflare Diagnostic'], { stdio: 'inherit' });
+  execFileSync('git', ['config', 'user.email', 'freqbeacon-diagnostic@users.noreply.github.com'], { stdio: 'inherit' });
+  execFileSync('git', ['add', 'receiver-status-live.json'], { stdio: 'inherit' });
+  execFileSync('git', ['commit', '-m', 'Relay live receiver health snapshot'], { stdio: 'inherit' });
+  execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/temp-receiver-health-snapshot-final'], { stdio: 'inherit' });
+  console.log('LIVE_RECEIVER_STATUS_PUSHED=1');
+} catch (error) {
+  console.error('LIVE_RECEIVER_STATUS_PUSH_ERROR=' + (error?.stack || error));
+  process.exit(44);
+}
