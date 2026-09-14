@@ -10,62 +10,64 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/lookup-page.css?v=4">
   <link rel="stylesheet" href="/lookup-scroll-fix.css?v=1">
-  <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=2">
+  <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=3">
   <title>Lookup — FREQBEACON Zero</title>
 </head>
 <body>
   <main class="lookup-app has-fb-bottom-nav">
-    <header class="lookup-header">
-      <div class="lookup-brandline">
-        <strong>FREQBEACON <span>Zero</span></strong>
-        <i aria-hidden="true"></i>
-        <small>CLEANROOM RECEIVER</small>
-      </div>
-      <div class="lookup-tagline">Explore the airwaves.</div>
-      <div class="lookup-page-pill" aria-current="page">LOOKUP</div>
-    </header>
-
-    <section class="lookup-panel lookup-frequency-panel" aria-labelledby="frequencyLookupTitle">
-      <h1 class="lookup-section-label" id="frequencyLookupTitle">FREQUENCY (kHz)</h1>
-      <form id="lookupForm" class="lookup-form">
-        <div class="lookup-input-shell">
-          <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955.000" aria-label="Frequency in kilohertz" aria-describedby="lookupStatus">
-          <span>kHz</span>
+    <div class="fb-page-scroll">
+      <header class="lookup-header">
+        <div class="lookup-brandline">
+          <strong>FREQBEACON <span>Zero</span></strong>
+          <i aria-hidden="true"></i>
+          <small>CLEANROOM RECEIVER</small>
         </div>
-        <button class="lookup-clear" id="lookupClear" type="button" aria-label="Clear frequency">×</button>
-        <button class="lookup-submit" type="submit">LOOK UP</button>
-      </form>
-      <div class="lookup-status" id="lookupStatus" role="status" aria-live="polite" aria-atomic="true"></div>
-    </section>
+        <div class="lookup-tagline">Explore the airwaves.</div>
+        <div class="lookup-page-pill" aria-current="page">LOOKUP</div>
+      </header>
 
-    <section class="lookup-panel lookup-browser" id="lookupCategoryBrowser" aria-labelledby="categoriesTitle">
-      <h2 class="lookup-section-label" id="categoriesTitle">CATEGORIES</h2>
-      <div class="lookup-category-chips" data-category-chips role="group" aria-label="Content and service categories">
-        <button class="lookup-category-chip" type="button" data-category="news" aria-pressed="false">News</button>
-        <button class="lookup-category-chip" type="button" data-category="sports" aria-pressed="false">Sports</button>
-        <button class="lookup-category-chip" type="button" data-category="religious" aria-pressed="false">Religious</button>
-        <button class="lookup-category-chip" type="button" data-category="propaganda" aria-pressed="false">Propaganda</button>
-        <button class="lookup-category-chip" type="button" data-category="international" aria-pressed="false">International</button>
-        <button class="lookup-category-chip" type="button" data-category="utility" aria-pressed="false">Utility</button>
-        <button class="lookup-category-chip" type="button" data-category="amateur-voice" aria-pressed="false">Amateur<br>Voice</button>
-        <button class="lookup-category-chip" type="button" data-category="digital" aria-pressed="false">Digital</button>
-        <button class="lookup-category-chip" type="button" data-category="aviation" aria-pressed="false">Aviation</button>
-        <button class="lookup-category-chip" type="button" data-category="cb" aria-pressed="false">CB</button>
-      </div>
-    </section>
+      <section class="lookup-panel lookup-frequency-panel" aria-labelledby="frequencyLookupTitle">
+        <h1 class="lookup-section-label" id="frequencyLookupTitle">FREQUENCY (kHz)</h1>
+        <form id="lookupForm" class="lookup-form">
+          <div class="lookup-input-shell">
+            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955.000" aria-label="Frequency in kilohertz" aria-describedby="lookupStatus">
+            <span>kHz</span>
+          </div>
+          <button class="lookup-clear" id="lookupClear" type="button" aria-label="Clear frequency">×</button>
+          <button class="lookup-submit" type="submit">LOOK UP</button>
+        </form>
+        <div class="lookup-status" id="lookupStatus" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
 
-    <section class="lookup-results-shell" aria-labelledby="lookupResultsTitle">
-      <div class="lookup-results-head">
-        <h2 class="lookup-section-label" id="lookupResultsTitle">LOOKUP RESULTS</h2>
-        <span id="lookupResultCount"></span>
-      </div>
-      <div class="lookup-stage" id="lookupResults" aria-live="polite">
-        <div class="lookup-empty">
-          <strong>Enter a frequency or choose a category.</strong>
-          <p>FREQBEACON will use its real identification catalog and schedule data to show the best matches.</p>
+      <section class="lookup-panel lookup-browser" id="lookupCategoryBrowser" aria-labelledby="categoriesTitle">
+        <h2 class="lookup-section-label" id="categoriesTitle">CATEGORIES</h2>
+        <div class="lookup-category-chips" data-category-chips role="group" aria-label="Content and service categories">
+          <button class="lookup-category-chip" type="button" data-category="news" aria-pressed="false">News</button>
+          <button class="lookup-category-chip" type="button" data-category="sports" aria-pressed="false">Sports</button>
+          <button class="lookup-category-chip" type="button" data-category="religious" aria-pressed="false">Religious</button>
+          <button class="lookup-category-chip" type="button" data-category="propaganda" aria-pressed="false">Propaganda</button>
+          <button class="lookup-category-chip" type="button" data-category="international" aria-pressed="false">International</button>
+          <button class="lookup-category-chip" type="button" data-category="utility" aria-pressed="false">Utility</button>
+          <button class="lookup-category-chip" type="button" data-category="amateur-voice" aria-pressed="false">Amateur<br>Voice</button>
+          <button class="lookup-category-chip" type="button" data-category="digital" aria-pressed="false">Digital</button>
+          <button class="lookup-category-chip" type="button" data-category="aviation" aria-pressed="false">Aviation</button>
+          <button class="lookup-category-chip" type="button" data-category="cb" aria-pressed="false">CB</button>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section class="lookup-results-shell" aria-labelledby="lookupResultsTitle">
+        <div class="lookup-results-head">
+          <h2 class="lookup-section-label" id="lookupResultsTitle">LOOKUP RESULTS</h2>
+          <span id="lookupResultCount"></span>
+        </div>
+        <div class="lookup-stage" id="lookupResults" aria-live="polite">
+          <div class="lookup-empty">
+            <strong>Enter a frequency or choose a category.</strong>
+            <p>FREQBEACON will use its real identification catalog and schedule data to show the best matches.</p>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <nav class="fb-bottom-nav" aria-label="Primary">
       <a class="fb-nav-item" href="/zero" aria-label="Radio">
