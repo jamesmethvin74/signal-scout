@@ -7,14 +7,22 @@ import {
 } from './receiver-health-d1.js';
 import {
   handleExploreHealthStatus,
+  receiverHealthSummary,
   receiverInventoryReady,
   runExploreBackfillCycle
 } from './receiver-health-backfill.js';
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
-const RECEIVER_HEALTH_CRON = '43 * * * *';
+const RECEIVER_HEALTH_CRON = '*/15 * * * *';
+const WARMUP_TRUSTED_TARGET = 100;
+const MAINTENANCE_MINUTE_UTC = 45;
 
-async function runReceiverHealthCron(env) {
+function scheduledMinuteUtc(event) {
+  const time = Number(event?.scheduledTime);
+  return new Date(Number.isFinite(time) ? time : Date.now()).getUTCMinutes();
+}
+
+async function runReceiverHealthCron(event, env) {
   const inventoryReady = await receiverInventoryReady(env);
   if (!inventoryReady) {
     const seeded = await runExploreHealthCycle(env);
@@ -25,9 +33,19 @@ async function runReceiverHealthCron(env) {
     };
   }
 
+  const before = await receiverHealthSummary(env);
+  const warming = before.trustedReceivers < WARMUP_TRUSTED_TARGET;
+  if (!warming && scheduledMinuteUtc(event) !== MAINTENANCE_MINUTE_UTC) {
+    return {
+      mode: 'maintenance-skip',
+      trustedReceivers: before.trustedReceivers,
+      inventory: before.inventory
+    };
+  }
+
   const backfill = await runExploreBackfillCycle(env, { limit: 10 });
   return {
-    mode: 'backfill',
+    mode: warming ? 'warmup' : 'maintenance',
     tested: backfill.tested,
     successful: backfill.successful,
     promoted: backfill.promoted,
@@ -39,12 +57,34 @@ async function runReceiverHealthCron(env) {
   };
 }
 
+async function healthStatusResponse(request, env) {
+  const response = await handleExploreHealthStatus(request, env);
+  if (!response) return null;
+  try {
+    const payload = await response.clone().json();
+    payload.cadence = {
+      directoryRefresh: 'every 6 hours',
+      warmup: `every 15 minutes until ${WARMUP_TRUSTED_TARGET} trusted receivers`,
+      maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after warmup`,
+      batchSize: 10
+    };
+    const headers = new Headers(response.headers);
+    return new Response(JSON.stringify(payload), {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  } catch {
+    return response;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/explore/status') {
-      const statusResponse = await handleExploreHealthStatus(request, env);
+      const statusResponse = await healthStatusResponse(request, env);
       if (statusResponse) return statusResponse;
     }
 
@@ -71,7 +111,7 @@ export default {
 
     try {
       if (cron === RECEIVER_HEALTH_CRON) {
-        const result = await runReceiverHealthCron(env);
+        const result = await runReceiverHealthCron(event, env);
         console.log('FREQBEACON receiver health backfill', JSON.stringify(result));
         return;
       }
