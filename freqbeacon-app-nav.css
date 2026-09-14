@@ -4,10 +4,29 @@
   --fb-nav-line: #2a373d;
   --fb-nav-bg-top: rgba(20,29,33,.98);
   --fb-nav-bg-bottom: rgba(8,12,14,.995);
+  --fb-nav-height: 66px;
 }
 
+/*
+ * App-shell rule: the page scrollport ends above the persistent navigation.
+ * This prevents radio controls, receiver details, lookup results, and future
+ * page content from ever becoming trapped underneath the fixed nav.
+ */
 .has-fb-bottom-nav {
-  padding-bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+  --fb-nav-max-width: 860px;
+  height: calc(100vh - var(--fb-nav-height) - env(safe-area-inset-bottom));
+  height: calc(100dvh - var(--fb-nav-height) - env(safe-area-inset-bottom));
+  min-height: 0 !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: 22px;
+  padding-bottom: 22px !important;
+}
+
+.zero-radio.has-fb-bottom-nav {
+  --fb-nav-max-width: 720px;
 }
 
 .fb-bottom-nav {
@@ -15,8 +34,8 @@
   z-index: 100;
   left: 50%;
   bottom: 0;
-  width: min(100%, 860px);
-  min-height: calc(66px + env(safe-area-inset-bottom));
+  width: min(100%, var(--fb-nav-max-width));
+  min-height: calc(var(--fb-nav-height) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   transform: translateX(-50%);
   display: grid;
@@ -31,7 +50,7 @@
 .fb-nav-item {
   position: relative;
   min-width: 0;
-  min-height: 66px;
+  min-height: var(--fb-nav-height);
   display: grid;
   place-content: center;
   justify-items: center;
