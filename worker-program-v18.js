@@ -11,6 +11,10 @@ import {
   receiverInventoryReady,
   runExploreBackfillCycle
 } from './receiver-health-backfill.js';
+import {
+  recentReceiverHealthRuns,
+  recordReceiverHealthRun
+} from './receiver-health-runs.js';
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
 const RECEIVER_HEALTH_CRON = '*/15 * * * *';
@@ -26,10 +30,15 @@ async function runReceiverHealthCron(event, env) {
   const inventoryReady = await receiverInventoryReady(env);
   if (!inventoryReady) {
     const seeded = await runExploreHealthCycle(env);
+    const summary = await receiverHealthSummary(env);
     return {
       mode: 'seed',
       discovered: seeded.discovered,
-      tested: seeded.tested
+      tested: seeded.tested,
+      trustedReceivers: summary.trustedReceivers,
+      inventory: summary.inventory,
+      untested: summary.untested,
+      promotionQueue: summary.promotionQueue
     };
   }
 
@@ -39,7 +48,9 @@ async function runReceiverHealthCron(event, env) {
     return {
       mode: 'maintenance-skip',
       trustedReceivers: before.trustedReceivers,
-      inventory: before.inventory
+      inventory: before.inventory,
+      untested: before.untested,
+      promotionQueue: before.promotionQueue
     };
   }
 
@@ -57,11 +68,27 @@ async function runReceiverHealthCron(event, env) {
   };
 }
 
+async function persistHealthRun(env, run) {
+  try {
+    await recordReceiverHealthRun(env, run);
+  } catch (error) {
+    console.warn('FREQBEACON receiver health run persistence failed', error?.message || error);
+  }
+}
+
 async function healthStatusResponse(request, env) {
   const response = await handleExploreHealthStatus(request, env);
   if (!response) return null;
   try {
     const payload = await response.clone().json();
+    let recentRuns = [];
+    try {
+      recentRuns = await recentReceiverHealthRuns(env, 12);
+    } catch (error) {
+      console.warn('FREQBEACON receiver health history read failed', error?.message || error);
+    }
+    payload.recentRuns = recentRuns;
+    payload.lastRun = recentRuns[0] || null;
     payload.cadence = {
       directoryRefresh: 'every 6 hours',
       warmup: `every 15 minutes until ${WARMUP_TRUSTED_TARGET} trusted receivers`,
@@ -109,13 +136,37 @@ export default {
       await baseWorker.scheduled(event, env, ctx);
     }
 
-    try {
-      if (cron === RECEIVER_HEALTH_CRON) {
+    if (cron === RECEIVER_HEALTH_CRON) {
+      const runAt = Date.now();
+      try {
         const result = await runReceiverHealthCron(event, env);
+        await persistHealthRun(env, {
+          ...result,
+          runAt,
+          durationMs: Date.now() - runAt
+        });
         console.log('FREQBEACON receiver health backfill', JSON.stringify(result));
-        return;
+      } catch (error) {
+        let summary = {};
+        try {
+          summary = await receiverHealthSummary(env);
+        } catch {}
+        await persistHealthRun(env, {
+          mode: 'error',
+          runAt,
+          durationMs: Date.now() - runAt,
+          error: error?.message || error,
+          trustedReceivers: summary.trustedReceivers,
+          inventory: summary.inventory,
+          untested: summary.untested,
+          promotionQueue: summary.promotionQueue
+        });
+        console.warn('FREQBEACON receiver health cycle failed', error?.message || error);
       }
+      return;
+    }
 
+    try {
       if (cron === PROGRAM_REFRESH_CRON || !cron) {
         const result = await runExploreHealthCycle(env);
         console.log('FREQBEACON receiver directory refresh', JSON.stringify({
