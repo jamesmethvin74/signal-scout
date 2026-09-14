@@ -46,6 +46,68 @@ const EXPLORE_VENDOR_ASSETS = Object.freeze({
   }
 });
 
+function splitSqlStatements(sql) {
+  const text = String(sql || '');
+  const statements = [];
+  let start = 0;
+  let single = false;
+  let double = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (ch === "'" && !double) {
+      if (single && next === "'") {
+        i += 1;
+        continue;
+      }
+      single = !single;
+      continue;
+    }
+    if (ch === '"' && !single) {
+      if (double && next === '"') {
+        i += 1;
+        continue;
+      }
+      double = !double;
+      continue;
+    }
+    if (ch === ';' && !single && !double) {
+      const statement = text.slice(start, i).trim();
+      if (statement) statements.push(statement);
+      start = i + 1;
+    }
+  }
+
+  const tail = text.slice(start).trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
+
+function receiverHealthCompatEnv(env) {
+  const database = env?.RECEIVER_HEALTH_DB;
+  if (!database) return env;
+
+  const compatDatabase = {
+    prepare: database.prepare.bind(database),
+    exec: async (sql) => {
+      const statements = splitSqlStatements(sql);
+      const started = Date.now();
+      for (const statement of statements) {
+        await database.prepare(statement).run();
+      }
+      return { count: statements.length, duration: Date.now() - started };
+    }
+  };
+
+  return new Proxy(env, {
+    get(target, property, receiver) {
+      if (property === 'RECEIVER_HEALTH_DB') return compatDatabase;
+      return Reflect.get(target, property, receiver);
+    }
+  });
+}
+
 function scheduledMinuteUtc(event) {
   const time = Number(event?.scheduledTime);
   return new Date(Number.isFinite(time) ? time : Date.now()).getUTCMinutes();
@@ -54,7 +116,7 @@ function scheduledMinuteUtc(event) {
 async function runReceiverHealthCron(event, env) {
   const inventoryReady = await receiverInventoryReady(env);
   if (!inventoryReady) {
-    const seeded = await runExploreHealthCycle(env);
+    const seeded = await runExploreHealthCycle(receiverHealthCompatEnv(env));
     const summary = await receiverHealthSummary(env);
     return {
       mode: 'seed',
@@ -334,13 +396,13 @@ export default {
     }
 
     if (url.pathname.startsWith('/api/explore/')) {
-      return handleExploreApi(request, env);
+      return handleExploreApi(request, receiverHealthCompatEnv(env));
     }
 
     // Explore selects only an already-trusted receiver and hands it to the
     // existing Zero endpoints. It does not participate in local reception scoring.
     if (url.pathname.startsWith('/api/zero/') && selectedExploreReceiverId(request)) {
-      const exploreResponse = await handleExploreZeroRequest(request, env);
+      const exploreResponse = await handleExploreZeroRequest(request, receiverHealthCompatEnv(env));
       if (exploreResponse) return exploreResponse;
     }
 
@@ -386,7 +448,7 @@ export default {
 
     try {
       if (cron === PROGRAM_REFRESH_CRON || !cron) {
-        const result = await runExploreHealthCycle(env);
+        const result = await runExploreHealthCycle(receiverHealthCompatEnv(env));
         console.log('FREQBEACON receiver directory refresh', JSON.stringify({
           discovered: result.discovered,
           tested: result.tested
