@@ -28,6 +28,21 @@ const BOOTSTRAP_TRUSTED_TARGET = 125;
 const SCREEN_BATCH_SIZE = 18;
 const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
+const EXPLORE_VENDOR_PREFIX = '/_freqbeacon/explore/';
+const EXPLORE_VENDOR_ASSETS = Object.freeze({
+  'd3.min.js': {
+    url: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js',
+    contentType: 'application/javascript; charset=utf-8'
+  },
+  'topojson-client.min.js': {
+    url: 'https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js',
+    contentType: 'application/javascript; charset=utf-8'
+  },
+  'countries-110m.json': {
+    url: 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json',
+    contentType: 'application/json; charset=utf-8'
+  }
+});
 
 function scheduledMinuteUtc(event) {
   const time = Number(event?.scheduledTime);
@@ -163,9 +178,90 @@ async function explorePageResponse(request, env) {
   return env.ASSETS.fetch(assetRequest);
 }
 
+async function exploreVendorResponse(request, ctx) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith(EXPLORE_VENDOR_PREFIX)) return null;
+  const name = url.pathname.slice(EXPLORE_VENDOR_PREFIX.length);
+  const asset = EXPLORE_VENDOR_ASSETS[name];
+  if (!asset) return null;
+
+  const cache = caches.default;
+  const cacheKey = new Request(`${url.origin}${EXPLORE_VENDOR_PREFIX}${name}`, { method: 'GET' });
+  let response = await cache.match(cacheKey);
+
+  if (!response) {
+    const upstream = await fetch(asset.url, {
+      headers: { accept: '*/*' },
+      cf: { cacheEverything: true, cacheTtl: 604800 }
+    });
+    if (!upstream.ok) {
+      return new Response('Explore globe dependency unavailable', {
+        status: 502,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+      });
+    }
+
+    const headers = new Headers();
+    headers.set('content-type', asset.contentType);
+    headers.set('cache-control', 'public, max-age=604800, immutable');
+    headers.set('x-content-type-options', 'nosniff');
+    response = new Response(upstream.body, { status: 200, headers });
+    ctx?.waitUntil(cache.put(cacheKey, response.clone()));
+  }
+
+  if (request.method === 'HEAD') {
+    return new Response(null, { status: response.status, headers: response.headers });
+  }
+  return response;
+}
+
+async function exploreScriptResponse(request, env) {
+  if (!env?.ASSETS) return null;
+  const url = new URL(request.url);
+  url.pathname = '/explore-page.js';
+  url.search = '';
+  const assetRequest = new Request(url.toString(), {
+    method: request.method,
+    headers: request.headers
+  });
+  const response = await env.ASSETS.fetch(assetRequest);
+  if (!response || !response.ok || request.method === 'HEAD') return response;
+
+  const source = await response.text();
+  const rewritten = source
+    .replace(
+      'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
+      '/_freqbeacon/explore/countries-110m.json'
+    )
+    .replace(
+      "window.addEventListener('load', initialize, { once: true });",
+      "if (document.readyState === 'complete') initialize(); else window.addEventListener('load', initialize, { once: true });"
+    );
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('etag');
+  headers.set('content-type', 'application/javascript; charset=utf-8');
+  headers.set('cache-control', 'public, max-age=0, must-revalidate');
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname.startsWith(EXPLORE_VENDOR_PREFIX)) {
+      const response = await exploreVendorResponse(request, ctx);
+      if (response) return response;
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/explore-page.js') {
+      const response = await exploreScriptResponse(request, env);
+      if (response) return response;
+    }
 
     if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/explore' || url.pathname === '/explore/')) {
       const response = await explorePageResponse(request, env);
