@@ -24,6 +24,14 @@
   const STATE_BROADCASTERS = /china radio international|voice of korea|radio pyongyang|radio havana|voice of america|radio romania international|radio exterior de españa|bbc world service|rnz pacific|radio france internationale|deutsche welle|voice of turkey|kbs world|nhk world/;
   const RELIGIOUS = /relig|gospel|bible|catholic|christian|adventist|ministry|ministries|evangel/;
   const DIGITAL = /digital|ft8|rtty|packet|data|sstv|navtex|fsk|drm/;
+  const TARGET_REGIONS = Object.freeze([
+    ['europe', /\b(eur|europe|weu|western europe|eeu|eastern europe|ceu|central europe|gbr|britain|united kingdom|uk)\b/i],
+    ['north-america', /\b(nam|north america|usa|united states|canada|can|mexico|mex)\b/i],
+    ['south-america', /\b(sam|south america|latin america|latam|brazil|bra|argentina|arg)\b/i],
+    ['africa', /\b(afr|africa|north africa|west africa|east africa|southern africa|naf|waf|eaf|saf)\b/i],
+    ['asia', /\b(asia|east asia|south asia|southeast asia|eas|sas|sea|korea|kor|japan|jpn|china|chn|india|ind|pakistan|pak|iran|irn|persian)\b/i],
+    ['oceania', /\b(oceania|oce|australia|aus|pacific|pac|new zealand|nzl)\b/i]
+  ]);
 
   const CATEGORY_DEFS = Object.freeze({
     news: { label: 'News', broadcast: true, match: (entry, text, cats) => cats.has('news') || /news|world service|current affairs/.test(text) },
@@ -41,7 +49,7 @@
   let generatedEntries = null;
   let selectedKey = '';
   let selectedEntries = [];
-  let displayLimit = 12;
+  let displayLimit = 8;
 
   function esc(value) {
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -161,31 +169,98 @@
     }
   }
 
+  function receiverRegion(receiver) {
+    const lat = Number(receiver?.lat);
+    const lon = Number(receiver?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    if (lat >= 34 && lat <= 72 && lon >= -25 && lon <= 45) return 'europe';
+    if (lat >= 15 && lat <= 75 && lon >= -170 && lon <= -50) return 'north-america';
+    if (lat >= -58 && lat < 15 && lon >= -85 && lon <= -30) return 'south-america';
+    if (lat >= -38 && lat <= 38 && lon >= -20 && lon <= 55) return 'africa';
+    if (lat >= 5 && lat <= 80 && lon > 45 && lon <= 180) return 'asia';
+    if (lat >= -50 && lat < 10 && lon >= 105 && lon <= 180) return 'oceania';
+    return '';
+  }
+
+  function targetRegion(target) {
+    const text = String(target || '').trim();
+    if (!text) return '';
+    return TARGET_REGIONS.find(([, pattern]) => pattern.test(text))?.[0] || '';
+  }
+
+  function targetAffinity(entry, receiver) {
+    const aimed = targetRegion(entry?.target);
+    const heardFrom = receiverRegion(receiver);
+    if (!aimed || !heardFrom) return { score: 0, mismatch: false };
+    if (aimed === heardFrom) return { score: 180, mismatch: false };
+    return { score: -360, mismatch: true };
+  }
+
+  function receiverSolarHour(receiver, now) {
+    const lon = Number(receiver?.lon);
+    const utc = now.getUTCHours() + now.getUTCMinutes() / 60;
+    return Number.isFinite(lon) ? (utc + lon / 15 + 24) % 24 : utc;
+  }
+
+  function hfDistanceWindow(frequencyKHz, night) {
+    if (frequencyKHz < 2000) return night ? { soft: 350, hard: 900 } : { soft: 140, hard: 450 };
+    if (frequencyKHz < 5000) return night ? { soft: 1800, hard: 3000 } : { soft: 900, hard: 1900 };
+    if (frequencyKHz < 8000) return night ? { soft: 2400, hard: 3600 } : { soft: 1500, hard: 2700 };
+    if (frequencyKHz < 12000) return night ? { soft: 2800, hard: 4200 } : { soft: 2200, hard: 3600 };
+    if (frequencyKHz < 18000) return night ? { soft: 1800, hard: 3000 } : { soft: 2500, hard: 4000 };
+    if (frequencyKHz < 22000) return night ? { soft: 1400, hard: 2500 } : { soft: 2200, hard: 3600 };
+    return night ? { soft: 900, hard: 1800 } : { soft: 1800, hard: 3000 };
+  }
+
+  function receiverPath(entry, receiver, now, distance) {
+    const frequency = entryFrequency(entry);
+    if (!Number.isFinite(distance)) {
+      return { score: -110, plausible: null, tier: 'unknown', night: false };
+    }
+
+    const hour = receiverSolarHour(receiver, now);
+    const night = hour < 6 || hour >= 18;
+    const { soft, hard } = hfDistanceWindow(frequency, night);
+
+    if (distance <= 500) return { score: 440, plausible: true, tier: 'regional', night };
+    if (distance <= 1000) return { score: 360, plausible: true, tier: 'regional', night };
+    if (distance <= soft) {
+      const progress = (distance - 1000) / Math.max(1, soft - 1000);
+      return { score: 300 - Math.max(0, progress) * 150, plausible: true, tier: 'good', night };
+    }
+    if (distance <= hard) {
+      const progress = (distance - soft) / Math.max(1, hard - soft);
+      return { score: 70 - progress * 300, plausible: true, tier: 'dx', night };
+    }
+    return {
+      score: -850 - Math.min(500, (distance - hard) * .12),
+      plausible: false,
+      tier: 'long',
+      night
+    };
+  }
+
   function candidateScore(entry, receiver, now, def) {
     const frequency = entryFrequency(entry);
     const schedule = scheduleState(entry, now);
     const distance = receiverDistance(entry, receiver);
-    let score = 0;
+    const path = receiverPath(entry, receiver, now, distance);
+    const target = targetAffinity(entry, receiver);
+    let score = entry.type === 'station' ? 140 : 100;
 
-    if (schedule?.active === true) score += 1200;
-    else if (schedule?.active === false && def.broadcast) score -= 1800;
-    else if (entry.type === 'station') score += 180;
-    else score += 120;
+    if (schedule?.active === true) score += 480;
+    else if (schedule?.active === false && def.broadcast) score -= 1300;
 
-    if (Number.isFinite(distance)) {
-      const mwLike = String(entry.band || '').toUpperCase() === 'MW' || frequency < 2000;
-      if (mwLike) {
-        if (distance > 2200) score -= 1000;
-        score += Math.max(-500, 520 - distance * .42);
-      } else {
-        score += Math.max(-150, 210 - Math.log10(Math.max(1, distance)) * 62);
-      }
+    if (def.broadcast) {
+      score += path.score + target.score;
+    } else if (Number.isFinite(distance)) {
+      score += Math.max(-180, 220 - Math.log10(Math.max(1, distance)) * 70);
     }
 
     if (entry.type === 'signal' || entry.type === 'channel' || entry.type === 'service') score += 90;
     if (entry.language && entry.language !== 'Unknown') score += 15;
-    if (entry.target) score += 12;
-    return { score, schedule, distance };
+    if (entry.target && !target.mismatch) score += 20;
+    return { score, schedule, distance, path, targetMismatch: target.mismatch };
   }
 
   function tuneHref(entry) {
@@ -194,9 +269,11 @@
   }
 
   function activityLabel(item, def) {
-    if (item.schedule?.active === true) return 'ON NOW';
     if (def.activity) return 'KNOWN ACTIVITY';
-    return 'LIKELY';
+    if (item.path?.tier === 'regional') return 'BEST BET';
+    if (item.path?.tier === 'good') return 'GOOD PATH';
+    if (item.path?.tier === 'dx') return 'DX TRY';
+    return 'POSSIBLE';
   }
 
   function card(item, receiver, def) {
@@ -204,13 +281,14 @@
     const frequency = entryFrequency(entry);
     const place = entry.transmitter || entry.location || entry.country || '';
     const distance = Number.isFinite(item.distance) ? `${Math.round(item.distance).toLocaleString()} mi from receiver` : '';
-    const details = [entry.language, entry.mode, place, distance].filter(Boolean).join(' · ');
+    const scheduled = item.schedule?.active === true ? 'Scheduled now' : '';
+    const details = [scheduled, entry.language, entry.mode, place, distance].filter(Boolean).join(' · ');
     const label = activityLabel(item, def);
     return `<article class="lookup-category-result">
       <div class="lookup-category-copy">
         <div class="lookup-category-result-top">
           <strong>${esc(entry.name || entry.callsign || 'Known signal')}</strong>
-          <span class="lookup-status-pill ${label === 'ON NOW' ? 'is-now' : ''}"><i aria-hidden="true"></i>${esc(label)}</span>
+          <span class="lookup-status-pill ${item.schedule?.active === true ? 'is-now' : ''}"><i aria-hidden="true"></i>${esc(label)}</span>
         </div>
         <span class="lookup-category-frequency">${esc(engine.formatFrequency(frequency))}</span>
         <small>${esc(details || entry.description || 'FREQBEACON catalog entry')}</small>
@@ -231,7 +309,7 @@
     const def = CATEGORY_DEFS[selectedKey];
     if (!def || !receiver || !Number.isFinite(Number(receiver.lat)) || !Number.isFinite(Number(receiver.lon))) return false;
 
-    displayLimit = Math.max(12, displayLimit);
+    displayLimit = Math.max(8, displayLimit);
     if (resultsTitle) resultsTitle.textContent = `${def.label.toUpperCase()} ON THIS RECEIVER`;
     count.textContent = def.label;
     stage.innerHTML = '<div class="lookup-loading">BUILDING RECEIVER-AWARE FREQUENCY LIST…</div>';
@@ -249,17 +327,32 @@
     }
 
     const now = new Date();
-    selectedEntries = dedupe(entries.filter((entry) => categoryMatches(entry, selectedKey)))
+    const ranked = dedupe(entries.filter((entry) => categoryMatches(entry, selectedKey)))
       .map((entry) => ({ entry, ...candidateScore(entry, receiver, now, def) }))
       .filter((item) => def.broadcast ? item.schedule?.active !== false : true)
-      .filter((item) => item.score > -600)
+      .filter((item) => item.score > -700)
       .sort((a, b) => b.score - a.score || a.distance - b.distance || entryFrequency(a.entry) - entryFrequency(b.entry));
+
+    if (def.broadcast) {
+      const plausible = ranked.filter((item) => item.path?.plausible !== false);
+      const preferred = plausible.filter((item) => item.path?.tier !== 'dx' && !item.targetMismatch);
+      const receiverFocused = preferred.length >= 4
+        ? preferred
+        : plausible.filter((item) => !item.targetMismatch).length >= 4
+          ? plausible.filter((item) => !item.targetMismatch)
+          : plausible.length >= 4
+            ? plausible
+            : ranked;
+      selectedEntries = receiverFocused;
+    } else {
+      selectedEntries = ranked;
+    }
 
     renderCategory(receiver, def);
     if (status) {
       status.className = 'lookup-status';
       status.textContent = def.broadcast
-        ? `${def.label} · on-now and receiver-ranked frequencies for ${receiver.name}`
+        ? `${def.label} · scheduled + receiver-path ranked candidates for ${receiver.name} · not live signal proof`
         : `${def.label} · known activity frequencies to try on ${receiver.name}`;
     }
     return true;
@@ -268,19 +361,19 @@
   function renderCategory(receiver, def = CATEGORY_DEFS[selectedKey]) {
     if (!def) return;
     const visible = selectedEntries.slice(0, displayLimit);
-    count.textContent = `${selectedEntries.length.toLocaleString()} ${def.label} frequenc${selectedEntries.length === 1 ? 'y' : 'ies'}`;
+    count.textContent = `${selectedEntries.length.toLocaleString()} ${def.label} candidate${selectedEntries.length === 1 ? '' : 's'}`;
     stage.innerHTML = visible.length
       ? `${visible.map((item) => card(item, receiver, def)).join('')}${visible.length < selectedEntries.length ? '<button class="lookup-category-more" type="button" data-category-more>SHOW MORE</button>' : ''}`
-      : `<div class="lookup-empty"><strong>No ${esc(def.label)} frequencies found.</strong><p>FREQBEACON does not currently have a receiver-relevant ${esc(def.label.toLowerCase())} candidate for ${esc(receiver.location)}.</p></div>`;
+      : `<div class="lookup-empty"><strong>No strong ${esc(def.label)} candidates right now.</strong><p>FREQBEACON does not currently have a schedule and path combination it is comfortable recommending for ${esc(receiver.location)}.</p></div>`;
     stage.querySelector('[data-category-more]')?.addEventListener('click', () => {
-      displayLimit += 12;
+      displayLimit += 8;
       renderCategory(receiver, def);
     });
   }
 
   function setSelection(key) {
     selectedKey = CATEGORY_DEFS[key] ? key : '';
-    displayLimit = 12;
+    displayLimit = 8;
     window.FREQBEACON_LOOKUP_SELECTED_CATEGORY = selectedKey;
     paintSelection();
     window.dispatchEvent(new CustomEvent('freqbeacon:lookup-filter-change', {
