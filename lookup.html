@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#070a0d">
-  <meta name="description" content="Identify a radio signal by frequency or browse real FREQBEACON station and service categories.">
+  <meta name="description" content="Identify what the currently selected FREQBEACON receiver is tuned to.">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/lookup-page.css?v=4">
+  <link rel="stylesheet" href="/lookup-radio-context.css?v=1">
   <link rel="stylesheet" href="/lookup-scroll-fix.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=3">
   <title>Lookup — FREQBEACON Zero</title>
@@ -27,21 +28,34 @@
       </header>
 
       <section class="lookup-panel lookup-frequency-panel" aria-labelledby="frequencyLookupTitle">
-        <h1 class="lookup-section-label" id="frequencyLookupTitle">FREQUENCY (kHz)</h1>
-        <form id="lookupForm" class="lookup-form">
+        <h1 class="lookup-section-label" id="frequencyLookupTitle">CURRENT RADIO</h1>
+
+        <div class="lookup-radio-context" id="lookupRadioContext" aria-live="polite">
+          <div class="lookup-radio-copy">
+            <span class="lookup-radio-label">LISTENING THROUGH</span>
+            <strong id="lookupReceiverName">Confirming receiver…</strong>
+            <small id="lookupReceiverPlace">Checking the trusted receiver network.</small>
+          </div>
+          <div class="lookup-radio-health"><i aria-hidden="true"></i><span>HEALTHY</span></div>
+        </div>
+
+        <form id="lookupForm" class="lookup-form is-radio-bound">
           <div class="lookup-input-shell">
-            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" placeholder="9955.000" aria-label="Frequency in kilohertz" aria-describedby="lookupStatus">
+            <input id="lookupFrequency" name="frequency" type="text" inputmode="none" readonly value="—" aria-label="Current Radio frequency in kilohertz" aria-describedby="lookupStatus">
             <span>kHz</span>
           </div>
-          <button class="lookup-clear" id="lookupClear" type="button" aria-label="Clear frequency">×</button>
-          <button class="lookup-submit" type="submit">LOOK UP</button>
+          <button class="lookup-submit" type="submit">REFRESH</button>
         </form>
+        <div class="lookup-radio-actions">
+          <span class="lookup-mode-chip" id="lookupModeChip">AM</span>
+          <a class="lookup-radio-change" href="/explore">CHANGE RECEIVER</a>
+        </div>
         <div class="lookup-status" id="lookupStatus" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
 
       <section class="lookup-panel lookup-browser" id="lookupCategoryBrowser" aria-labelledby="categoriesTitle">
-        <h2 class="lookup-section-label" id="categoriesTitle">CATEGORIES</h2>
-        <div class="lookup-category-chips" data-category-chips role="group" aria-label="Content and service categories">
+        <h2 class="lookup-section-label" id="categoriesTitle">FILTER CURRENT FREQUENCY</h2>
+        <div class="lookup-category-chips" data-category-chips role="group" aria-label="Filter current-frequency identities by category">
           <button class="lookup-category-chip" type="button" data-category="news" aria-pressed="false">News</button>
           <button class="lookup-category-chip" type="button" data-category="sports" aria-pressed="false">Sports</button>
           <button class="lookup-category-chip" type="button" data-category="religious" aria-pressed="false">Religious</button>
@@ -57,13 +71,13 @@
 
       <section class="lookup-results-shell" aria-labelledby="lookupResultsTitle">
         <div class="lookup-results-head">
-          <h2 class="lookup-section-label" id="lookupResultsTitle">LOOKUP RESULTS</h2>
+          <h2 class="lookup-section-label" id="lookupResultsTitle">WHAT YOU'RE HEARING</h2>
           <span id="lookupResultCount"></span>
         </div>
         <div class="lookup-stage" id="lookupResults" aria-live="polite">
           <div class="lookup-empty">
-            <strong>Enter a frequency or choose a category.</strong>
-            <p>FREQBEACON will use its real identification catalog and schedule data to show the best matches.</p>
+            <strong>Reading the current Radio context…</strong>
+            <p>Lookup will identify the frequency using the location of the trusted receiver you selected in Explore.</p>
           </div>
         </div>
       </section>
@@ -85,13 +99,14 @@
     </nav>
   </main>
 
+  <script src="/freqbeacon-radio-context.js?v=1"></script>
   <script src="/freqbeacon-zero-am-catalog.js?v=1"></script>
   <script src="/stations.js?v=1"></script>
   <script src="/ham-bands.js?v=1"></script>
   <script src="/freqbeacon-zero-identification-data.js?v=3"></script>
   <script src="/freqbeacon-identification-engine.js?v=2"></script>
-  <script src="/lookup-category-browser.js?v=3"></script>
-  <script src="/lookup-page.js?v=2"></script>
+  <script src="/lookup-category-browser.js?v=4"></script>
+  <script src="/lookup-page.js?v=3"></script>
   <script src="/program-guide.js?v=3"></script>
 </body>
 </html>
