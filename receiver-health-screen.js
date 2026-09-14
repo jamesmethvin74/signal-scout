@@ -13,22 +13,28 @@ function db(env) {
 
 async function ensureScreenSchema(env) {
   if (!screenSchemaReady) {
-    screenSchemaReady = db(env).exec(`
-      CREATE TABLE IF NOT EXISTS receiver_screening (
-        receiver_id TEXT PRIMARY KEY,
-        screened_at INTEGER NOT NULL,
-        reachable INTEGER NOT NULL DEFAULT 0,
-        latency_ms INTEGER,
-        consecutive_failures INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_receiver_screening_reachable
-        ON receiver_screening(reachable, screened_at);
-      CREATE TABLE IF NOT EXISTS receiver_bootstrap_lease (
-        id INTEGER PRIMARY KEY CHECK(id=1),
-        expires_at INTEGER NOT NULL DEFAULT 0
-      );
-    `).catch((error) => {
+    screenSchemaReady = (async () => {
+      await db(env).prepare(`
+        CREATE TABLE IF NOT EXISTS receiver_screening (
+          receiver_id TEXT PRIMARY KEY,
+          screened_at INTEGER NOT NULL,
+          reachable INTEGER NOT NULL DEFAULT 0,
+          latency_ms INTEGER,
+          consecutive_failures INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT
+        )
+      `).run();
+      await db(env).prepare(`
+        CREATE INDEX IF NOT EXISTS idx_receiver_screening_reachable
+        ON receiver_screening(reachable, screened_at)
+      `).run();
+      await db(env).prepare(`
+        CREATE TABLE IF NOT EXISTS receiver_bootstrap_lease (
+          id INTEGER PRIMARY KEY CHECK(id=1),
+          expires_at INTEGER NOT NULL DEFAULT 0
+        )
+      `).run();
+    })().catch((error) => {
       screenSchemaReady = null;
       throw error;
     });

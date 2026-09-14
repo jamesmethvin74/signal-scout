@@ -9,27 +9,31 @@ function db(env) {
 
 async function ensureRunSchema(env) {
   if (!runSchemaReady) {
-    runSchemaReady = db(env).exec(`
-      CREATE TABLE IF NOT EXISTS receiver_health_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_at INTEGER NOT NULL,
-        duration_ms INTEGER NOT NULL DEFAULT 0,
-        mode TEXT NOT NULL,
-        status TEXT NOT NULL,
-        discovered INTEGER NOT NULL DEFAULT 0,
-        tested INTEGER NOT NULL DEFAULT 0,
-        successful INTEGER NOT NULL DEFAULT 0,
-        promoted INTEGER NOT NULL DEFAULT 0,
-        demoted INTEGER NOT NULL DEFAULT 0,
-        trusted_receivers INTEGER NOT NULL DEFAULT 0,
-        inventory INTEGER NOT NULL DEFAULT 0,
-        untested INTEGER NOT NULL DEFAULT 0,
-        promotion_queue INTEGER NOT NULL DEFAULT 0,
-        error TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_receiver_health_runs_run_at
-        ON receiver_health_runs(run_at DESC);
-    `).catch((error) => {
+    runSchemaReady = (async () => {
+      await db(env).prepare(`
+        CREATE TABLE IF NOT EXISTS receiver_health_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          run_at INTEGER NOT NULL,
+          duration_ms INTEGER NOT NULL DEFAULT 0,
+          mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          discovered INTEGER NOT NULL DEFAULT 0,
+          tested INTEGER NOT NULL DEFAULT 0,
+          successful INTEGER NOT NULL DEFAULT 0,
+          promoted INTEGER NOT NULL DEFAULT 0,
+          demoted INTEGER NOT NULL DEFAULT 0,
+          trusted_receivers INTEGER NOT NULL DEFAULT 0,
+          inventory INTEGER NOT NULL DEFAULT 0,
+          untested INTEGER NOT NULL DEFAULT 0,
+          promotion_queue INTEGER NOT NULL DEFAULT 0,
+          error TEXT
+        )
+      `).run();
+      await db(env).prepare(`
+        CREATE INDEX IF NOT EXISTS idx_receiver_health_runs_run_at
+        ON receiver_health_runs(run_at DESC)
+      `).run();
+    })().catch((error) => {
       runSchemaReady = null;
       throw error;
     });
