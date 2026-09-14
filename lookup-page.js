@@ -4,54 +4,110 @@
   const engine = window.FREQBEACON_IDENTIFICATION_ENGINE;
   const form = document.querySelector('#lookupForm');
   const input = document.querySelector('#lookupFrequency');
-  const clearButton = document.querySelector('#lookupClear');
   const stage = document.querySelector('#lookupResults');
   const count = document.querySelector('#lookupResultCount');
   const status = document.querySelector('#lookupStatus');
-  if (!engine || !form || !input || !stage || !count) return;
+  const resultsTitle = document.querySelector('#lookupResultsTitle');
+  const receiverCard = document.querySelector('#lookupRadioContext');
+  const receiverName = document.querySelector('#lookupReceiverName');
+  const receiverPlace = document.querySelector('#lookupReceiverPlace');
+  const modeChip = document.querySelector('#lookupModeChip');
+  const submit = form?.querySelector('.lookup-submit');
+  if (!engine || !form || !input || !stage || !count || !status) return;
 
-  const LOCATION_STORAGE_KEY = 'signalScout:location:v1';
   let lookupToken = 0;
+  let validatedReceiver = null;
 
   function esc(value) {
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   }
 
-  function parseFrequency(raw) {
-    const text = String(raw || '').trim().toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
-    if (!text) return null;
-    const explicitMHz = /(?:mhz|m)$/.test(text);
-    const explicitKHz = /(?:khz|k)$/.test(text);
-    const numeric = Number(text.replace(/mhz|khz|m|k/g, ''));
-    if (!Number.isFinite(numeric) || numeric <= 0) return null;
-    if (explicitMHz) return numeric * 1000;
-    if (explicitKHz) return numeric;
-    return numeric < 100 ? numeric * 1000 : numeric;
+  function selectedReceiverId() {
+    const match = document.cookie.match(/(?:^|;\s*)fb_explore_receiver=([^;]+)/);
+    if (!match) return '';
+    try { return decodeURIComponent(match[1]); } catch { return ''; }
   }
 
-  function storedLocation() {
+  function radioContext() {
+    return window.FREQBEACON_RADIO_CONTEXT?.read?.() || {};
+  }
+
+  function contextFrequency(context = radioContext()) {
+    const value = Number(context?.frequencyKHz);
+    return Number.isFinite(value) && value >= 30 && value <= 30000 ? value : null;
+  }
+
+  function contextMode(context = radioContext()) {
+    return String(context?.mode || 'am').toUpperCase();
+  }
+
+  function receiverFromFeature(feature) {
+    const properties = feature?.properties || {};
+    const coordinates = Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : [];
+    const lon = Number(coordinates[0]);
+    const lat = Number(coordinates[1]);
+    if (!properties.id || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return {
+      id: String(properties.id),
+      name: String(properties.name || 'Trusted KiwiSDR'),
+      location: String(properties.location || properties.country || 'Location not published'),
+      country: String(properties.country || ''),
+      receiverType: String(properties.receiverType || 'KiwiSDR'),
+      antenna: String(properties.antenna || ''),
+      lat,
+      lon,
+      trusted: true
+    };
+  }
+
+  async function resolveActiveReceiver({ force = false } = {}) {
+    const receiverId = selectedReceiverId();
+    if (!receiverId) return null;
+    if (!force && validatedReceiver?.id === receiverId) return validatedReceiver;
+
+    const stored = radioContext()?.receiver;
     try {
-      const payload = JSON.parse(localStorage.getItem(LOCATION_STORAGE_KEY) || 'null');
-      const lat = Number(payload?.lat);
-      const lon = Number(payload?.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return { lat, lon, identity: payload?.label || 'Your listening location' };
-    } catch { return null; }
+      const response = await fetch('/api/explore/receivers', {
+        cache: 'no-store',
+        headers: { accept: 'application/geo+json,application/json' }
+      });
+      if (!response.ok) throw new Error(`trusted receiver feed ${response.status}`);
+      const payload = await response.json();
+      const feature = (payload?.features || []).find((item) => String(item?.properties?.id || '') === receiverId);
+      const receiver = receiverFromFeature(feature);
+      if (!receiver) return null;
+      validatedReceiver = receiver;
+      window.FREQBEACON_RADIO_CONTEXT?.update?.({ receiver, receiverConfirmedAt: Date.now() });
+      return receiver;
+    } catch (error) {
+      const storedLat = Number(stored?.lat);
+      const storedLon = Number(stored?.lon);
+      if (String(stored?.id || '') === receiverId && stored?.trusted === true && Number.isFinite(storedLat) && Number.isFinite(storedLon)) {
+        validatedReceiver = { ...stored, lat: storedLat, lon: storedLon };
+        return validatedReceiver;
+      }
+      throw error;
+    }
   }
 
-  function inferredMode(item, frequencyKHz) {
-    const mode = String(item?.mode || '').toLowerCase();
-    if (mode.includes('usb')) return 'usb';
-    if (mode.includes('lsb')) return 'lsb';
-    if (mode.includes('nbfm') || mode === 'fm') return 'nbfm';
-    if (mode.includes('cw') && !mode.includes('am')) return 'cw';
-    const categories = new Set((item?.categories || []).map((value) => String(value).toLowerCase()));
-    if (categories.has('amateur')) return Number(frequencyKHz) < 10000 ? 'lsb' : 'usb';
-    return 'am';
+  function paintRadioContext(receiver, context) {
+    receiverCard?.classList.toggle('is-missing', !receiver);
+    if (receiverName) receiverName.textContent = receiver ? receiver.name : 'Choose a receiver in Explore';
+    if (receiverPlace) receiverPlace.textContent = receiver
+      ? receiver.location
+      : 'Lookup only identifies signals from the receiver currently selected for Radio.';
+    if (modeChip) modeChip.textContent = contextMode(context);
   }
 
-  function tuneHref(frequencyKHz, item) {
-    return `/zero?frequency=${encodeURIComponent(Number(frequencyKHz).toFixed(3))}&mode=${encodeURIComponent(inferredMode(item, frequencyKHz))}&from=lookup`;
+  function showMissingContext(message, context = radioContext()) {
+    paintRadioContext(null, context);
+    const frequencyKHz = contextFrequency(context);
+    input.value = frequencyKHz == null ? '—' : frequencyKHz.toFixed(3);
+    count.textContent = '';
+    if (resultsTitle) resultsTitle.textContent = "WHAT YOU'RE HEARING";
+    status.className = 'lookup-status is-error';
+    status.textContent = message;
+    stage.innerHTML = `<div class="lookup-empty"><strong>Radio context required.</strong><p>${esc(message)}</p><a class="lookup-radio-change" href="/explore">CHOOSE RECEIVER</a></div>`;
   }
 
   function categoryLabel(entry) {
@@ -100,7 +156,7 @@
         <p class="lookup-card-description">${esc(description)}</p>
         <div class="lookup-tags"><span class="lookup-tag">${esc(categoryLabel(entry))}</span>${entry.language ? `<span class="lookup-tag">${esc(entry.language)}</span>` : ''}</div>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(tuneHref(frequencyKHz, entry))}">TUNE</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
     </article>`;
   }
 
@@ -108,22 +164,8 @@
     return window.FREQBEACON_LOOKUP_CATEGORIES?.selected?.() || window.FREQBEACON_LOOKUP_SELECTED_CATEGORY || '';
   }
 
-  function categoryMatches(entry, key) {
-    if (!key) return true;
-    try { return window.FREQBEACON_LOOKUP_CATEGORIES?.matches?.(entry, key) !== false; }
-    catch { return true; }
-  }
-
-  function orderedCandidates(result) {
-    const candidates = [{ entry: result.entry, distance: result.distance, schedule: result.schedule, rank: result.rank }, ...(result.alternatives || [])];
-    const selected = categorySelected();
-    if (!selected) return candidates;
-    const matching = candidates.filter((candidate) => categoryMatches(candidate.entry, selected));
-    return matching.length ? matching : candidates;
-  }
-
   function renderExact(result) {
-    const candidates = orderedCandidates(result);
+    const candidates = [{ entry: result.entry, distance: result.distance, schedule: result.schedule, rank: result.rank }, ...(result.alternatives || [])];
     count.textContent = `${candidates.length} result${candidates.length === 1 ? '' : 's'} for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
     stage.innerHTML = candidates.slice(0, 8).map((candidate, index) => candidateCard(candidate, result.frequencyKHz, index)).join('');
   }
@@ -140,13 +182,13 @@
         <div class="lookup-card-program-label">Frequency Guide</div>
         <p class="lookup-card-description">${esc(range.description || 'Known radio allocation or service range.')}</p>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(tuneHref(result.frequencyKHz, range))}">TUNE</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
     </article>`;
   }
 
   function renderUnknown(result) {
     count.textContent = `No catalog match for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
-    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact identity is stored yet. You can still tune the frequency in Radio.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="${esc(tuneHref(result.frequencyKHz, {}))}">TUNE</a></div></div>`;
+    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact identity is stored yet for the frequency this receiver is tuned to.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="/zero">RADIO</a></div></div>`;
   }
 
   function render(result) {
@@ -156,25 +198,61 @@
     else renderUnknown(result);
   }
 
-  async function runLookup({ updateUrl = true } = {}) {
-    const frequencyKHz = parseFrequency(input.value);
-    if (!frequencyKHz || frequencyKHz < 30 || frequencyKHz > 30000) {
-      status.className = 'lookup-status is-error';
-      status.textContent = 'Enter a frequency from 30 to 30,000 kHz.';
-      count.textContent = '';
-      stage.innerHTML = '<div class="lookup-empty"><strong>Frequency not recognized.</strong><p>Try a value such as 9955, 9.955 MHz, 11175 or 27185.</p></div>';
+  async function runLookup({ forceReceiverRefresh = false } = {}) {
+    const token = ++lookupToken;
+    const context = radioContext();
+    const frequencyKHz = contextFrequency(context);
+    if (frequencyKHz == null) {
+      showMissingContext('Open Radio and tune a frequency first.', context);
       return;
     }
 
-    const token = ++lookupToken;
-    const receiver = storedLocation();
-    const options = { now: new Date(), ...(receiver ? { receiver } : {}) };
-    input.value = Number(frequencyKHz).toFixed(3);
-    if (updateUrl) history.replaceState(null, '', `/lookup.html?frequency=${encodeURIComponent(input.value)}`);
+    input.value = frequencyKHz.toFixed(3);
+    if (modeChip) modeChip.textContent = contextMode(context);
     status.className = 'lookup-status is-working';
-    status.textContent = 'Checking the FREQBEACON identification catalog…';
+    status.textContent = 'Confirming the active trusted receiver…';
+    if (submit) submit.disabled = true;
 
+    let receiver;
+    try {
+      receiver = await resolveActiveReceiver({ force: forceReceiverRefresh });
+    } catch (error) {
+      console.warn('FREQBEACON active receiver confirmation failed:', error);
+      receiver = null;
+    }
+    if (token !== lookupToken) return;
+    if (!receiver) {
+      if (submit) submit.disabled = false;
+      showMissingContext('Choose a currently trusted receiver in Explore, then open Radio before using Lookup.', context);
+      return;
+    }
+
+    paintRadioContext(receiver, context);
+
+    const selectedCategory = categorySelected();
+    if (selectedCategory) {
+      const browsed = await window.FREQBEACON_LOOKUP_CATEGORIES?.browse?.(receiver, context);
+      if (token !== lookupToken) return;
+      if (browsed) {
+        if (submit) submit.disabled = false;
+        return;
+      }
+    }
+
+    if (resultsTitle) resultsTitle.textContent = "WHAT YOU'RE HEARING";
+    const options = {
+      now: new Date(),
+      receiver: {
+        lat: receiver.lat,
+        lon: receiver.lon,
+        identity: `${receiver.name} · ${receiver.location}`
+      }
+    };
+
+    status.className = 'lookup-status is-working';
+    status.textContent = `Identifying ${frequencyKHz.toFixed(3)} kHz as heard from ${receiver.location}…`;
     render(engine.identify(frequencyKHz, options));
+
     if (typeof engine.identifyAsync === 'function') {
       try {
         const result = await engine.identifyAsync(frequencyKHz, options);
@@ -185,31 +263,25 @@
       }
     }
     if (token !== lookupToken) return;
+
     status.className = 'lookup-status';
-    status.textContent = categorySelected() ? 'Frequency results prioritized by the selected category when a matching candidate exists.' : 'Lookup complete.';
+    status.textContent = `${contextMode(context)} · ${receiver.name} · ranked from the receiver's location`;
+    if (submit) submit.disabled = false;
   }
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
+    runLookup({ forceReceiverRefresh: true });
+  });
+
+  window.addEventListener('freqbeacon:lookup-filter-change', () => {
     runLookup();
   });
 
-  clearButton?.addEventListener('click', () => {
-    lookupToken += 1;
-    input.value = '';
-    window.FREQBEACON_LOOKUP_CATEGORIES?.clearSelection?.();
-    status.className = 'lookup-status';
-    status.textContent = '';
-    count.textContent = '';
-    stage.innerHTML = '<div class="lookup-empty"><strong>Enter a frequency or choose a category.</strong><p>FREQBEACON will use its real identification catalog and schedule data to show the best matches.</p></div>';
-    history.replaceState(null, '', '/lookup.html');
-    input.focus({ preventScroll: true });
+  window.addEventListener('freqbeacon:radio-context', () => {
+    runLookup();
   });
 
-  const params = new URLSearchParams(location.search);
-  const incoming = params.get('frequency') || params.get('q') || params.get('lookup');
-  if (incoming) {
-    input.value = incoming;
-    runLookup({ updateUrl: false });
-  }
+  history.replaceState(null, '', '/lookup.html');
+  runLookup({ forceReceiverRefresh: true });
 })();

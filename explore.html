@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070a0d">
+  <meta name="description" content="Explore FREQBEACON's trusted global KiwiSDR receiver network on a live rotating globe.">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/explore-page.css?v=4">
+  <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=3">
+  <title>Explore — FREQBEACON Zero</title>
+</head>
+<body>
+  <main class="explore-app has-fb-bottom-nav">
+    <div class="fb-page-scroll">
+      <header class="explore-header">
+        <div class="explore-brandline">
+          <strong>FREQBEACON <span>Zero</span></strong>
+          <i aria-hidden="true"></i>
+          <small>CLEANROOM RECEIVER</small>
+        </div>
+        <div class="explore-tagline">Explore the airwaves.</div>
+      </header>
+
+      <section class="explore-hero" aria-labelledby="networkTitle">
+        <div class="explore-title-row">
+          <div>
+            <p class="explore-kicker">TRUSTED REMOTE SDR NETWORK</p>
+            <h1 id="networkTitle">GLOBAL RECEIVER NETWORK</h1>
+          </div>
+          <div class="explore-live-count" aria-live="polite">
+            <b id="receiverCount">—</b>
+            <span>TRUSTED</span>
+          </div>
+        </div>
+
+        <div class="globe-shell" id="globeShell">
+          <canvas id="receiverGlobe" role="img" aria-label="Interactive globe showing trusted FREQBEACON receivers. Drag to rotate. Pinch, wheel, or use the zoom controls to zoom. Tap a receiver for details."></canvas>
+          <div class="globe-loading" id="globeLoading" role="status" aria-live="polite">
+            <span class="globe-loading-ring" aria-hidden="true"></span>
+            <strong>OPENING RECEIVER NETWORK</strong>
+            <small>Loading verified SND + W/F receivers…</small>
+          </div>
+          <div class="globe-controls" role="group" aria-label="Globe zoom controls">
+            <button id="globeZoomIn" type="button" aria-label="Zoom in">+</button>
+            <button id="globeZoomOut" type="button" aria-label="Zoom out">−</button>
+          </div>
+
+          <section class="globe-receiver-card" id="globeReceiverCard" aria-live="polite" hidden>
+            <button class="globe-card-close" id="globeReceiverClose" type="button" aria-label="Close receiver details">×</button>
+            <div class="globe-card-health"><i aria-hidden="true"></i><span>HEALTHY RECEIVER</span></div>
+            <strong id="globeReceiverName">Receiver</strong>
+            <span class="globe-card-location" id="globeReceiverLocation">Location</span>
+            <div class="globe-card-meta">
+              <span><b>TYPE</b><em id="globeReceiverType">KIWISDR</em></span>
+              <span><b>TRUST</b><em>2× SND + W/F</em></span>
+            </div>
+            <button class="globe-card-open" id="globeOpenRadio" type="button">
+              <span>OPEN IN RADIO</span>
+              <small>FREQBEACON Zero</small>
+            </button>
+          </section>
+
+          <div class="globe-affordance" id="globeAffordance" aria-hidden="true">
+            <span>↔</span> DRAG · PINCH TO ZOOM · TAP RECEIVER
+          </div>
+        </div>
+
+        <div class="network-strip" aria-live="polite">
+          <span><i class="health-dot" aria-hidden="true"></i><b id="networkState">LIVE NETWORK</b></span>
+          <span id="networkProof">TRUSTED RECEIVERS ONLY · VERIFIED SND + W/F</span>
+        </div>
+      </section>
+
+      <section class="receiver-panel" aria-labelledby="receiverListingTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="panel-kicker">REMOTE LISTENING</p>
+            <h2 id="receiverListingTitle">RECEIVER LISTING</h2>
+          </div>
+          <span id="filteredCount">—</span>
+        </div>
+
+        <div class="selected-receiver" id="selectedReceiver" aria-live="polite">
+          <div class="selected-primary">
+            <span class="selected-label">SELECTED</span>
+            <strong id="selectedName">Choose a trusted receiver</strong>
+            <span id="selectedLocation">Drag the globe or use the listing below.</span>
+          </div>
+          <div class="selected-health"><i aria-hidden="true"></i><span>HEALTHY</span></div>
+        </div>
+
+        <div class="receiver-meta" id="receiverMeta" hidden>
+          <div><span>TYPE</span><b id="selectedType">KIWISDR</b></div>
+          <div><span>PROOF</span><b>2× SND + W/F</b></div>
+          <div class="receiver-meta-wide"><span>ANTENNA</span><b id="selectedAntenna">Not published</b></div>
+        </div>
+
+        <button class="listen-button" id="listenButton" type="button" disabled>
+          <span>OPEN IN RADIO</span>
+          <small>Open this trusted receiver in FREQBEACON Zero</small>
+        </button>
+
+        <div class="filter-block">
+          <div class="filter-heading">
+            <span>FILTER BY REGION</span>
+            <small>Coordinates, not receiver-name matching</small>
+          </div>
+          <div class="region-filters" id="regionFilters" role="group" aria-label="Filter receivers by region">
+            <button type="button" data-region="all" class="active" aria-pressed="true">ALL</button>
+            <button type="button" data-region="north-america" aria-pressed="false">NORTH AMERICA</button>
+            <button type="button" data-region="europe" aria-pressed="false">EUROPE</button>
+            <button type="button" data-region="asia" aria-pressed="false">ASIA</button>
+            <button type="button" data-region="oceania" aria-pressed="false">OCEANIA</button>
+            <button type="button" data-region="south-america" aria-pressed="false">SOUTH AMERICA</button>
+            <button type="button" data-region="africa" aria-pressed="false">AFRICA</button>
+          </div>
+        </div>
+
+        <div class="receiver-list" id="receiverList" role="listbox" aria-label="Trusted receivers"></div>
+      </section>
+    </div>
+
+    <nav class="fb-bottom-nav" aria-label="Primary">
+      <a class="fb-nav-item" href="/zero" aria-label="Radio">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M8.5 7.5a6 6 0 0 0 0 9M15.5 7.5a6 6 0 0 1 0 9M5.5 5a10 10 0 0 0 0 14M18.5 5a10 10 0 0 1 0 14"/></svg>
+        <span>Radio</span>
+      </a>
+      <a class="fb-nav-item active" href="/explore" aria-current="page" aria-label="Explore">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/></svg>
+        <span>Explore</span>
+      </a>
+      <a class="fb-nav-item" href="/lookup.html" aria-label="Lookup">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+        <span>Lookup</span>
+      </a>
+    </nav>
+  </main>
+
+  <script src="/_freqbeacon/explore/d3.min.js" defer></script>
+  <script src="/_freqbeacon/explore/topojson-client.min.js" defer></script>
+  <script src="/explore-page.js?v=4" defer></script>
+</body>
+</html>

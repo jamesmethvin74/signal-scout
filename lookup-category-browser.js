@@ -9,6 +9,7 @@
   const stage = document.querySelector('#lookupResults');
   const count = document.querySelector('#lookupResultCount');
   const status = document.querySelector('#lookupStatus');
+  const resultsTitle = document.querySelector('#lookupResultsTitle');
   if (!catalog || !engine || !shell || !chips || !stage || !count) return;
 
   const SHARDS = [
@@ -23,6 +24,14 @@
   const STATE_BROADCASTERS = /china radio international|voice of korea|radio pyongyang|radio havana|voice of america|radio romania international|radio exterior de españa|bbc world service|rnz pacific|radio france internationale|deutsche welle|voice of turkey|kbs world|nhk world/;
   const RELIGIOUS = /relig|gospel|bible|catholic|christian|adventist|ministry|ministries|evangel/;
   const DIGITAL = /digital|ft8|rtty|packet|data|sstv|navtex|fsk|drm/;
+  const TARGET_REGIONS = Object.freeze([
+    ['europe', /\b(eur|europe|weu|western europe|eeu|eastern europe|ceu|central europe|gbr|britain|united kingdom|uk)\b/i],
+    ['north-america', /\b(nam|north america|usa|united states|canada|can|mexico|mex)\b/i],
+    ['south-america', /\b(sam|south america|latin america|latam|brazil|bra|argentina|arg)\b/i],
+    ['africa', /\b(afr|africa|north africa|west africa|east africa|southern africa|naf|waf|eaf|saf)\b/i],
+    ['asia', /\b(asia|east asia|south asia|southeast asia|eas|sas|sea|korea|kor|japan|jpn|china|chn|india|ind|pakistan|pak|iran|irn|persian)\b/i],
+    ['oceania', /\b(oceania|oce|australia|aus|pacific|pac|new zealand|nzl)\b/i]
+  ]);
 
   const CATEGORY_DEFS = Object.freeze({
     news: { label: 'News', broadcast: true, match: (entry, text, cats) => cats.has('news') || /news|world service|current affairs/.test(text) },
@@ -30,17 +39,17 @@
     religious: { label: 'Religious', broadcast: true, match: (entry, text, cats) => cats.has('religious') || RELIGIOUS.test(text) },
     propaganda: { label: 'Propaganda', broadcast: true, match: (entry, text, cats) => cats.has('state-broadcaster') || STATE_BROADCASTERS.test(text) },
     international: { label: 'International', broadcast: true, match: (entry, text, cats) => cats.has('international') || /international|world service/.test(text) },
-    utility: { label: 'Utility', match: (entry, text, cats) => cats.has('utility') },
-    'amateur-voice': { label: 'Amateur Voice', ham: true, match: (entry, text, cats) => cats.has('amateur') && cats.has('voice') },
-    digital: { label: 'Digital', ham: true, match: (entry, text, cats) => cats.has('digital') || DIGITAL.test(text) },
-    aviation: { label: 'Aviation', match: (entry, text, cats) => cats.has('aviation') },
-    cb: { label: 'CB', match: (entry, text, cats) => cats.has('cb') || String(entry.band || '').toUpperCase() === 'CB' }
+    utility: { label: 'Utility', activity: true, match: (entry, text, cats) => cats.has('utility') },
+    'amateur-voice': { label: 'Amateur Voice', activity: true, ham: true, match: (entry, text, cats) => cats.has('amateur') && cats.has('voice') },
+    digital: { label: 'Digital', activity: true, ham: true, match: (entry, text, cats) => cats.has('digital') || DIGITAL.test(text) },
+    aviation: { label: 'Aviation', activity: true, match: (entry, text, cats) => cats.has('aviation') },
+    cb: { label: 'CB', activity: true, match: (entry, text, cats) => cats.has('cb') || String(entry?.band || '').toUpperCase() === 'CB' }
   });
 
   let generatedEntries = null;
   let selectedKey = '';
   let selectedEntries = [];
-  let displayLimit = 12;
+  let displayLimit = 8;
 
   function esc(value) {
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -102,7 +111,7 @@
           mode: String(tune.mode || 'usb').toUpperCase(),
           categories,
           description: band.note || band.character || 'Amateur radio activity target.',
-          source: 'FREQBEACON ham-bands.js quick tune'
+          source: 'FREQBEACON ham quick tune'
         });
       }
     }
@@ -114,20 +123,22 @@
     return Number.isFinite(value) ? value : NaN;
   }
 
+  function categoryMatches(entry, key = selectedKey) {
+    if (!key) return true;
+    const def = CATEGORY_DEFS[key];
+    return Boolean(def && def.match(entry, entryText(entry), catsFor(entry)));
+  }
+
   function dedupe(entries) {
     const seen = new Set();
     return entries.filter((entry) => {
       const frequency = entryFrequency(entry);
-      if (!Number.isFinite(frequency)) return false;
+      if (!Number.isFinite(frequency) || frequency < 30 || frequency > 30000) return false;
       const key = `${frequency.toFixed(3)}|${String(entry.name || entry.callsign || '').toLowerCase()}|${entry.start || ''}|${entry.end || ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-  }
-
-  function scheduleActive(entry) {
-    return engine.scheduleState?.(entry, new Date())?.active === true;
   }
 
   function inferredMode(entry, frequencyKHz) {
@@ -141,72 +152,171 @@
     return 'am';
   }
 
+  function scheduleState(entry, now) {
+    try { return engine.scheduleState?.(entry, now) || null; }
+    catch { return null; }
+  }
+
+  function receiverDistance(entry, receiver) {
+    if (!Number.isFinite(Number(entry?.lat)) || !Number.isFinite(Number(entry?.lon))) return Infinity;
+    try {
+      return engine.milesBetween?.(
+        { lat: Number(receiver.lat), lon: Number(receiver.lon) },
+        { lat: Number(entry.lat), lon: Number(entry.lon) }
+      ) ?? Infinity;
+    } catch {
+      return Infinity;
+    }
+  }
+
+  function receiverRegion(receiver) {
+    const lat = Number(receiver?.lat);
+    const lon = Number(receiver?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    if (lat >= 34 && lat <= 72 && lon >= -25 && lon <= 45) return 'europe';
+    if (lat >= 15 && lat <= 75 && lon >= -170 && lon <= -50) return 'north-america';
+    if (lat >= -58 && lat < 15 && lon >= -85 && lon <= -30) return 'south-america';
+    if (lat >= -38 && lat <= 38 && lon >= -20 && lon <= 55) return 'africa';
+    if (lat >= 5 && lat <= 80 && lon > 45 && lon <= 180) return 'asia';
+    if (lat >= -50 && lat < 10 && lon >= 105 && lon <= 180) return 'oceania';
+    return '';
+  }
+
+  function targetRegion(target) {
+    const text = String(target || '').trim();
+    if (!text) return '';
+    return TARGET_REGIONS.find(([, pattern]) => pattern.test(text))?.[0] || '';
+  }
+
+  function targetAffinity(entry, receiver) {
+    const aimed = targetRegion(entry?.target);
+    const heardFrom = receiverRegion(receiver);
+    if (!aimed || !heardFrom) return { score: 0, mismatch: false };
+    if (aimed === heardFrom) return { score: 180, mismatch: false };
+    return { score: -360, mismatch: true };
+  }
+
+  function receiverSolarHour(receiver, now) {
+    const lon = Number(receiver?.lon);
+    const utc = now.getUTCHours() + now.getUTCMinutes() / 60;
+    return Number.isFinite(lon) ? (utc + lon / 15 + 24) % 24 : utc;
+  }
+
+  function hfDistanceWindow(frequencyKHz, night) {
+    if (frequencyKHz < 2000) return night ? { soft: 350, hard: 900 } : { soft: 140, hard: 450 };
+    if (frequencyKHz < 5000) return night ? { soft: 1800, hard: 3000 } : { soft: 900, hard: 1900 };
+    if (frequencyKHz < 8000) return night ? { soft: 2400, hard: 3600 } : { soft: 1500, hard: 2700 };
+    if (frequencyKHz < 12000) return night ? { soft: 2800, hard: 4200 } : { soft: 2200, hard: 3600 };
+    if (frequencyKHz < 18000) return night ? { soft: 1800, hard: 3000 } : { soft: 2500, hard: 4000 };
+    if (frequencyKHz < 22000) return night ? { soft: 1400, hard: 2500 } : { soft: 2200, hard: 3600 };
+    return night ? { soft: 900, hard: 1800 } : { soft: 1800, hard: 3000 };
+  }
+
+  function receiverPath(entry, receiver, now, distance) {
+    const frequency = entryFrequency(entry);
+    if (!Number.isFinite(distance)) {
+      return { score: -110, plausible: null, tier: 'unknown', night: false };
+    }
+
+    const hour = receiverSolarHour(receiver, now);
+    const night = hour < 6 || hour >= 18;
+    const { soft, hard } = hfDistanceWindow(frequency, night);
+
+    if (distance <= 500) return { score: 440, plausible: true, tier: 'regional', night };
+    if (distance <= 1000) return { score: 360, plausible: true, tier: 'regional', night };
+    if (distance <= soft) {
+      const progress = (distance - 1000) / Math.max(1, soft - 1000);
+      return { score: 300 - Math.max(0, progress) * 150, plausible: true, tier: 'good', night };
+    }
+    if (distance <= hard) {
+      const progress = (distance - soft) / Math.max(1, hard - soft);
+      return { score: 70 - progress * 300, plausible: true, tier: 'dx', night };
+    }
+    return {
+      score: -850 - Math.min(500, (distance - hard) * .12),
+      plausible: false,
+      tier: 'long',
+      night
+    };
+  }
+
+  function candidateScore(entry, receiver, now, def) {
+    const frequency = entryFrequency(entry);
+    const schedule = scheduleState(entry, now);
+    const distance = receiverDistance(entry, receiver);
+    const path = receiverPath(entry, receiver, now, distance);
+    const target = targetAffinity(entry, receiver);
+    let score = entry.type === 'station' ? 140 : 100;
+
+    if (schedule?.active === true) score += 480;
+    else if (schedule?.active === false && def.broadcast) score -= 1300;
+
+    if (def.broadcast) {
+      score += path.score + target.score;
+    } else if (Number.isFinite(distance)) {
+      score += Math.max(-180, 220 - Math.log10(Math.max(1, distance)) * 70);
+    }
+
+    if (entry.type === 'signal' || entry.type === 'channel' || entry.type === 'service') score += 90;
+    if (entry.language && entry.language !== 'Unknown') score += 15;
+    if (entry.target && !target.mismatch) score += 20;
+    return { score, schedule, distance, path, targetMismatch: target.mismatch };
+  }
+
   function tuneHref(entry) {
     const frequency = entryFrequency(entry);
-    return `/zero?frequency=${encodeURIComponent(frequency.toFixed(3))}&mode=${encodeURIComponent(inferredMode(entry, frequency))}&from=lookup`;
+    return `/zero?frequency=${encodeURIComponent(frequency.toFixed(3))}&mode=${encodeURIComponent(inferredMode(entry, frequency))}&from=lookup-category`;
   }
 
-  function categoryMatches(entry, key = selectedKey) {
-    const def = CATEGORY_DEFS[key];
-    return Boolean(def && def.match(entry, entryText(entry), catsFor(entry)));
+  function activityLabel(item, def) {
+    if (def.activity) return 'KNOWN ACTIVITY';
+    if (item.path?.tier === 'regional') return 'BEST BET';
+    if (item.path?.tier === 'good') return 'GOOD PATH';
+    if (item.path?.tier === 'dx') return 'DX TRY';
+    return 'POSSIBLE';
   }
 
-  function card(entry) {
+  function card(item, receiver, def) {
+    const entry = item.entry;
     const frequency = entryFrequency(entry);
     const place = entry.transmitter || entry.location || entry.country || '';
-    const details = [entry.language, entry.mode, place].filter(Boolean).join(' · ');
-    const state = scheduleActive(entry) ? 'ON NOW' : (entry.start && entry.end ? 'SCHEDULED' : 'KNOWN');
+    const distance = Number.isFinite(item.distance) ? `${Math.round(item.distance).toLocaleString()} mi from receiver` : '';
+    const scheduled = item.schedule?.active === true ? 'Scheduled now' : '';
+    const details = [scheduled, entry.language, entry.mode, place, distance].filter(Boolean).join(' · ');
+    const label = activityLabel(item, def);
     return `<article class="lookup-category-result">
       <div class="lookup-category-copy">
-        <strong>${esc(entry.name || entry.callsign || 'Known signal')}</strong>
-        <small>${esc(details || entry.description || 'FREQBEACON catalog entry')} · ${esc(state)}</small>
+        <div class="lookup-category-result-top">
+          <strong>${esc(entry.name || entry.callsign || 'Known signal')}</strong>
+          <span class="lookup-status-pill ${item.schedule?.active === true ? 'is-now' : ''}"><i aria-hidden="true"></i>${esc(label)}</span>
+        </div>
         <span class="lookup-category-frequency">${esc(engine.formatFrequency(frequency))}</span>
+        <small>${esc(details || entry.description || 'FREQBEACON catalog entry')}</small>
       </div>
-      <a class="lookup-tune" href="${esc(tuneHref(entry))}">TUNE</a>
+      <a class="lookup-tune" href="${esc(tuneHref(entry))}">TUNE ON RADIO</a>
     </article>`;
   }
 
-  function renderCategory() {
-    const def = CATEGORY_DEFS[selectedKey];
-    if (!def) return;
-    const visible = selectedEntries.slice(0, displayLimit);
-    count.textContent = `${selectedEntries.length.toLocaleString()} result${selectedEntries.length === 1 ? '' : 's'} · ${def.label}`;
-    stage.innerHTML = visible.length
-      ? `${visible.map(card).join('')}${visible.length < selectedEntries.length ? '<button class="lookup-category-more" type="button" data-category-more>SHOW MORE</button>' : ''}`
-      : '<div class="lookup-empty"><strong>No stored matches yet.</strong><p>Try another category or enter a frequency above.</p></div>';
-    stage.querySelector('[data-category-more]')?.addEventListener('click', () => {
-      displayLimit += 12;
-      renderCategory();
-    });
-  }
-
-  function scrollResultsIntoView() {
-    const target = document.querySelector('.lookup-results-shell');
-    if (!target) return;
-    window.requestAnimationFrame(() => {
-      const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 8);
-      window.scrollTo({ top, behavior: 'smooth' });
-    });
-  }
-
-  async function selectCategory(key) {
-    const def = CATEGORY_DEFS[key];
-    if (!def) return;
-    selectedKey = key;
-    displayLimit = 12;
-    window.FREQBEACON_LOOKUP_SELECTED_CATEGORY = key;
+  function paintSelection() {
     chips.querySelectorAll('[data-category]').forEach((button) => {
-      const selected = button.dataset.category === key;
+      const selected = button.dataset.category === selectedKey;
       button.classList.toggle('active', selected);
       button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
+  }
+
+  async function browse(receiver, context = {}) {
+    const def = CATEGORY_DEFS[selectedKey];
+    if (!def || !receiver || !Number.isFinite(Number(receiver.lat)) || !Number.isFinite(Number(receiver.lon))) return false;
+
+    displayLimit = Math.max(8, displayLimit);
+    if (resultsTitle) resultsTitle.textContent = `${def.label.toUpperCase()} ON THIS RECEIVER`;
+    count.textContent = def.label;
+    stage.innerHTML = '<div class="lookup-loading">BUILDING RECEIVER-AWARE FREQUENCY LIST…</div>';
     if (status) {
       status.className = 'lookup-status is-working';
-      status.textContent = `Loading ${def.label} matches…`;
+      status.textContent = `Finding ${def.label.toLowerCase()} frequencies for ${receiver.location}…`;
     }
-    count.textContent = def.label;
-    stage.innerHTML = '<div class="lookup-loading">CHECKING THE FREQBEACON CATALOG…</div>';
-    scrollResultsIntoView();
 
     const base = Array.isArray(catalog.entries) ? catalog.entries : (Array.isArray(catalog.stations) ? catalog.stations : []);
     let entries = [...base];
@@ -216,34 +326,73 @@
       catch (error) { console.warn('FREQBEACON category catalog expansion failed:', error); }
     }
 
-    selectedEntries = dedupe(entries.filter((entry) => categoryMatches(entry, key))).sort((a,b) => {
-      const activeDelta = Number(scheduleActive(b)) - Number(scheduleActive(a));
-      if (activeDelta) return activeDelta;
-      return entryFrequency(a) - entryFrequency(b) || String(a.name || '').localeCompare(String(b.name || ''));
-    });
-    renderCategory();
+    const now = new Date();
+    const ranked = dedupe(entries.filter((entry) => categoryMatches(entry, selectedKey)))
+      .map((entry) => ({ entry, ...candidateScore(entry, receiver, now, def) }))
+      .filter((item) => def.broadcast ? item.schedule?.active !== false : true)
+      .filter((item) => item.score > -700)
+      .sort((a, b) => b.score - a.score || a.distance - b.distance || entryFrequency(a.entry) - entryFrequency(b.entry));
+
+    if (def.broadcast) {
+      const plausible = ranked.filter((item) => item.path?.plausible !== false);
+      const preferred = plausible.filter((item) => item.path?.tier !== 'dx' && !item.targetMismatch);
+      const receiverFocused = preferred.length >= 4
+        ? preferred
+        : plausible.filter((item) => !item.targetMismatch).length >= 4
+          ? plausible.filter((item) => !item.targetMismatch)
+          : plausible.length >= 4
+            ? plausible
+            : ranked;
+      selectedEntries = receiverFocused;
+    } else {
+      selectedEntries = ranked;
+    }
+
+    renderCategory(receiver, def);
     if (status) {
       status.className = 'lookup-status';
-      status.textContent = selectedEntries.length ? `${def.label}: showing real stored catalog matches.` : `${def.label}: no stored matches yet.`;
+      status.textContent = def.broadcast
+        ? `${def.label} · scheduled + receiver-path ranked candidates for ${receiver.name} · not live signal proof`
+        : `${def.label} · known activity frequencies to try on ${receiver.name}`;
     }
+    return true;
+  }
+
+  function renderCategory(receiver, def = CATEGORY_DEFS[selectedKey]) {
+    if (!def) return;
+    const visible = selectedEntries.slice(0, displayLimit);
+    count.textContent = `${selectedEntries.length.toLocaleString()} ${def.label} candidate${selectedEntries.length === 1 ? '' : 's'}`;
+    stage.innerHTML = visible.length
+      ? `${visible.map((item) => card(item, receiver, def)).join('')}${visible.length < selectedEntries.length ? '<button class="lookup-category-more" type="button" data-category-more>SHOW MORE</button>' : ''}`
+      : `<div class="lookup-empty"><strong>No strong ${esc(def.label)} candidates right now.</strong><p>FREQBEACON does not currently have a schedule and path combination it is comfortable recommending for ${esc(receiver.location)}.</p></div>`;
+    stage.querySelector('[data-category-more]')?.addEventListener('click', () => {
+      displayLimit += 8;
+      renderCategory(receiver, def);
+    });
+  }
+
+  function setSelection(key) {
+    selectedKey = CATEGORY_DEFS[key] ? key : '';
+    displayLimit = 8;
+    window.FREQBEACON_LOOKUP_SELECTED_CATEGORY = selectedKey;
+    paintSelection();
+    window.dispatchEvent(new CustomEvent('freqbeacon:lookup-filter-change', {
+      detail: { category: selectedKey }
+    }));
   }
 
   chips.addEventListener('click', (event) => {
     const button = event.target.closest('[data-category]');
-    if (button) selectCategory(button.dataset.category);
+    if (!button) return;
+    const key = button.dataset.category || '';
+    setSelection(selectedKey === key ? '' : key);
   });
 
   window.FREQBEACON_LOOKUP_CATEGORIES = Object.freeze({
     defs: CATEGORY_DEFS,
     matches: categoryMatches,
     selected: () => selectedKey,
-    clearSelection() {
-      selectedKey = '';
-      window.FREQBEACON_LOOKUP_SELECTED_CATEGORY = '';
-      chips.querySelectorAll('[data-category]').forEach((button) => {
-        button.classList.remove('active');
-        button.setAttribute('aria-pressed', 'false');
-      });
-    }
+    browse,
+    clearSelection() { setSelection(''); }
   });
 })();

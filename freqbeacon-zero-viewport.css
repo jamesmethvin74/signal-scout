@@ -1,0 +1,112 @@
+/* FREQBEACON Zero is an instrument panel, not a scrolling document. */
+.zero-radio > .fb-page-scroll {
+  overflow-y: hidden;
+  overscroll-behavior: none;
+  padding-bottom: 3px;
+}
+
+/*
+ * Keep the proven 1024x640 RF canvas geometry. The compact controls and
+ * shorter app nav now make room for the waterfall without forcing Zero to
+ * scroll. Matching CSS to the backing store keeps RF text/pixels unstretched.
+ */
+.zero-scope-shell #rfCanvas {
+  aspect-ratio: 1024 / 640 !important;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 600px) {
+  .zero-radio > .fb-page-scroll {
+    padding: 2px 6px 2px;
+  }
+
+  .zero-header {
+    min-height: 31px;
+    padding-top: 0;
+  }
+
+  /* One-line receiver confirmation: enough to verify the handoff, no duplicate location row. */
+  .zero-receiver-context {
+    min-height: 29px;
+    margin: 2px 6px 1px;
+    gap: 6px;
+    padding: 2px 6px;
+  }
+  .zero-receiver-context-status { font-size: 6px; }
+  .zero-receiver-context-status i { width: 6px; height: 6px; }
+  .zero-receiver-context-copy strong { font-size: 8px; line-height: 1.05; }
+  .zero-receiver-context-copy span { display: none; }
+  .zero-receiver-context-change {
+    min-height: 23px;
+    padding-inline: 6px;
+    font-size: 6px;
+  }
+
+  .zero-readout { min-height: 49px; }
+  .mode-bar { margin-bottom: 1px; }
+  .mode-bar button { min-height: 28px; }
+
+  .band-explorer { padding-block: 0 2px; }
+  .deck-title { height: 14px; font-size: 9px; }
+  .band-rail {
+    grid-template-rows: repeat(2, 20px);
+    padding-block: 2px;
+  }
+  .band-rail button {
+    min-height: 19px;
+    font-size: 8px;
+  }
+
+  .hardware-deck {
+    margin-top: 1px;
+    padding-block: 1px 2px;
+  }
+  .tuning-zone { min-height: 98px; }
+  .tuning-knob { width: clamp(98px, 28.5vw, 110px); }
+  .tuning-caption { font-size: 7px; }
+  .fine-tune { gap: 3px; }
+  .fine-tune > span { font-size: 7px; }
+  .fine-buttons button { min-height: 26px; font-size: 19px; }
+  .step-button { min-height: 29px; }
+  .step-button b { font-size: 10px; }
+
+  .meter-row {
+    min-height: 43px;
+    margin-bottom: 2px;
+  }
+  .meter-scale { inset-top: 5px; }
+
+  .lower-controls {
+    padding-top: 0;
+    gap: 3px;
+  }
+  .hardware-slider { height: 20px; }
+  .hardware-slider::before,
+  .hardware-slider i { top: 9px; }
+  .hardware-slider b {
+    top: 1px;
+    width: 18px;
+    height: 18px;
+  }
+  .hardware-button.mute,
+  .agc-switch { min-height: 28px; }
+  .agc-switch i { width: 19px; height: 19px; }
+  .mini-knob { width: 26px; height: 26px; }
+
+  .receiver-strip {
+    margin-top: 1px;
+    padding-block: 0;
+  }
+  .receiver-line { min-height: 11px; font-size: 6px; }
+  .receiver-actions { min-height: 20px; }
+  .receiver-strip .scope-status { min-height: 18px; font-size: 6px; }
+}
+
+@media (max-width: 370px), (max-height: 650px) and (max-width: 600px) {
+  .zero-header { min-height: 29px; }
+  .zero-readout { min-height: 46px; }
+  .zero-frequency span { font-size: 38px; }
+  .tuning-zone { min-height: 94px; }
+  .tuning-knob { width: 96px; }
+}

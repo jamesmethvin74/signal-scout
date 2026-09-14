@@ -1,12 +1,14 @@
 (() => {
   'use strict';
 
-  // UI-only handoff from standalone Lookup into the existing qualified Zero
-  // control path. It never opens sockets, sends Kiwi commands, owns tuning state,
-  // or changes the SDR engine. It queues the target by invoking the same band
-  // button handler a human tap already uses.
+  // Lookup handoff adapter only. It does not open sockets or send Kiwi commands.
+  // Zero's proven engine/dial already understand ?from=lookup&frequency=... and
+  // use that value as their INITIAL SND + W/F center. Category browse links use
+  // from=lookup-category, so normalize that source before deferred module scripts
+  // initialize instead of queueing a second post-start retune.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('from') !== 'lookup') return;
+  const source = params.get('from');
+  if (source !== 'lookup' && source !== 'lookup-category') return;
 
   const targetKHz = Number(params.get('frequency') || params.get('freq'));
   const requestedMode = String(params.get('mode') || 'am').toLowerCase();
@@ -14,65 +16,42 @@
   if (!Number.isFinite(targetKHz) || targetKHz < 30 || targetKHz > 30000) return;
   const mode = allowedModes.has(requestedMode) ? requestedMode : 'am';
 
-  const buttons = [...document.querySelectorAll('[data-band-khz]')];
-  if (!buttons.length) return;
-
-  function preferredButton() {
-    if (targetKHz < 300) return buttons.find((button) => button.textContent.trim() === 'LW');
-    if (targetKHz >= 520 && targetKHz <= 1710) return buttons.find((button) => button.textContent.trim() === 'AM BC');
-    if (targetKHz >= 26965 && targetKHz <= 27405) return buttons.find((button) => button.textContent.trim() === 'CB');
-    if (targetKHz >= 11050 && targetKHz <= 11300) return buttons.find((button) => button.textContent.trim() === 'Aviation');
-    if (targetKHz >= 8890 && targetKHz <= 9095) return buttons.find((button) => button.textContent.trim() === 'Utility');
-    return buttons.find((button) => button.textContent.trim() === 'Shortwave') || buttons[0];
+  if (source === 'lookup-category') {
+    params.set('from', 'lookup');
+    const query = params.toString();
+    history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
   }
 
-  const button = preferredButton() || buttons[0];
-  const originalKHz = button.dataset.bandKhz;
-  const originalMode = button.dataset.bandMode;
-  button.dataset.bandKhz = String(targetKHz);
-  button.dataset.bandMode = mode;
-  button.click();
-  button.dataset.bandKhz = originalKHz;
-  if (originalMode == null) delete button.dataset.bandMode;
-  else button.dataset.bandMode = originalMode;
+  // Controls are already attached because this is a classic script that runs
+  // after the shell control scripts but before the deferred Zero engine modules.
+  // Clicking the MODE button while OFF only updates Zero's selected mode; it does
+  // not touch the network. Do NOT click a band button here: that would create a
+  // pending post-start retune and can disturb the paired W/F startup sequence.
+  const modeButton = document.querySelector(`[data-shell-mode="${mode}"]`);
+  if (modeButton && !modeButton.classList.contains('active')) modeButton.click();
 
-  // When Zero is still OFF, the shell queues a band target but its readout stays
-  // on the default 560 kHz until the receiver starts. Lookup must hand the chosen
-  // frequency into the visible radio immediately, so prime both the visible
-  // readout and the existing hidden frequency bridge after module startup.
   function primeLookupTarget() {
     const display = document.querySelector('#frequencyDisplay');
     const bridge = document.querySelector('#frequencyValue');
+    const center = document.querySelector('#centerMark');
     if (display) display.textContent = targetKHz.toFixed(3);
-    if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(3);
+    if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(6);
+    if (center) center.textContent = `VIEW ${targetKHz.toFixed(3)} kHz`;
   }
 
   primeLookupTarget();
-  window.addEventListener('load', () => {
-    window.requestAnimationFrame(primeLookupTarget);
-  }, { once: true });
 
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.style.cssText = [
-    'position:fixed', 'z-index:40', 'left:50%', 'bottom:max(14px,env(safe-area-inset-bottom))',
+    'position:fixed', 'z-index:40', 'left:50%', 'bottom:max(66px,calc(54px + env(safe-area-inset-bottom)))',
     'transform:translateX(-50%)', 'max-width:calc(100vw - 24px)', 'padding:9px 12px',
-    'border:1px solid rgba(69,221,236,.42)', 'border-radius:999px', 'background:rgba(4,12,16,.94)',
-    'color:#b9f8ff', 'box-shadow:0 10px 28px rgba(0,0,0,.34),0 0 18px rgba(69,221,236,.08)',
+    'border:1px solid rgba(245,189,105,.5)', 'border-radius:999px', 'background:rgba(12,10,7,.95)',
+    'color:#ffe0a5', 'box-shadow:0 10px 28px rgba(0,0,0,.34),0 0 18px rgba(245,189,105,.08)',
     'font:800 9px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace', 'letter-spacing:.06em',
     'text-align:center', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis', 'pointer-events:none'
   ].join(';');
   notice.textContent = `LOOKUP TARGET · ${targetKHz.toLocaleString(undefined, { maximumFractionDigits: 3 })} kHz · PRESS START`;
   document.body.appendChild(notice);
-
-  const bridge = document.querySelector('#frequencyValue');
-  if (!bridge) return;
-  const observer = new MutationObserver(() => {
-    const tunedKHz = Number(bridge.textContent) * 1000;
-    if (!Number.isFinite(tunedKHz) || Math.abs(tunedKHz - targetKHz) > 0.6) return;
-    notice.textContent = `TUNED FROM LOOKUP · ${targetKHz.toLocaleString(undefined, { maximumFractionDigits: 3 })} kHz`;
-    observer.disconnect();
-    window.setTimeout(() => notice.remove(), 2600);
-  });
-  observer.observe(bridge, { childList: true, characterData: true, subtree: true });
+  window.setTimeout(() => notice.remove(), 5000);
 })();

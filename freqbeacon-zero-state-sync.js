@@ -9,6 +9,8 @@
   const dbmReadout = document.querySelector('#dbmReadout');
   const meterNeedle = document.querySelector('#meterNeedle');
   const frequencyBridge = document.querySelector('#frequencyValue');
+  const frequencyDisplay = document.querySelector('#frequencyDisplay');
+  const modeBar = document.querySelector('.mode-bar');
   const bandButtons = [...document.querySelectorAll('[data-band-khz]')];
 
   const BAND_RANGES = Object.freeze([
@@ -39,9 +41,38 @@
     if (meterNeedle) meterNeedle.style.setProperty('--meter-cal-angle', '-66deg');
   }
 
+  function displayedKHz() {
+    const raw = String(frequencyDisplay?.textContent || '').replace(/,/g, '').trim();
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) {
+      // Zero's shell may render either kHz directly (560.000) or integer Hz
+      // formatting (560000). Normalize both into kHz for shared app state.
+      if (value > 30000) return value / 1000;
+      return value;
+    }
+    return NaN;
+  }
+
   function tunedKHz() {
+    const display = displayedKHz();
+    if (Number.isFinite(display)) return display;
     const mhz = Number(frequencyBridge?.textContent);
     return Number.isFinite(mhz) ? mhz * 1000 : NaN;
+  }
+
+  function currentMode() {
+    const active = modeBar?.querySelector('[data-shell-mode].active, [data-shell-mode][aria-pressed="true"]');
+    return String(active?.dataset?.shellMode || 'am').toLowerCase();
+  }
+
+  function publishRadioContext() {
+    const frequencyKHz = tunedKHz();
+    if (!Number.isFinite(frequencyKHz) || frequencyKHz <= 0) return;
+    window.FREQBEACON_RADIO_CONTEXT?.update?.({
+      frequencyKHz: Math.round(frequencyKHz * 1000) / 1000,
+      mode: currentMode(),
+      tunedAt: Date.now()
+    });
   }
 
   function bandLabelFor(kHz) {
@@ -62,6 +93,7 @@
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', String(active));
     }
+    publishRadioContext();
   }
 
   if (power) {
@@ -87,10 +119,28 @@
     });
   }
 
+  if (frequencyDisplay) {
+    new MutationObserver(publishRadioContext).observe(frequencyDisplay, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+  }
+
+  if (modeBar) {
+    new MutationObserver(publishRadioContext).observe(modeBar, {
+      attributes: true,
+      attributeFilter: ['class', 'aria-pressed'],
+      subtree: true
+    });
+    modeBar.addEventListener('click', () => window.setTimeout(publishRadioContext, 0));
+  }
+
   for (const button of bandButtons) {
     button.addEventListener('click', () => window.setTimeout(syncBandHighlight, 0));
   }
 
   resetMetersWhenStopped();
   syncBandHighlight();
+  publishRadioContext();
 })();
