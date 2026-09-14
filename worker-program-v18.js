@@ -346,97 +346,88 @@ async function exploreScriptResponse(request, env) {
   if (!response || !response.ok || request.method === 'HEAD') return response;
 
   const source = await response.text();
-  const proximityCallout = `  function drawProximityCallout(point) {
-    if (!point || point.receiver.id === state.selected?.id) return;
-    const receiver = point.receiver;
-    const mobile = state.width < 500;
-    const line1 = shortText(receiver.name, mobile ? 25 : 36);
-    const line2 = shortText(receiver.location, mobile ? 30 : 44);
-    ctx.save();
-    ctx.font = '800 ' + (mobile ? 8 : 9) + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-    const textWidth = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
-    const boxWidth = Math.min(state.width - 20, Math.max(150, textWidth + 24));
-    const boxHeight = 50;
-    let x = point.x + 12;
-    let y = point.y - 55;
-    if (x + boxWidth > state.width - 8) x = point.x - boxWidth - 12;
-    x = Math.max(8, Math.min(state.width - boxWidth - 8, x));
-    y = Math.max(8, Math.min(state.height - boxHeight - 8, y));
+  const cardEls = `    detailCard: document.getElementById('globeReceiverCard'),
+    detailClose: document.getElementById('globeReceiverClose'),
+    detailName: document.getElementById('globeReceiverName'),
+    detailLocation: document.getElementById('globeReceiverLocation'),
+    detailType: document.getElementById('globeReceiverType'),
+    detailOpenRadio: document.getElementById('globeOpenRadio'),
+`;
+  const cardFunctions = `  function hideReceiverCard() {
+    if (els.detailCard) els.detailCard.hidden = true;
+  }
 
-    ctx.strokeStyle = 'rgba(85,217,135,.68)';
-    ctx.fillStyle = 'rgba(7,12,14,.95)';
-    ctx.lineWidth = 1;
-    roundedRect(ctx, x, y, boxWidth, boxHeight, 6);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#e1e7e4';
-    ctx.font = '850 ' + (mobile ? 8 : 9) + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-    ctx.fillText(line1, x + 10, y + 14);
-    ctx.fillStyle = '#879398';
-    ctx.font = '700 ' + (mobile ? 7 : 8) + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-    ctx.fillText(line2, x + 10, y + 28);
-    ctx.fillStyle = '#55d987';
-    ctx.font = '850 ' + (mobile ? 6 : 7) + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-    ctx.fillText('HEALTHY · TAP TO SELECT', x + 10, y + 42);
-    ctx.restore();
-    state.proximityHit = { x, y, width: boxWidth, height: boxHeight, receiver };
+  function showReceiverCard(receiver) {
+    if (!receiver || !els.detailCard) return;
+    els.detailName.textContent = receiver.name;
+    els.detailLocation.textContent = receiver.location;
+    els.detailType.textContent = receiver.receiverType.toUpperCase();
+    els.detailCard.hidden = false;
+    els.affordance?.classList.add('is-hidden');
   }
 
 `;
-  const proximityRender = `    state.hitPoints = hitPoints;
-    state.proximityHit = null;
-    let proximityPoint = null;
-    if (state.zoom >= 3.5) {
-      const threshold = Math.min(72, 25 + state.zoom * 5);
-      let bestD2 = threshold * threshold;
-      for (const point of hitPoints) {
-        const d2 = (point.x - cx) ** 2 + (point.y - cy) ** 2;
-        if (d2 <= bestD2) {
-          proximityPoint = point;
-          bestD2 = d2;
-        }
-      }
-    }
-    if (proximityPoint && proximityPoint.receiver.id !== selectedId) {
-      drawProximityCallout(proximityPoint);
-    } else {
-      drawSelectedCallout(selectedPoint);
+  const tapSelection = `    const receiver = pickReceiverAt(clientX, clientY);
+    if (receiver) {
+      state.lastTapAt = 0;
+      state.lastTapPoint = null;
+      selectReceiver(receiver, { focus: false, scroll: false });
+      showReceiverCard(receiver);
+      return;
     }`;
-  const proximityTap = `    const proximity = state.proximityHit;
-    if (proximity) {
-      const rect = els.canvas.getBoundingClientRect();
-      const localX = clientX - rect.left;
-      const localY = clientY - rect.top;
-      if (localX >= proximity.x && localX <= proximity.x + proximity.width && localY >= proximity.y && localY <= proximity.y + proximity.height) {
-        state.lastTapAt = 0;
-        state.lastTapPoint = null;
-        selectReceiver(proximity.receiver, { focus: false, scroll: true });
-        return;
-      }
-    }
+  const listSelection = `      button.addEventListener('click', () => {
+        selectReceiver(receiver, { focus: true, scroll: false });
+        showReceiverCard(receiver);
+      });`;
+  const cardListeners = `  els.detailClose?.addEventListener('click', hideReceiverCard);
+  els.detailOpenRadio?.addEventListener('click', () => {
+    if (!state.selected) return;
+    setSelectionCookie(state.selected.id);
+    location.assign('/zero?from=explore');
+  });
 
 `;
+
   const rewritten = source
     .replace(
       'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
       '/_freqbeacon/explore/countries-110m.json'
     )
     .replace('const MAX_ZOOM = 4;', 'const MAX_ZOOM = 10;')
-    .replace('hitPoints: [],', 'hitPoints: [],\n    proximityHit: null,')
-    .replace('  function drawGlobe(now) {', proximityCallout + '  function drawGlobe(now) {')
-    .replace('    state.hitPoints = hitPoints;\n    drawSelectedCallout(selectedPoint);', proximityRender)
+    .replace(
+      "    list: document.getElementById('receiverList')",
+      cardEls + "    list: document.getElementById('receiverList')"
+    )
+    .replace('    state.hitPoints = hitPoints;\n    drawSelectedCallout(selectedPoint);', '    state.hitPoints = hitPoints;')
     .replace(
       '      !reducedMotion.matches &&\n      now - state.lastInteractionAt > RESUME_DELAY_MS',
       '      !reducedMotion.matches &&\n      state.zoom <= 1.35 &&\n      now - state.lastInteractionAt > RESUME_DELAY_MS'
     )
     .replace(
-      '    const now = performance.now();\n    const previous = state.lastTapPoint;',
-      proximityTap + '    const now = performance.now();\n    const previous = state.lastTapPoint;'
+      "      button.addEventListener('click', () => selectReceiver(receiver, { focus: true, scroll: false }));",
+      listSelection
+    )
+    .replace('  function selectReceiver(receiver, options = {}) {', cardFunctions + '  function selectReceiver(receiver, options = {}) {')
+    .replace('  function setRegion(region) {\n    state.region = region;', '  function setRegion(region) {\n    hideReceiverCard();\n    state.region = region;')
+    .replace(
+      `    const receiver = pickReceiverAt(clientX, clientY);
+    if (receiver) {
+      state.lastTapAt = 0;
+      state.lastTapPoint = null;
+      selectReceiver(receiver, { focus: false, scroll: true });
+      return;
+    }`,
+      tapSelection
+    )
+    .replace(
+      "  els.zoomIn?.addEventListener('click', () => animateZoomTo(state.zoom * BUTTON_ZOOM_FACTOR));",
+      cardListeners + "  els.zoomIn?.addEventListener('click', () => animateZoomTo(state.zoom * BUTTON_ZOOM_FACTOR));"
     )
     .replace(
       "window.addEventListener('load', initialize, { once: true });",
       "if (document.readyState === 'complete') initialize(); else window.addEventListener('load', initialize, { once: true });"
     );
+
   const headers = new Headers(response.headers);
   headers.delete('content-length');
   headers.delete('etag');
@@ -481,8 +472,6 @@ export default {
       return handleExploreApi(request, receiverHealthCompatEnv(env));
     }
 
-    // Explore selects only an already-trusted receiver and hands it to the
-    // existing Zero endpoints. It does not participate in local reception scoring.
     if (url.pathname.startsWith('/api/zero/') && selectedExploreReceiverId(request)) {
       const exploreResponse = await handleExploreZeroRequest(request, receiverHealthCompatEnv(env));
       if (exploreResponse) return exploreResponse;
@@ -537,8 +526,6 @@ export default {
         }));
       }
     } catch (error) {
-      // Receiver health is additive background work. It must never interrupt
-      // FREQBEACON's existing scheduled program/schedule refresh duties.
       console.warn('FREQBEACON receiver health cycle failed', error?.message || error);
     }
   }
