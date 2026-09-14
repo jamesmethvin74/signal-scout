@@ -3,9 +3,12 @@
   "name": "FREQBEACON",
   "short_name": "FREQBEACON",
   "description": "Explore the airwaves with live radio, signal lookup, and SDR tools.",
-  "start_url": "/zero",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "background_color": "#07111f",
   "theme_color": "#07111f",
   "prefer_related_applications": false,
