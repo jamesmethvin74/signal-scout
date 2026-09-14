@@ -31,6 +31,8 @@
       "/zero-bench/",
       "/explore",
       "/explore/",
+      "/explore-page.js",
+      "/_freqbeacon/explore/*",
       "/api/explore/*",
       "/api/sdr/*",
       "/api/program-guide",
