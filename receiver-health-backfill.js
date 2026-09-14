@@ -172,7 +172,19 @@ async function loadCandidates(env, limit = BACKFILL_BATCH_SIZE, options = {}) {
       FROM receivers
       WHERE last_discovered_at>=? AND trusted=0 AND recent_successes=0
         ${freshScreenClause}
-      ORDER BY CASE WHEN last_tested_at IS NULL THEN 0 ELSE 1 END ASC, COALESCE(last_tested_at,0) ASC
+      ORDER BY
+        CASE WHEN last_tested_at IS NULL THEN 0 ELSE 1 END ASC,
+        CASE
+          WHEN lat BETWEEN -35 AND 37 AND lon BETWEEN -18 AND 52 THEN 0
+          WHEN lat BETWEEN -56 AND 13 AND lon BETWEEN -82 AND -34 THEN 1
+          WHEN lat BETWEEN -50 AND 0 AND lon BETWEEN 110 AND 180 THEN 2
+          WHEN lat BETWEEN -10 AND 55 AND lon BETWEEN 52 AND 180 THEN 3
+          WHEN lat BETWEEN 35 AND 72 AND lon BETWEEN -25 AND 52 THEN 4
+          WHEN lat BETWEEN 13 AND 84 AND lon BETWEEN -170 AND -50 THEN 5
+          ELSE 6
+        END ASC,
+        COALESCE(last_tested_at,0) ASC,
+        id ASC
       LIMIT ${budget.fresh}
     )
     ORDER BY bucket, sort_value
