@@ -1,10 +1,11 @@
 (() => {
   'use strict';
 
-  // UI-only handoff from Lookup into the existing qualified Zero control path.
-  // It never opens sockets, sends Kiwi commands, owns tuning state, or changes
-  // the SDR engine. It queues the target by invoking the same band-button handler
-  // a human tap already uses.
+  // Lookup handoff adapter only. It does not open sockets or send Kiwi commands.
+  // Zero's proven engine/dial already understand ?from=lookup&frequency=... and
+  // use that value as their INITIAL SND + W/F center. Category browse links use
+  // from=lookup-category, so normalize that source before deferred module scripts
+  // initialize instead of queueing a second post-start retune.
   const params = new URLSearchParams(window.location.search);
   const source = params.get('from');
   if (source !== 'lookup' && source !== 'lookup-category') return;
@@ -15,51 +16,30 @@
   if (!Number.isFinite(targetKHz) || targetKHz < 30 || targetKHz > 30000) return;
   const mode = allowedModes.has(requestedMode) ? requestedMode : 'am';
 
-  const buttons = [...document.querySelectorAll('[data-band-khz]')];
-  if (!buttons.length) return;
-
-  function preferredButton() {
-    if (targetKHz < 300) return buttons.find((button) => button.textContent.trim() === 'LW');
-    if (targetKHz >= 520 && targetKHz <= 1710) return buttons.find((button) => button.textContent.trim() === 'AM BC');
-    if (targetKHz >= 26965 && targetKHz <= 27405) return buttons.find((button) => button.textContent.trim() === 'CB');
-    if (targetKHz >= 11050 && targetKHz <= 11300) return buttons.find((button) => button.textContent.trim() === 'Aviation');
-    if (targetKHz >= 8890 && targetKHz <= 9095) return buttons.find((button) => button.textContent.trim() === 'Utility');
-    return buttons.find((button) => button.textContent.trim() === 'Shortwave') || buttons[0];
+  if (source === 'lookup-category') {
+    params.set('from', 'lookup');
+    const query = params.toString();
+    history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
   }
 
-  const button = preferredButton() || buttons[0];
-  const originalKHz = button.dataset.bandKhz;
-  const originalMode = button.dataset.bandMode;
-  button.dataset.bandKhz = String(targetKHz);
-  button.dataset.bandMode = mode;
-  button.click();
-  button.dataset.bandKhz = originalKHz;
-  if (originalMode == null) delete button.dataset.bandMode;
-  else button.dataset.bandMode = originalMode;
+  // Controls are already attached because this is a classic script that runs
+  // after the shell control scripts but before the deferred Zero engine modules.
+  // Clicking the MODE button while OFF only updates Zero's selected mode; it does
+  // not touch the network. Do NOT click a band button here: that would create a
+  // pending post-start retune and can disturb the paired W/F startup sequence.
+  const modeButton = document.querySelector(`[data-shell-mode="${mode}"]`);
+  if (modeButton && !modeButton.classList.contains('active')) modeButton.click();
 
-  // When Zero is still OFF, its normal qualified control path queues the target.
-  // Prime the visible/bridge values immediately so the selected Lookup frequency
-  // is visible before START, then the queued target is applied to the live Kiwi
-  // session when it opens.
   function primeLookupTarget() {
     const display = document.querySelector('#frequencyDisplay');
     const bridge = document.querySelector('#frequencyValue');
-    const modeButton = document.querySelector(`[data-shell-mode="${mode}"]`);
+    const center = document.querySelector('#centerMark');
     if (display) display.textContent = targetKHz.toFixed(3);
     if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(6);
-    if (modeButton) {
-      document.querySelectorAll('[data-shell-mode]').forEach((peer) => {
-        const active = peer === modeButton;
-        peer.classList.toggle('active', active);
-        peer.setAttribute('aria-pressed', String(active));
-      });
-    }
+    if (center) center.textContent = `VIEW ${targetKHz.toFixed(3)} kHz`;
   }
 
   primeLookupTarget();
-  window.addEventListener('load', () => {
-    window.requestAnimationFrame(primeLookupTarget);
-  }, { once: true });
 
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
@@ -73,15 +53,5 @@
   ].join(';');
   notice.textContent = `LOOKUP TARGET · ${targetKHz.toLocaleString(undefined, { maximumFractionDigits: 3 })} kHz · PRESS START`;
   document.body.appendChild(notice);
-
-  const bridge = document.querySelector('#frequencyValue');
-  if (!bridge) return;
-  const observer = new MutationObserver(() => {
-    const tunedKHz = Number(bridge.textContent) * 1000;
-    if (!Number.isFinite(tunedKHz) || Math.abs(tunedKHz - targetKHz) > 0.6) return;
-    notice.textContent = `TUNED FROM LOOKUP · ${targetKHz.toLocaleString(undefined, { maximumFractionDigits: 3 })} kHz`;
-    observer.disconnect();
-    window.setTimeout(() => notice.remove(), 2600);
-  });
-  observer.observe(bridge, { childList: true, characterData: true, subtree: true });
+  window.setTimeout(() => notice.remove(), 5000);
 })();
