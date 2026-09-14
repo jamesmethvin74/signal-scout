@@ -29,8 +29,8 @@ function candidateSelect() {
 
 export function candidateBudget(trustedCount = 0, limit = BACKFILL_BATCH_SIZE) {
   const safeLimit = Math.max(1, Math.min(12, Math.floor(Number(limit) || BACKFILL_BATCH_SIZE)));
-  const trusted = Number(trustedCount || 0) < 100 ? 1 : 2;
-  const promotion = Math.min(5, Math.max(3, Math.floor(safeLimit / 2)));
+  const trusted = Number(trustedCount || 0) < 125 ? 1 : 2;
+  const promotion = Math.min(7, Math.max(4, Math.ceil(safeLimit * 0.6)));
   return {
     limit: safeLimit,
     promotion,
@@ -137,12 +137,19 @@ export async function receiverHealthSummary(env) {
   }
 }
 
-async function loadCandidates(env, limit = BACKFILL_BATCH_SIZE) {
+async function loadCandidates(env, limit = BACKFILL_BATCH_SIZE, options = {}) {
   const summary = await receiverHealthSummary(env);
   if (!summary.inventoryReady) return { summary, candidates: [] };
 
   const budget = candidateBudget(summary.trustedReceivers, limit);
   const cutoff = Date.now() - DISCOVERY_STALE_MS;
+  const screenedOnly = Boolean(options.screenedOnly);
+  const freshScreenClause = screenedOnly
+    ? `AND EXISTS (
+         SELECT 1 FROM receiver_screening s
+         WHERE s.receiver_id=receivers.id AND s.reachable=1
+       )`
+    : '';
   const result = await db(env).prepare(`
     SELECT * FROM (
       SELECT ${candidateSelect()}, 0 AS bucket, COALESCE(last_tested_at,0) AS sort_value
@@ -164,6 +171,7 @@ async function loadCandidates(env, limit = BACKFILL_BATCH_SIZE) {
       SELECT ${candidateSelect()}, 2 AS bucket, COALESCE(last_tested_at,0) AS sort_value
       FROM receivers
       WHERE last_discovered_at>=? AND trusted=0 AND recent_successes=0
+        ${freshScreenClause}
       ORDER BY CASE WHEN last_tested_at IS NULL THEN 0 ELSE 1 END ASC, COALESCE(last_tested_at,0) ASC
       LIMIT ${budget.fresh}
     )
@@ -386,7 +394,7 @@ async function recordProbe(env, result) {
 
 export async function runExploreBackfillCycle(env, options = {}) {
   const limit = Math.max(1, Math.min(12, Math.floor(Number(options.limit) || BACKFILL_BATCH_SIZE)));
-  const loaded = await loadCandidates(env, limit);
+  const loaded = await loadCandidates(env, limit, { screenedOnly: Boolean(options.screenedOnly) });
   if (!loaded.summary.inventoryReady) {
     return { inventoryReady: false, tested: 0, successful: 0, promoted: 0, demoted: 0, results: [] };
   }
