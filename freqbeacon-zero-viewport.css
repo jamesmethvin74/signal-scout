@@ -6,12 +6,12 @@
 }
 
 /*
- * Zero uses a deliberately shorter 1024x360 RF canvas. The renderer still
- * keeps its full spectrum and scale; only waterfall history is shortened.
- * Matching the CSS ratio to the backing store avoids stretched RF text.
+ * Keep the proven 1024x640 RF canvas geometry. The compact controls and
+ * shorter app nav now make room for the waterfall without forcing Zero to
+ * scroll. Matching CSS to the backing store keeps RF text/pixels unstretched.
  */
 .zero-scope-shell #rfCanvas {
-  aspect-ratio: 1024 / 360 !important;
+  aspect-ratio: 1024 / 640 !important;
   width: 100%;
   height: auto;
 }
