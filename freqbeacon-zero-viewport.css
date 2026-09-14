@@ -76,7 +76,6 @@
 }
 
 @media (max-width: 370px), (max-height: 700px) and (max-width: 600px) {
-  .zero-scope-shell #rfCanvas { aspect-ratio: 1024 / 390 !important; }
   .zero-header { min-height: 31px; }
   .zero-readout { min-height: 49px; }
   .tuning-zone { min-height: 100px; }
