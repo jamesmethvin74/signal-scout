@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/explore-page.css?v=2">
+  <link rel="stylesheet" href="/explore-page.css?v=3">
   <title>Explore — FREQBEACON Zero</title>
 </head>
 <body>
@@ -35,14 +35,18 @@
       </div>
 
       <div class="globe-shell" id="globeShell">
-        <canvas id="receiverGlobe" role="img" aria-label="Interactive globe showing trusted FREQBEACON receivers. Drag to rotate."></canvas>
+        <canvas id="receiverGlobe" role="img" aria-label="Interactive globe showing trusted FREQBEACON receivers. Drag to rotate. Pinch, wheel, or use the zoom controls to zoom."></canvas>
         <div class="globe-loading" id="globeLoading" role="status" aria-live="polite">
           <span class="globe-loading-ring" aria-hidden="true"></span>
           <strong>OPENING RECEIVER NETWORK</strong>
           <small>Loading verified SND + W/F receivers…</small>
         </div>
+        <div class="globe-controls" role="group" aria-label="Globe zoom controls">
+          <button id="globeZoomIn" type="button" aria-label="Zoom in">+</button>
+          <button id="globeZoomOut" type="button" aria-label="Zoom out">−</button>
+        </div>
         <div class="globe-affordance" id="globeAffordance" aria-hidden="true">
-          <span>↔</span> DRAG TO ROTATE
+          <span>↔</span> DRAG · PINCH TO ZOOM
         </div>
       </div>
 
@@ -118,6 +122,6 @@
 
   <script src="/_freqbeacon/explore/d3.min.js" defer></script>
   <script src="/_freqbeacon/explore/topojson-client.min.js" defer></script>
-  <script src="/explore-page.js?v=2" defer></script>
+  <script src="/explore-page.js?v=3" defer></script>
 </body>
 </html>
