@@ -1,0 +1,84 @@
+/* FREQBEACON Zero is an instrument panel, not a scrolling document. */
+.zero-radio > .fb-page-scroll {
+  overflow-y: hidden;
+  overscroll-behavior: none;
+  padding-bottom: 4px;
+}
+
+/*
+ * The canvas backing store is 1024x420 on Zero. Match it exactly so the RF
+ * trace, scale text, and waterfall pixels are never vertically stretched.
+ */
+.zero-scope-shell #rfCanvas {
+  aspect-ratio: 1024 / 420 !important;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 600px) {
+  .zero-radio > .fb-page-scroll {
+    padding: 3px 6px 3px;
+  }
+
+  .zero-receiver-context {
+    min-height: 38px;
+    margin: 3px 6px 1px;
+    gap: 7px;
+    padding: 4px 7px;
+  }
+
+  .zero-receiver-context-copy strong { font-size: 9px; }
+  .zero-receiver-context-copy span { margin-top: 1px; font-size: 7px; }
+  .zero-receiver-context-change { min-height: 25px; padding-inline: 7px; }
+
+  .zero-readout { min-height: 52px; }
+  .mode-bar { margin-bottom: 2px; }
+  .mode-bar button { min-height: 30px; }
+
+  .band-explorer { padding-block: 1px 3px; }
+  .deck-title { height: 16px; }
+  .band-rail {
+    grid-template-rows: repeat(2, 22px);
+    padding-block: 2px;
+  }
+  .band-rail button { min-height: 21px; }
+
+  .hardware-deck {
+    margin-top: 2px;
+    padding-block: 2px 3px;
+  }
+  .tuning-zone { min-height: 104px; }
+  .tuning-knob { width: clamp(104px, 30vw, 118px); }
+  .fine-buttons button { min-height: 28px; }
+  .step-button { min-height: 32px; }
+
+  .meter-row {
+    min-height: 46px;
+    margin-bottom: 3px;
+  }
+
+  .lower-controls { padding-top: 1px; }
+  .hardware-slider { height: 22px; }
+  .hardware-slider::before,
+  .hardware-slider i { top: 10px; }
+  .hardware-slider b { top: 2px; }
+  .hardware-button.mute,
+  .agc-switch { min-height: 30px; }
+  .mini-knob { width: 28px; height: 28px; }
+
+  .receiver-strip {
+    margin-top: 2px;
+    padding-block: 1px 0;
+  }
+  .receiver-line { min-height: 13px; }
+  .receiver-actions { min-height: 23px; }
+  .receiver-strip .scope-status { min-height: 20px; }
+}
+
+@media (max-width: 370px), (max-height: 700px) and (max-width: 600px) {
+  .zero-scope-shell #rfCanvas { aspect-ratio: 1024 / 390 !important; }
+  .zero-header { min-height: 31px; }
+  .zero-readout { min-height: 49px; }
+  .tuning-zone { min-height: 100px; }
+  .tuning-knob { width: 102px; }
+}
