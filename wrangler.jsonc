@@ -1,4 +1,4 @@
-// FREQBEACON production Worker + trusted Explore receiver health.
+// FREQBEACON production Worker + trusted Explore receiver health infrastructure.
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
@@ -28,8 +28,6 @@
       "/zero-bench",
       "/zero-bench/",
       "/api/explore/*",
-      "/explore",
-      "/explore/",
       "/api/sdr/*",
       "/api/program-guide",
       "/api/program-guide/*",
