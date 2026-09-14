@@ -3,6 +3,7 @@ const SCREEN_CONCURRENCY = 6;
 const SCREEN_TIMEOUT_MS = 2500;
 const SCREEN_RETRY_MS = 6 * 60 * 60 * 1000;
 const DISCOVERY_STALE_MS = 14 * 86400000;
+const LEASE_MS = 3 * 60 * 1000;
 let screenSchemaReady = null;
 
 function db(env) {
@@ -23,6 +24,10 @@ async function ensureScreenSchema(env) {
       );
       CREATE INDEX IF NOT EXISTS idx_receiver_screening_reachable
         ON receiver_screening(reachable, screened_at);
+      CREATE TABLE IF NOT EXISTS receiver_bootstrap_lease (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        expires_at INTEGER NOT NULL DEFAULT 0
+      );
     `).catch((error) => {
       screenSchemaReady = null;
       throw error;
@@ -34,6 +39,23 @@ async function ensureScreenSchema(env) {
 function safeWhole(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.round(number)) : fallback;
+}
+
+export async function acquireReceiverBootstrapLease(env) {
+  await ensureScreenSchema(env);
+  const now = Date.now();
+  const result = await db(env).prepare(`
+    INSERT INTO receiver_bootstrap_lease (id,expires_at)
+    VALUES (1,?)
+    ON CONFLICT(id) DO UPDATE SET expires_at=excluded.expires_at
+    WHERE receiver_bootstrap_lease.expires_at<?
+  `).bind(now + LEASE_MS, now).run();
+  return Number(result?.meta?.changes || 0) > 0;
+}
+
+export async function releaseReceiverBootstrapLease(env) {
+  await ensureScreenSchema(env);
+  await db(env).prepare('UPDATE receiver_bootstrap_lease SET expires_at=0 WHERE id=1').run();
 }
 
 async function loadScreenCandidates(env, limit) {
