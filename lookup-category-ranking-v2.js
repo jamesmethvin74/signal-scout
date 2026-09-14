@@ -14,7 +14,6 @@
   const INTERNATIONAL = /\bbbc\b|bbc world service|british broadcasting corporation|voice of america|\bvoa\b|usagm|radio free asia|radio free europe|radio liberty|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|kbs world|china radio international|rnz pacific|voice of turkey|international|world service/i;
   const STATE = /china radio international|voice of korea|radio pyongyang|radio havana|voice of america|\bvoa\b|radio romania international|radio exterior de españa|\bbbc\b|rnz pacific|radio france internationale|deutsche welle|voice of turkey|kbs world|nhk world|usagm|radio free/i;
   const RELIGIOUS = /relig|gospel|bible|catholic|christian|adventist|ministry|ministries|evangel|vatican|overcomer/i;
-  const MAJOR = /\bbbc\b|voice of america|\bvoa\b|usagm|kbs world|china radio international|radio exterior de españa|radio romania international|deutsche welle|radio france internationale|nhk world|rnz pacific|voice of turkey/i;
 
   const REGION_PATTERNS = [
     ['europe', /united kingdom|\buk\b|great britain|britain|england|scotland|wales|woofferton|skelton|germany|france|spain|portugal|romania|bulgaria|netherlands|holland|italy|vatican|austria|czech|slovak|poland|hungary|sweden|norway|finland|denmark|greece|serbia|croatia|slovenia|switzerland|belgium|albania|turkey|emirler/i],
@@ -128,40 +127,41 @@
     const txRegion = textRegion([entry.transmitter, entry.country, entry.origin].filter(Boolean).join(' '));
     const aimed = targetRegion(entry.target);
     const relayHint = /relay|woofferton|skelton/i.test(String(entry.transmitter || ''));
-    const haystack = text(entry);
+    const sameTxRegion = Boolean(txRegion && area && txRegion === area);
+    const differentTxRegion = Boolean(txRegion && area && txRegion !== area);
+    const sameTarget = Boolean(aimed && area && aimed === area);
+    const differentTarget = Boolean(aimed && area && aimed !== area);
 
     let score = 120 + (schedule?.active === true ? 520 : 100);
     if (exact) {
       score += path.score;
-      if (aimed && aimed === area) score += 220;
-      else if (aimed && area && aimed !== area) score += distance <= 700 ? -50 : -260;
+      if (sameTarget) score += 220;
+      else if (differentTarget) score += distance <= 700 ? -50 : -260;
     } else {
-      if (txRegion && txRegion === area) score += 390;
-      else if (txRegion && area && txRegion !== area) score -= 90;
-      else score -= 40;
+      if (sameTxRegion) score += 390;
+      else if (differentTxRegion) score -= 220;
+      else score -= 80;
 
-      if (relayHint && txRegion === area) score += 120;
-      if (aimed && aimed === area) score += 280;
-      else if (aimed && area && aimed !== area) score -= 260;
+      if (relayHint && sameTxRegion) score += 120;
+      if (sameTarget) score += 280;
+      else if (differentTarget) score -= 300;
     }
-
-    if (MAJOR.test(haystack)) score += 80;
-    if (key === 'news' && NEWS.test(haystack)) score += 70;
 
     let label = 'POSSIBLE';
     if (exact) {
       if (path.tier === 'regional') label = 'BEST BET';
       else if (path.tier === 'good') label = 'GOOD PATH';
       else if (path.tier === 'dx') label = 'DX TRY';
-    } else if (txRegion === area && (aimed === area || !aimed)) {
-      label = relayHint ? 'REGIONAL RELAY' : 'BEST BET';
-    } else if (txRegion === area) {
-      label = 'RELAY TRY';
-    } else if (aimed === area) {
+      else if (path.tier === 'long') label = 'LONG SHOT';
+    } else if (sameTxRegion && relayHint) {
+      label = 'REGIONAL RELAY';
+    } else if (sameTxRegion && sameTarget) {
+      label = 'BEST BET';
+    } else if (sameTxRegion) {
+      label = 'REGIONAL TRY';
+    } else if (sameTarget) {
       label = 'TARGETED HERE';
-    } else if (score >= 700) {
-      label = 'GOOD PATH';
-    } else if (score >= 480) {
+    } else if (differentTxRegion) {
       label = 'DX TRY';
     }
 
