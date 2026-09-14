@@ -12,13 +12,19 @@ import {
   runExploreBackfillCycle
 } from './receiver-health-backfill.js';
 import {
+  receiverScreenSummary,
+  runReceiverScreenCycle
+} from './receiver-health-screen.js';
+import {
   recentReceiverHealthRuns,
   recordReceiverHealthRun
 } from './receiver-health-runs.js';
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
-const RECEIVER_HEALTH_CRON = '*/15 * * * *';
-const WARMUP_TRUSTED_TARGET = 100;
+const RECEIVER_HEALTH_CRON = '* * * * *';
+const BOOTSTRAP_TRUSTED_TARGET = 125;
+const SCREEN_BATCH_SIZE = 18;
+const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
 
 function scheduledMinuteUtc(event) {
@@ -43,8 +49,8 @@ async function runReceiverHealthCron(event, env) {
   }
 
   const before = await receiverHealthSummary(env);
-  const warming = before.trustedReceivers < WARMUP_TRUSTED_TARGET;
-  if (!warming && scheduledMinuteUtc(event) !== MAINTENANCE_MINUTE_UTC) {
+  const bootstrapping = before.trustedReceivers < BOOTSTRAP_TRUSTED_TARGET;
+  if (!bootstrapping && scheduledMinuteUtc(event) !== MAINTENANCE_MINUTE_UTC) {
     return {
       mode: 'maintenance-skip',
       trustedReceivers: before.trustedReceivers,
@@ -54,9 +60,21 @@ async function runReceiverHealthCron(event, env) {
     };
   }
 
-  const backfill = await runExploreBackfillCycle(env, { limit: 10 });
+  const screening = await runReceiverScreenCycle(env, {
+    limit: SCREEN_BATCH_SIZE,
+    concurrency: 6
+  });
+  const backfill = await runExploreBackfillCycle(env, {
+    limit: FULL_PROOF_BATCH_SIZE,
+    screenedOnly: true
+  });
+
   return {
-    mode: warming ? 'warmup' : 'maintenance',
+    mode: bootstrapping ? 'bootstrap' : 'maintenance',
+    screened: screening.screenedNow,
+    screenReachable: screening.reachableNow,
+    screenUnreachable: screening.unreachableNow,
+    screenPending: screening.pending,
     tested: backfill.tested,
     successful: backfill.successful,
     promoted: backfill.promoted,
@@ -82,18 +100,27 @@ async function healthStatusResponse(request, env) {
   try {
     const payload = await response.clone().json();
     let recentRuns = [];
+    let bootstrap = null;
     try {
       recentRuns = await recentReceiverHealthRuns(env, 12);
     } catch (error) {
       console.warn('FREQBEACON receiver health history read failed', error?.message || error);
     }
+    try {
+      bootstrap = await receiverScreenSummary(env);
+    } catch (error) {
+      console.warn('FREQBEACON receiver bootstrap summary read failed', error?.message || error);
+    }
     payload.recentRuns = recentRuns;
     payload.lastRun = recentRuns[0] || null;
+    payload.bootstrap = bootstrap;
     payload.cadence = {
       directoryRefresh: 'every 6 hours',
-      warmup: `every 15 minutes until ${WARMUP_TRUSTED_TARGET} trusted receivers`,
-      maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after warmup`,
-      batchSize: 10
+      bootstrap: `every minute until ${BOOTSTRAP_TRUSTED_TARGET} trusted receivers`,
+      bootstrapScreenBatch: SCREEN_BATCH_SIZE,
+      bootstrapFullProofBatch: FULL_PROOF_BATCH_SIZE,
+      maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after bootstrap`,
+      strictPromotion: 'two successful real SND+W/F observations remain required'
     };
     const headers = new Headers(response.headers);
     return new Response(JSON.stringify(payload), {
