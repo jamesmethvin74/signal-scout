@@ -144,6 +144,18 @@
     })[char]);
   }
 
+  async function reportLiveFailure(title, detail) {
+    try {
+      await fetch('/api/explore/live-failure', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title, detail: String(detail || '').slice(0, 180) })
+      });
+    } catch {}
+  }
+
   async function handleFailure() {
     if (state.handling || state.switches >= MAX_SWITCHES) return;
     const title = message.querySelector('strong')?.textContent?.trim() || '';
@@ -156,6 +168,7 @@
     state.attempted.add(currentId);
 
     try {
+      await reportLiveFailure(title, detail);
       const response = await fetch('/api/explore/receivers', {
         cache: 'no-store',
         headers: { accept: 'application/geo+json,application/json' }
