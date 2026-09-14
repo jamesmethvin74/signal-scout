@@ -14,7 +14,10 @@
   }
 
   const receiverId = selectedReceiverId();
-  if (!receiverId) return;
+  if (!receiverId) {
+    window.FREQBEACON_RADIO_CONTEXT?.clearReceiver?.();
+    return;
+  }
 
   panel.hidden = false;
   panel.classList.add('is-loading');
@@ -34,6 +37,9 @@
       if (!feature) throw new Error('selected receiver is no longer trusted');
 
       const properties = feature.properties || {};
+      const coordinates = Array.isArray(feature.geometry?.coordinates) ? feature.geometry.coordinates : [];
+      const lon = Number(coordinates[0]);
+      const lat = Number(coordinates[1]);
       const name = String(properties.name || 'Trusted KiwiSDR');
       const place = String(properties.location || properties.country || receiverId);
       panel.classList.remove('is-loading', 'is-error');
@@ -41,8 +47,24 @@
       placeEl.textContent = place;
       panel.setAttribute('aria-label', `Remote receiver ${name}, ${place}`);
       if (identityEl) identityEl.textContent = `${name} · ${place}`.toUpperCase();
+
+      window.FREQBEACON_RADIO_CONTEXT?.update?.({
+        receiver: {
+          id: receiverId,
+          name,
+          location: place,
+          country: String(properties.country || ''),
+          receiverType: String(properties.receiverType || 'KiwiSDR'),
+          antenna: String(properties.antenna || ''),
+          lat: Number.isFinite(lat) ? lat : null,
+          lon: Number.isFinite(lon) ? lon : null,
+          trusted: true
+        },
+        receiverConfirmedAt: Date.now()
+      });
     })
     .catch(() => {
+      window.FREQBEACON_RADIO_CONTEXT?.clearReceiver?.();
       panel.classList.remove('is-loading');
       panel.classList.add('is-error');
       nameEl.textContent = 'REMOTE RECEIVER NEEDS RESELECTION';
