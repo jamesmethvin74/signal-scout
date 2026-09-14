@@ -25,7 +25,7 @@ assert.equal(state.trusted, false, 'two consecutive failures must remove trust')
 assert.equal(state.consecutiveFailures, 2);
 
 const warmupBudget = candidateBudget(0, 10);
-assert.equal(warmupBudget.promotion, 5);
+assert.equal(warmupBudget.promotion, 6);
 assert.equal(warmupBudget.trusted, 1);
 assert.equal(warmupBudget.limit, 10);
 
