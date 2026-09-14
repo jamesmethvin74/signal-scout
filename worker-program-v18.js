@@ -28,6 +28,8 @@ const BOOTSTRAP_TRUSTED_TARGET = 125;
 const SCREEN_BATCH_SIZE = 18;
 const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
+const TRUST_STALE_MS = 7 * 86400000;
+const DISCOVERY_STALE_MS = 14 * 86400000;
 const EXPLORE_VENDOR_PREFIX = '/_freqbeacon/explore/';
 const EXPLORE_VENDOR_ASSETS = Object.freeze({
   'd3.min.js': {
@@ -166,6 +168,60 @@ async function healthStatusResponse(request, env) {
   }
 }
 
+async function trustedReceiverFeedResponse(request, env) {
+  if (!env?.RECEIVER_HEALTH_DB) {
+    return new Response(JSON.stringify({ error: 'Trusted receiver database is unavailable' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+    });
+  }
+
+  try {
+    const now = Date.now();
+    const result = await env.RECEIVER_HEALTH_DB.prepare(`
+      SELECT id,name,location,country,lat,lon,receiver_type AS receiverType,antenna
+      FROM receivers
+      WHERE trusted=1 AND last_success_at>=? AND last_discovered_at>=?
+      ORDER BY country,location,name
+    `).bind(now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS).all();
+
+    const rows = result?.results || [];
+    const features = rows.map((receiver) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [receiver.lon, receiver.lat] },
+      properties: {
+        id: receiver.id,
+        name: receiver.name,
+        location: receiver.location,
+        country: receiver.country || '',
+        receiverType: receiver.receiverType || 'KiwiSDR',
+        antenna: receiver.antenna || '',
+        status: 'Healthy',
+        trusted: true
+      }
+    }));
+
+    const headers = {
+      'content-type': 'application/geo+json; charset=utf-8',
+      'cache-control': 'public, max-age=120, stale-while-revalidate=300'
+    };
+    if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+    return new Response(JSON.stringify({
+      type: 'FeatureCollection',
+      features,
+      count: features.length,
+      generatedAt: new Date().toISOString(),
+      policy: 'trusted-only'
+    }), { status: 200, headers });
+  } catch (error) {
+    console.warn('FREQBEACON trusted receiver feed query failed', error?.message || error);
+    return new Response(JSON.stringify({ error: 'Trusted receiver feed query failed' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+    });
+  }
+}
+
 async function explorePageResponse(request, env) {
   if (!env?.ASSETS) return null;
   const url = new URL(request.url);
@@ -266,6 +322,10 @@ export default {
     if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/explore' || url.pathname === '/explore/')) {
       const response = await explorePageResponse(request, env);
       if (response) return response;
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/explore/receivers') {
+      return trustedReceiverFeedResponse(request, env);
     }
 
     if (url.pathname === '/api/explore/status') {
