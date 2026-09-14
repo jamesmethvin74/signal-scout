@@ -204,6 +204,33 @@
     }
   }
 
+  function keepGlobeReceiverCardVisible() {
+    const card = document.getElementById('globeReceiverCard');
+    const scrollHost = document.querySelector('.fb-page-scroll');
+    if (!card || card.hidden || !scrollHost) return;
+
+    const cardRect = card.getBoundingClientRect();
+    const hostRect = scrollHost.getBoundingClientRect();
+    const gap = 12;
+    let delta = 0;
+
+    if (cardRect.bottom > hostRect.bottom - gap) {
+      delta = cardRect.bottom - (hostRect.bottom - gap);
+    } else if (cardRect.top < hostRect.top + gap) {
+      delta = cardRect.top - (hostRect.top + gap);
+    }
+
+    if (Math.abs(delta) < 1) return;
+    scrollHost.scrollBy({
+      top: delta,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    });
+  }
+
+  document.getElementById('receiverGlobe')?.addEventListener('pointerup', () => {
+    requestAnimationFrame(keepGlobeReceiverCardVisible);
+  });
+
   els.primary.addEventListener('click', () => {
     if (els.shell.classList.contains('is-network-error')) {
       loadLaunchpad();
