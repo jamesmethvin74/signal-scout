@@ -137,6 +137,7 @@ async function healthStatusResponse(request, env) {
       bootstrapScreenBatch: SCREEN_BATCH_SIZE,
       bootstrapFullProofBatch: FULL_PROOF_BATCH_SIZE,
       maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after bootstrap`,
+      maintenanceWork: 'trusted revalidation, promotion candidates, then screened reachable unqualified receivers',
       strictPromotion: 'two successful real SND+W/F observations remain required'
     };
     const headers = new Headers(response.headers);
@@ -150,9 +151,26 @@ async function healthStatusResponse(request, env) {
   }
 }
 
+async function explorePageResponse(request, env) {
+  if (!env?.ASSETS) return null;
+  const url = new URL(request.url);
+  url.pathname = '/explore.html';
+  url.search = '';
+  const assetRequest = new Request(url.toString(), {
+    method: request.method,
+    headers: request.headers
+  });
+  return env.ASSETS.fetch(assetRequest);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/explore' || url.pathname === '/explore/')) {
+      const response = await explorePageResponse(request, env);
+      if (response) return response;
+    }
 
     if (url.pathname === '/api/explore/status') {
       const statusResponse = await healthStatusResponse(request, env);
@@ -163,8 +181,8 @@ export default {
       return handleExploreApi(request, env);
     }
 
-    // This handoff is intentionally dormant until the approved globe UI ships.
-    // It only activates when a same-origin Explore selection cookie exists.
+    // Explore selects only an already-trusted receiver and hands it to the
+    // existing Zero endpoints. It does not participate in local reception scoring.
     if (url.pathname.startsWith('/api/zero/') && selectedExploreReceiverId(request)) {
       const exploreResponse = await handleExploreZeroRequest(request, env);
       if (exploreResponse) return exploreResponse;

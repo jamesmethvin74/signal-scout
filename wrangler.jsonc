@@ -29,6 +29,8 @@
       "/zero/",
       "/zero-bench",
       "/zero-bench/",
+      "/explore",
+      "/explore/",
       "/api/explore/*",
       "/api/sdr/*",
       "/api/program-guide",
