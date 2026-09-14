@@ -1,12 +1,13 @@
 (() => {
   'use strict';
 
-  // UI-only handoff from standalone Lookup into the existing qualified Zero
-  // control path. It never opens sockets, sends Kiwi commands, owns tuning state,
-  // or changes the SDR engine. It queues the target by invoking the same band
-  // button handler a human tap already uses.
+  // UI-only handoff from Lookup into the existing qualified Zero control path.
+  // It never opens sockets, sends Kiwi commands, owns tuning state, or changes
+  // the SDR engine. It queues the target by invoking the same band-button handler
+  // a human tap already uses.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('from') !== 'lookup') return;
+  const source = params.get('from');
+  if (source !== 'lookup' && source !== 'lookup-category') return;
 
   const targetKHz = Number(params.get('frequency') || params.get('freq'));
   const requestedMode = String(params.get('mode') || 'am').toLowerCase();
@@ -36,15 +37,23 @@
   if (originalMode == null) delete button.dataset.bandMode;
   else button.dataset.bandMode = originalMode;
 
-  // When Zero is still OFF, the shell queues a band target but its readout stays
-  // on the default 560 kHz until the receiver starts. Lookup must hand the chosen
-  // frequency into the visible radio immediately, so prime both the visible
-  // readout and the existing hidden frequency bridge after module startup.
+  // When Zero is still OFF, its normal qualified control path queues the target.
+  // Prime the visible/bridge values immediately so the selected Lookup frequency
+  // is visible before START, then the queued target is applied to the live Kiwi
+  // session when it opens.
   function primeLookupTarget() {
     const display = document.querySelector('#frequencyDisplay');
     const bridge = document.querySelector('#frequencyValue');
+    const modeButton = document.querySelector(`[data-shell-mode="${mode}"]`);
     if (display) display.textContent = targetKHz.toFixed(3);
-    if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(3);
+    if (bridge) bridge.textContent = (targetKHz / 1000).toFixed(6);
+    if (modeButton) {
+      document.querySelectorAll('[data-shell-mode]').forEach((peer) => {
+        const active = peer === modeButton;
+        peer.classList.toggle('active', active);
+        peer.setAttribute('aria-pressed', String(active));
+      });
+    }
   }
 
   primeLookupTarget();
@@ -55,10 +64,10 @@
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.style.cssText = [
-    'position:fixed', 'z-index:40', 'left:50%', 'bottom:max(14px,env(safe-area-inset-bottom))',
+    'position:fixed', 'z-index:40', 'left:50%', 'bottom:max(66px,calc(54px + env(safe-area-inset-bottom)))',
     'transform:translateX(-50%)', 'max-width:calc(100vw - 24px)', 'padding:9px 12px',
-    'border:1px solid rgba(69,221,236,.42)', 'border-radius:999px', 'background:rgba(4,12,16,.94)',
-    'color:#b9f8ff', 'box-shadow:0 10px 28px rgba(0,0,0,.34),0 0 18px rgba(69,221,236,.08)',
+    'border:1px solid rgba(245,189,105,.5)', 'border-radius:999px', 'background:rgba(12,10,7,.95)',
+    'color:#ffe0a5', 'box-shadow:0 10px 28px rgba(0,0,0,.34),0 0 18px rgba(245,189,105,.08)',
     'font:800 9px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace', 'letter-spacing:.06em',
     'text-align:center', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis', 'pointer-events:none'
   ].join(';');
