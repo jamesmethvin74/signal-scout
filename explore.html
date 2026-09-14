@@ -9,10 +9,11 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/explore-page.css?v=3">
+  <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=1">
   <title>Explore — FREQBEACON Zero</title>
 </head>
 <body>
-  <main class="explore-app">
+  <main class="explore-app has-fb-bottom-nav">
     <header class="explore-header">
       <div class="explore-brandline">
         <strong>FREQBEACON <span>Zero</span></strong>
@@ -104,16 +105,16 @@
       <div class="receiver-list" id="receiverList" role="listbox" aria-label="Trusted receivers"></div>
     </section>
 
-    <nav class="explore-bottom-nav" aria-label="Primary">
-      <a class="explore-nav-item" href="/zero" aria-label="Radio">
+    <nav class="fb-bottom-nav" aria-label="Primary">
+      <a class="fb-nav-item" href="/zero" aria-label="Radio">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M8.5 7.5a6 6 0 0 0 0 9M15.5 7.5a6 6 0 0 1 0 9M5.5 5a10 10 0 0 0 0 14M18.5 5a10 10 0 0 1 0 14"/></svg>
         <span>Radio</span>
       </a>
-      <a class="explore-nav-item active" href="/explore" aria-current="page" aria-label="Explore">
+      <a class="fb-nav-item active" href="/explore" aria-current="page" aria-label="Explore">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/></svg>
         <span>Explore</span>
       </a>
-      <a class="explore-nav-item" href="/lookup.html" aria-label="Lookup">
+      <a class="fb-nav-item" href="/lookup.html" aria-label="Lookup">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
         <span>Lookup</span>
       </a>
