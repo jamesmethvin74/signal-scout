@@ -21,7 +21,7 @@ try {
   response = await fetch(STATUS_URL, {
     headers: {
       accept: 'application/json',
-      'user-agent': 'FREQBEACON-CLOUDFLARE-STATUS-TIMING/1.0'
+      'user-agent': 'FREQBEACON-CLOUDFLARE-STATUS-TIMING/2.0'
     },
     signal: controller.signal
   });
@@ -37,5 +37,5 @@ if (!Number.isInteger(trusted) || trusted < 0 || trusted > MAX_TRUSTED) {
   throw new Error('trusted receiver count outside diagnostic range');
 }
 
-await new Promise((resolve) => setTimeout(resolve, trusted * 1000));
+await new Promise((resolve) => setTimeout(resolve, trusted * 3000));
 throw new Error('intentional diagnostic completion after trusted-count delay');
