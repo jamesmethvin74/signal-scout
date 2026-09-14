@@ -28,6 +28,7 @@ const BOOTSTRAP_TRUSTED_TARGET = 125;
 const SCREEN_BATCH_SIZE = 18;
 const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
+const TEMP_BOOTSTRAP_PATH = '/api/explore/bootstrap-once-7a4e3f2d';
 
 function scheduledMinuteUtc(event) {
   const time = Number(event?.scheduledTime);
@@ -153,6 +154,38 @@ async function healthStatusResponse(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === TEMP_BOOTSTRAP_PATH) {
+      const runAt = Date.now();
+      ctx.waitUntil((async () => {
+        try {
+          const result = await runReceiverHealthCron({
+            cron: RECEIVER_HEALTH_CRON,
+            scheduledTime: runAt
+          }, env);
+          await persistHealthRun(env, {
+            ...result,
+            runAt,
+            durationMs: Date.now() - runAt
+          });
+          console.log('FREQBEACON temporary bootstrap trigger', JSON.stringify(result));
+        } catch (error) {
+          await persistHealthRun(env, {
+            mode: 'error',
+            runAt,
+            durationMs: Date.now() - runAt,
+            error: error?.message || error
+          });
+          console.warn('FREQBEACON temporary bootstrap trigger failed', error?.message || error);
+        }
+      })());
+      return new Response(JSON.stringify({ ok: true, startedAt: runAt }), {
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store'
+        }
+      });
+    }
 
     if (url.pathname === '/api/explore/status') {
       const statusResponse = await healthStatusResponse(request, env);
