@@ -2,7 +2,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v18.js",
+  "main": "worker-program-v19.js",
   "preview_urls": true,
   "routes": [
     { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
