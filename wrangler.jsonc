@@ -15,7 +15,9 @@
   },
   "d1_databases": [
     {
-      "binding": "RECEIVER_HEALTH_DB"
+      "binding": "RECEIVER_HEALTH_DB",
+      "database_name": "signal-scout-receiver-health-db",
+      "database_id": "102d942c-4e00-4aa9-9213-86bec45bac8e"
     }
   ],
   "assets": {
