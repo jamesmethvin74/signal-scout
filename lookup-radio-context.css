@@ -58,7 +58,9 @@
 .lookup-radio-context.is-missing .lookup-radio-health { display: none; }
 .lookup-radio-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
 }
 .lookup-radio-change {
@@ -73,6 +75,10 @@
   background: linear-gradient(180deg, #241d13, #15110c);
   font: 850 8px/1 "Roboto Mono", "SFMono-Regular", Consolas, monospace;
   letter-spacing: .08em;
+  text-decoration: none;
+}
+.lookup-form.is-radio-bound {
+  grid-template-columns: minmax(0,1fr) minmax(92px,132px);
 }
 .lookup-form.is-radio-bound .lookup-input-shell { opacity: .92; }
 .lookup-form.is-radio-bound #lookupFrequency {
@@ -80,6 +86,7 @@
   caret-color: transparent;
 }
 .lookup-form.is-radio-bound .lookup-submit { min-width: 92px; }
+.lookup-form.is-radio-bound .lookup-submit:disabled { opacity: .48; cursor: default; }
 .lookup-mode-chip {
   display: inline-flex;
   align-items: center;
@@ -96,4 +103,6 @@
 @media (max-width: 440px) {
   .lookup-radio-context { grid-template-columns: minmax(0,1fr); }
   .lookup-radio-health { justify-self: start; }
+  .lookup-form.is-radio-bound { grid-template-columns: minmax(0,1fr) 88px; }
+  .lookup-form.is-radio-bound .lookup-submit { min-width: 0; }
 }
