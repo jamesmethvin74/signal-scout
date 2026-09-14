@@ -12,6 +12,9 @@ assert.match(worker, /BOOTSTRAP_TRUSTED_TARGET = 125/);
 assert.match(worker, /SCREEN_BATCH_SIZE = 18/);
 assert.match(worker, /FULL_PROOF_BATCH_SIZE = 10/);
 assert.match(worker, /MAINTENANCE_MINUTE_UTC = 45/);
+assert.match(worker, /acquireReceiverBootstrapLease/);
+assert.match(worker, /releaseReceiverBootstrapLease/);
+assert.match(worker, /mode: 'overlap-skip'/);
 assert.match(worker, /runReceiverScreenCycle/);
 assert.match(worker, /receiverScreenSummary/);
 assert.match(worker, /screenedOnly: true/);
@@ -37,7 +40,9 @@ const screen = await readFile(new URL('../receiver-health-screen.js', import.met
 assert.match(screen, /SCREEN_BATCH_SIZE = 18/);
 assert.match(screen, /SCREEN_CONCURRENCY = 6/);
 assert.match(screen, /SCREEN_TIMEOUT_MS = 2500/);
+assert.match(screen, /LEASE_MS = 3 \* 60 \* 1000/);
 assert.match(screen, /CREATE TABLE IF NOT EXISTS receiver_screening/);
+assert.match(screen, /CREATE TABLE IF NOT EXISTS receiver_bootstrap_lease/);
 assert.match(screen, /\/VER/);
 assert.match(screen, /observations=0/);
 
