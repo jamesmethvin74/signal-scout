@@ -8,36 +8,57 @@
 }
 
 /*
- * App-shell rule: the page scrollport ends above the persistent navigation.
- * This prevents radio controls, receiver details, lookup results, and future
- * page content from ever becoming trapped underneath the fixed nav.
+ * Shared app shell: page content and navigation occupy separate grid rows.
+ * Nothing can render or scroll underneath the bottom navigation.
  */
+html,
+body {
+  height: 100%;
+  overflow: hidden !important;
+}
+
+body {
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+}
+
 .has-fb-bottom-nav {
-  --fb-nav-max-width: 860px;
-  height: calc(100vh - var(--fb-nav-height) - env(safe-area-inset-bottom));
-  height: calc(100dvh - var(--fb-nav-height) - env(safe-area-inset-bottom));
+  height: 100vh;
+  height: 100dvh;
   min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.fb-page-scroll {
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  scroll-padding-bottom: 22px;
-  padding-bottom: 22px !important;
+  scroll-padding-bottom: 20px;
 }
 
-.zero-radio.has-fb-bottom-nav {
-  --fb-nav-max-width: 720px;
+.zero-radio > .fb-page-scroll,
+.lookup-app > .fb-page-scroll {
+  padding: max(10px, env(safe-area-inset-top)) 10px 20px;
+}
+
+.explore-app > .fb-page-scroll {
+  padding: env(safe-area-inset-top) 0 20px;
 }
 
 .fb-bottom-nav {
-  position: fixed;
+  position: relative;
   z-index: 100;
-  left: 50%;
-  bottom: 0;
-  width: min(100%, var(--fb-nav-max-width));
+  left: auto;
+  bottom: auto;
+  width: 100%;
   min-height: calc(var(--fb-nav-height) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
-  transform: translateX(-50%);
+  transform: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid var(--fb-nav-line);
@@ -91,4 +112,10 @@
 .fb-nav-item:focus-visible {
   outline: 2px solid rgba(255,200,100,.65);
   outline-offset: -3px;
+}
+
+@media (min-width: 720px) {
+  .explore-app > .fb-page-scroll {
+    padding-inline: 22px;
+  }
 }
