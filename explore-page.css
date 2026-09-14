@@ -101,7 +101,7 @@ a { color: inherit; text-decoration: none; }
 #receiverGlobe.is-dragging { cursor: grabbing; }
 .globe-controls {
   position: absolute;
-  z-index: 3;
+  z-index: 6;
   top: 10px;
   right: 10px;
   display: grid;
@@ -131,10 +131,97 @@ a { color: inherit; text-decoration: none; }
 .globe-controls button:last-child { border-bottom: 0; }
 .globe-controls button:active { background: rgba(255,200,100,.12); color: var(--amber); }
 .globe-controls button:disabled { color: #465157; cursor: default; opacity: .58; }
+
+.globe-receiver-card {
+  position: absolute;
+  z-index: 7;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 12px 12px 11px;
+  border: 1px solid rgba(255,200,100,.68);
+  border-left: 3px solid var(--amber);
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(18,20,18,.98), rgba(7,11,13,.97));
+  box-shadow: 0 12px 30px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(10px);
+  touch-action: manipulation;
+}
+.globe-receiver-card[hidden] { display: none; }
+.globe-card-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,.035);
+  color: #89969a;
+  font: 400 22px/1 var(--sans);
+  cursor: pointer;
+}
+.globe-card-close:active { background: rgba(255,200,100,.12); color: var(--amber); }
+.globe-card-health { display: flex; align-items: center; gap: 6px; padding-right: 36px; color: var(--green); font: 850 7px/1 var(--mono); letter-spacing: .11em; }
+.globe-card-health i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px rgba(85,217,135,.62); }
+.globe-receiver-card > strong {
+  display: block;
+  margin-top: 8px;
+  padding-right: 28px;
+  color: #eef1ee;
+  font-size: 14px;
+  line-height: 1.22;
+  font-weight: 820;
+  overflow-wrap: anywhere;
+}
+.globe-card-location {
+  display: block;
+  margin-top: 5px;
+  color: #95a1a5;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.globe-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin-top: 9px;
+  overflow: hidden;
+  border: 1px solid #26343a;
+  border-radius: 6px;
+  background: #26343a;
+}
+.globe-card-meta > span { min-width: 0; padding: 7px 8px; background: rgba(6,10,12,.94); }
+.globe-card-meta b, .globe-card-meta em { display: block; }
+.globe-card-meta b { margin-bottom: 4px; color: #637178; font: 800 6px/1 var(--mono); letter-spacing: .12em; }
+.globe-card-meta em { color: #b5bec0; font: 750 8px/1.25 var(--mono); font-style: normal; overflow-wrap: anywhere; }
+.globe-card-open {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 9px;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  border: 1px solid #806536;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #3d301c, #21190f);
+  color: var(--amber);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
+  touch-action: manipulation;
+}
+.globe-card-open span { font: 900 10px/1 var(--mono); letter-spacing: .11em; }
+.globe-card-open small { color: #aa8c56; font-size: 7px; }
+.globe-card-open:active { transform: translateY(1px); }
+
 .globe-loading {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 8;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -340,6 +427,7 @@ a { color: inherit; text-decoration: none; }
   .receiver-panel { margin-bottom: 18px; }
   .region-filters { grid-template-columns: repeat(7, 1fr); }
   .receiver-list { max-height: 285px; }
+  .globe-receiver-card { left: 16px; right: 16px; bottom: 16px; max-width: 430px; margin: 0 auto; }
 }
 
 @media (max-width: 440px) {
@@ -354,6 +442,7 @@ a { color: inherit; text-decoration: none; }
   .region-filters { grid-template-columns: repeat(3, minmax(0,1fr)); }
   .filter-heading small { display: none; }
   .globe-controls { top: 8px; right: 8px; }
+  .globe-receiver-card { left: 8px; right: 8px; bottom: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
