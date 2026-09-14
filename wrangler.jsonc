@@ -8,7 +8,10 @@
     { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
   ],
   "triggers": {
-    "crons": ["17 */6 * * *"]
+    "crons": [
+      "17 */6 * * *",
+      "43 * * * *"
+    ]
   },
   "d1_databases": [
     {
