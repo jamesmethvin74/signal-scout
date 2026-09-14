@@ -5,6 +5,14 @@ import {
   runExploreHealthCycle,
   selectedExploreReceiverId
 } from './receiver-health-d1.js';
+import {
+  handleExploreHealthStatus,
+  receiverInventoryReady,
+  runExploreBackfillCycle
+} from './receiver-health-backfill.js';
+
+const PROGRAM_REFRESH_CRON = '17 */6 * * *';
+const RECEIVER_HEALTH_CRON = '43 * * * *';
 
 function injectExploreNav(response) {
   const contentType = String(response.headers.get('content-type') || '');
@@ -25,9 +33,39 @@ function injectExploreNav(response) {
   });
 }
 
+async function runReceiverHealthCron(env) {
+  const inventoryReady = await receiverInventoryReady(env);
+  if (!inventoryReady) {
+    const seeded = await runExploreHealthCycle(env);
+    return {
+      mode: 'seed',
+      discovered: seeded.discovered,
+      tested: seeded.tested
+    };
+  }
+
+  const backfill = await runExploreBackfillCycle(env, { limit: 10 });
+  return {
+    mode: 'backfill',
+    tested: backfill.tested,
+    successful: backfill.successful,
+    promoted: backfill.promoted,
+    demoted: backfill.demoted,
+    trustedReceivers: backfill.trustedReceivers,
+    inventory: backfill.inventory,
+    untested: backfill.untested,
+    promotionQueue: backfill.promotionQueue
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/api/explore/status') {
+      const statusResponse = await handleExploreHealthStatus(request, env);
+      if (statusResponse) return statusResponse;
+    }
 
     if (url.pathname.startsWith('/api/explore/')) {
       return handleExploreApi(request, env);
@@ -51,15 +89,26 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    if (typeof baseWorker.scheduled === 'function') {
+    const cron = String(event?.cron || '');
+
+    if (cron !== RECEIVER_HEALTH_CRON && typeof baseWorker.scheduled === 'function') {
       await baseWorker.scheduled(event, env, ctx);
     }
+
     try {
-      const result = await runExploreHealthCycle(env);
-      console.log('FREQBEACON explore health cycle', JSON.stringify({
-        discovered: result.discovered,
-        tested: result.tested
-      }));
+      if (cron === RECEIVER_HEALTH_CRON) {
+        const result = await runReceiverHealthCron(env);
+        console.log('FREQBEACON receiver health backfill', JSON.stringify(result));
+        return;
+      }
+
+      if (cron === PROGRAM_REFRESH_CRON || !cron) {
+        const result = await runExploreHealthCycle(env);
+        console.log('FREQBEACON receiver directory refresh', JSON.stringify({
+          discovered: result.discovered,
+          tested: result.tested
+        }));
+      }
     } catch (error) {
       // Explore health is additive background work. It must never interrupt
       // FREQBEACON's existing scheduled program/schedule refresh duties.
