@@ -15,8 +15,7 @@ const report = [
 writeFileSync('terrestrial-build-probe.txt', report, 'utf8');
 console.log(report);
 
-// Temporary diagnostic classifier. Cloudflare's GitHub check does not expose
-// build stdout/stderr, so classify the already-captured generator error via the
-// check result. Final branch deletes this probe and restores fail-closed build.
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
-process.exitCode = /Ofcom/i.test(text) ? 1 : 0;
+// Temporary binary classifier for the already-captured Ofcom failure.
+// Failure here means the root cause is source-header / EMRP schema handling.
+process.exitCode = /missing required header|missing In-use EMRP|EMRP unit|EMRP header/i.test(text) ? 1 : 0;
