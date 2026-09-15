@@ -50,8 +50,8 @@
   }
 
   function validReceiver(receiver, selectedId) {
-    if (!receiver || typeof receiver !== 'object') return null;
-    if (selectedId && String(receiver.id || '') !== selectedId) return null;
+    if (!selectedId || !receiver || typeof receiver !== 'object') return null;
+    if (String(receiver.id || '') !== selectedId) return null;
 
     const lat = Number(receiver.lat);
     const lon = Number(receiver.lon);
@@ -63,6 +63,7 @@
 
   function selectedReceiverContext() {
     const selectedId = selectedReceiverId();
+    if (!selectedId) return null;
 
     const live = validReceiver(window.FREQBEACON_RADIO_CONTEXT?.read?.()?.receiver, selectedId);
     if (live) return live;
