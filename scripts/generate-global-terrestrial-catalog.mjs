@@ -18,11 +18,30 @@ const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
 const COUNTRY_URL = `https://raw.githubusercontent.com/google/dspl/${COUNTRY_COMMIT}/samples/google/canonical/countries.csv`;
 const CANADIAN_PROVINCES = new Set(['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT']);
 const UTILITY_RE = /\b(?:ndb|beacon|navtex|navigation|aero|aviation|marine|maritime|coast guard|weather fax|\bfax\b|rtty|time signal|standard frequency)\b/i;
+const FETCH_ATTEMPTS = 3;
+const FETCH_TIMEOUT_MS = 30000;
+const RETRYABLE_HTTP = new Set([408,425,429,500,502,503,504]);
 
 async function fetchBuffer(url,label){
-  const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},signal:AbortSignal.timeout(60000)});
-  if(!r.ok) throw new Error(`${label} fetch failed: ${r.status} ${r.statusText}`);
-  return Buffer.from(await r.arrayBuffer());
+  let lastError=null;
+  for(let attempt=1;attempt<=FETCH_ATTEMPTS;attempt+=1){
+    try{
+      const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},signal:AbortSignal.timeout(FETCH_TIMEOUT_MS)});
+      if(!r.ok){
+        const error=new Error(`${label} fetch failed: ${r.status} ${r.statusText}`);
+        if(!RETRYABLE_HTTP.has(r.status)){ error.nonRetryable=true; throw error; }
+        lastError=error;
+      }else{
+        return Buffer.from(await r.arrayBuffer());
+      }
+    }catch(error){
+      if(error?.nonRetryable) throw error;
+      lastError=error;
+    }
+    if(attempt<FETCH_ATTEMPTS) await new Promise(resolve=>setTimeout(resolve,500*attempt));
+  }
+  const detail=lastError instanceof Error?`${lastError.name}: ${lastError.message}`:String(lastError||'unknown error');
+  throw new Error(`${label} fetch failed after ${FETCH_ATTEMPTS} attempts: ${detail}`);
 }
 async function fetchText(url,label){ return (await fetchBuffer(url,label)).toString('utf8').replace(/^\uFEFF/,''); }
 function validCoord(lat,lon){ return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180; }
