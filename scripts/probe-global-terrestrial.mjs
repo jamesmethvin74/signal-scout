@@ -16,5 +16,7 @@ writeFileSync('terrestrial-build-probe.txt', report, 'utf8');
 console.log(report);
 
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
-// Temporary classifier: failure means Ofcom parsed but the selected marker is stale/mismatched.
-process.exitCode = /Ofcom marker missing|marker missing.*Ofcom/i.test(text) ? 1 : 0;
+const match = text.match(/UK\/Ofcom catalog:\s*(\d+) records/i);
+const count = match ? Number(match[1]) : -1;
+// Temporary classifier: failure means the current parsed Ofcom count is >= 25.
+process.exitCode = count >= 25 ? 1 : 0;
