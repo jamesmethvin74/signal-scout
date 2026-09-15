@@ -19,6 +19,8 @@ const ca=normalizeISED(dbf); assert.equal(ca.length,1); assert.equal(ca[0].calls
 
 const ukCsv='Station,Area,Site,Frequency (kHz),OS National Grid Reference,In-use EMRP (kW),Licensed EMRP (kW),Date\nRadio Caroline,Suffolk,Orfordness,648,TM450494,4,4,2026-01-01\n';
 const uk=normalizeOfcom(ukCsv); assert.equal(uk.length,1); assert.equal(uk[0].powerW,4000); assert.equal(uk[0].frequencyKHz,648); assert.ok(uk[0].lat>49&&uk[0].lat<61);
+const ukCurrentCsv='Station,Area,Site,Frequency,OS National Grid Reference,In-use EMRP,Licensed EMRP,Date\nRadio Caroline,Suffolk,Orfordness,648,TM 450 494,4 kW,4 kW,2026-08-05\n';
+const ukCurrent=normalizeOfcom(ukCurrentCsv); assert.equal(ukCurrent.length,1); assert.equal(ukCurrent[0].powerW,4000); assert.equal(ukCurrent[0].frequencyKHz,648); assert.ok(ukCurrent[0].lat>49&&ukCurrent[0].lat<61);
 
 const auRows=[['Broadcast AM transmitter data'],['Callsign','Frequency (kHz)','Purpose','Service Area','Transmitter Site','Latitude','Longitude','Maximum ERP (W)','Licence Number'],['2GB','873','Commercial','Sydney','Homebush','-33 50 22','151 3 46','8000','1385019']];
 const au=normalizeACMARows(auRows); assert.equal(au.length,1); assert.equal(au[0].callsign,'2GB'); assert.equal(au[0].powerW,8000); assert.ok(au[0].lat<0&&au[0].lon>0);
