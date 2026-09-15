@@ -6,6 +6,6 @@ const result = spawnSync(process.execPath, ['scripts/generate-global-terrestrial
 });
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
 console.log(text);
-// Temporary classifier: fail Cloudflare only when the live generator is still
-// below the Ofcom minimum-count guard. Final branch deletes this file.
-process.exitCode = /Refusing suspicious UK\/Ofcom catalog:/i.test(text) ? 1 : 0;
+// Temporary classifier: fail Cloudflare only when current Ofcom rows pass the
+// count floor but the Radio Caroline 648 marker is missing. Final branch deletes this file.
+process.exitCode = /Ofcom marker missing:/i.test(text) ? 1 : 0;
