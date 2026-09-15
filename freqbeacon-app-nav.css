@@ -123,10 +123,10 @@ body {
 }
 
 /* Zero intentionally keeps its instrument panel non-scrolling on phones. Its
- * later viewport stylesheet sets overflow-y:hidden; reserve the fixed nav here
- * so the receiver strip and controls still finish above the bar. */
+ * later viewport stylesheet sets compact padding; keep this bottom reservation
+ * authoritative so the receiver strip and controls finish above the fixed bar. */
 .zero-radio > .fb-page-scroll {
-  padding-bottom: calc(var(--fb-nav-reserved-height) + 3px);
+  padding-bottom: calc(var(--fb-nav-reserved-height) + 3px) !important;
 }
 
 @media (min-width: 720px) {
