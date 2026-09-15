@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 const source = process.env.PROBE_SOURCE || 'ISED';
 const urls = {
   ISED: 'https://www.ic.gc.ca/engineering/BC_DBF_FILES/baserad.zip',
@@ -6,6 +8,7 @@ const urls = {
 };
 const url = urls[source];
 if(!url) throw new Error(`Unknown probe source ${source}`);
+let detail='';
 try{
   const headers = source === 'OFCOM'
     ? {
@@ -15,10 +18,10 @@ try{
       }
     : {'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'};
   const r = await fetch(url,{redirect:'follow',headers,signal:AbortSignal.timeout(20000)});
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   const bytes = Buffer.from(await r.arrayBuffer()).length;
-  console.log(`${source} fetch ok: ${bytes} bytes`);
+  detail = `${source}\nurl=${url}\nstatus=${r.status} ${r.statusText}\nfinalUrl=${r.url}\nbytes=${bytes}\ncontentType=${r.headers.get('content-type')||''}\nserver=${r.headers.get('server')||''}\n`;
 }catch(error){
-  console.error(`${source} fetch failed: ${error?.name||'Error'}: ${error?.message||error}`);
-  process.exitCode=1;
+  detail = `${source}\nurl=${url}\nerrorName=${error?.name||'Error'}\nerrorMessage=${error?.message||error}\ncauseCode=${error?.cause?.code||''}\ncauseMessage=${error?.cause?.message||''}\n`;
 }
+await writeFile('terrestrial-source-probe.txt',detail,'utf8');
+console.log(detail);
