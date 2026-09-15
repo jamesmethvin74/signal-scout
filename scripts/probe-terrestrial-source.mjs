@@ -1,24 +1,22 @@
-const paths = [
-  'https://ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471',
-  'http://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471',
-  'http://ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471'
-];
-let lastError;
-for (const url of paths) {
-  try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      headers: {'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    const text = await response.text();
-    if (text.length < 10000 || !/Radio Caroline/i.test(text)) throw new Error(`suspicious response: ${text.length} chars`);
-    console.log(`Ofcom alternate official route reachable: ${url} -> ${response.url}; ${text.length} chars`);
-    process.exit(0);
-  } catch (error) {
-    lastError = error;
-    console.error(`route failed ${url}: ${error?.message || error}`);
+import { normalizeOfcom } from './generate-global-terrestrial-catalog.mjs';
+
+const official = 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471';
+const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(official)}`;
+try {
+  const response = await fetch(proxy, {
+    redirect: 'follow',
+    headers: {'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`AllOrigins transport failed: ${response.status} ${response.statusText}`);
+  const csv = (await response.text()).replace(/^\uFEFF/, '');
+  const entries = normalizeOfcom(csv);
+  if (entries.length < 50) throw new Error(`Ofcom proxy parser returned only ${entries.length} records`);
+  if (!entries.some((e) => Math.abs(e.frequencyKHz - 648) < 0.1 && /Radio Caroline/i.test(e.name || ''))) {
+    throw new Error('Ofcom proxy Radio Caroline 648 marker missing');
   }
+  console.log(`Ofcom via AllOrigins validated: ${entries.length} records`);
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
 }
-throw lastError || new Error('No Ofcom route succeeded');
