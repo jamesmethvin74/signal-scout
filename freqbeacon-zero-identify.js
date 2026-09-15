@@ -10,6 +10,7 @@
   const frequencyUnit = document.querySelector('#frequencyUnit');
   const frequencyBridge = document.querySelector('#frequencyValue');
   const receiverIdentity = document.querySelector('#receiverIdentity');
+  const RECEIVER_SNAPSHOT_KEY = 'freqbeacon:explore-receiver-snapshot:v1';
 
   if (!engine || !readout || !frequencyDisplay) return;
 
@@ -40,6 +41,48 @@
     }
     const bridgeMHz = Number(frequencyBridge?.textContent);
     return Number.isFinite(bridgeMHz) && bridgeMHz > 0 ? bridgeMHz * 1000 : NaN;
+  }
+
+  function selectedReceiverId() {
+    const match = document.cookie.match(/(?:^|;\s*)fb_explore_receiver=([^;]+)/);
+    if (!match) return '';
+    try { return decodeURIComponent(match[1]); } catch { return ''; }
+  }
+
+  function validReceiver(receiver, selectedId) {
+    if (!selectedId || !receiver || typeof receiver !== 'object') return null;
+    if (String(receiver.id || '') !== selectedId) return null;
+
+    const lat = Number(receiver.lat);
+    const lon = Number(receiver.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+
+    return { ...receiver, lat, lon };
+  }
+
+  function selectedReceiverContext() {
+    const selectedId = selectedReceiverId();
+    if (!selectedId) return null;
+
+    const live = validReceiver(window.FREQBEACON_RADIO_CONTEXT?.read?.()?.receiver, selectedId);
+    if (live) return live;
+
+    try {
+      const snapshot = JSON.parse(localStorage.getItem(RECEIVER_SNAPSHOT_KEY) || 'null');
+      return validReceiver(snapshot, selectedId);
+    } catch {
+      return null;
+    }
+  }
+
+  function identificationOptions() {
+    const options = {
+      receiverIdentity: String(receiverIdentity?.textContent || '').trim()
+    };
+    const receiver = selectedReceiverContext();
+    if (receiver) options.receiver = receiver;
+    return options;
   }
 
   function scheduleLabel(entry, schedule) {
@@ -150,7 +193,7 @@
     if (!backdrop) createUi();
     const kHz = tunedKHz();
     if (!Number.isFinite(kHz)) return;
-    const options = { receiverIdentity: String(receiverIdentity?.textContent || '').trim() };
+    const options = identificationOptions();
     const token = ++lookupToken;
 
     // Open immediately from the in-memory catalog; a static A26 shard may then
