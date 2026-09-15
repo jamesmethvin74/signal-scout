@@ -1,7 +1,7 @@
 const source = process.env.PROBE_SOURCE || 'ISED';
 const urls = {
   ISED: 'https://www.ic.gc.ca/engineering/BC_DBF_FILES/baserad.zip',
-  OFCOM: 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471',
+  OFCOM: 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv',
   ACMA: 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip'
 };
 const url = urls[source];
