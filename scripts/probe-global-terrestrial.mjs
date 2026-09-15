@@ -19,4 +19,4 @@ console.log(report);
 // build stdout/stderr, so classify the already-captured generator error via the
 // check result. Final branch deletes this probe and restores fail-closed build.
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
-process.exitCode = /ACMA/i.test(text) ? 1 : 0;
+process.exitCode = /Ofcom/i.test(text) ? 1 : 0;
