@@ -35,7 +35,23 @@
       padding: 3px 0 !important;
     }
     .zero-zoom-controls [data-zero-zoom="-1"] { order: 3; }
-    .band-rail { justify-content: safe center; }
+    .band-rail {
+      grid-template-rows: repeat(2, 40px) !important;
+      grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+      grid-auto-flow: column !important;
+      grid-auto-columns: unset !important;
+      justify-content: stretch !important;
+      overflow-x: hidden !important;
+      gap: 3px !important;
+      padding: 5px !important;
+    }
+    .band-rail button {
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: 40px !important;
+      padding: 0 4px !important;
+      font-size: clamp(11px, 2.7vw, 15px) !important;
+    }
   </style>
 </head>
 <body>
