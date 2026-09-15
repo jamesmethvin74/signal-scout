@@ -5,10 +5,7 @@
   // qualified Zero dial. It expresses viewport follow as the same pointer
   // gestures the qualified direct-manipulation layer already understands.
   const FULL_BAND_KHZ = 30000;
-  const SPAN_KHZ = FULL_BAND_KHZ / (2 ** 8);
-  const HALF_SPAN_KHZ = SPAN_KHZ / 2;
-  const MIN_CENTER_KHZ = HALF_SPAN_KHZ;
-  const MAX_CENTER_KHZ = FULL_BAND_KHZ - HALF_SPAN_KHZ;
+  const DEFAULT_SPAN_KHZ = FULL_BAND_KHZ / (2 ** 8);
   const FOLLOW_LEFT = 0.20;
   const FOLLOW_RIGHT = 0.80;
   const EPSILON_KHZ = 0.05;
@@ -26,6 +23,12 @@
 
   let recentering = false;
   let pointerSequence = 9400;
+  let viewportSpanKHz = DEFAULT_SPAN_KHZ;
+
+  window.addEventListener('freqbeacon:zero-zoom', (event) => {
+    const nextSpan = Number(event.detail?.spanKHz);
+    if (Number.isFinite(nextSpan) && nextSpan > 0) viewportSpanKHz = nextSpan;
+  });
 
   function running() {
     return power?.getAttribute('aria-pressed') === 'true';
@@ -43,11 +46,12 @@
   }
 
   function clampCenter(value) {
-    return Math.max(MIN_CENTER_KHZ, Math.min(MAX_CENTER_KHZ, value));
+    const halfSpan = viewportSpanKHz / 2;
+    return Math.max(halfSpan, Math.min(FULL_BAND_KHZ - halfSpan, value));
   }
 
   function ratioFor(tuned, center) {
-    return (tuned - (center - HALF_SPAN_KHZ)) / SPAN_KHZ;
+    return (tuned - (center - viewportSpanKHz / 2)) / viewportSpanKHz;
   }
 
   function nextPointerId() {
@@ -90,7 +94,7 @@
     let startX = Math.abs(leftStart - cursorX) > Math.abs(rightStart - cursorX) ? leftStart : rightStart;
     if (Math.abs(startX - cursorX) <= 34) startX = cursorX < rect.left + rect.width / 2 ? rightStart : leftStart;
 
-    const finalDx = -(deltaKHz / SPAN_KHZ) * rect.width;
+    const finalDx = -(deltaKHz / viewportSpanKHz) * rect.width;
     const endX = startX + finalDx;
     const pointerId = nextPointerId();
 
@@ -106,8 +110,8 @@
 
     const rect = canvas.getBoundingClientRect();
     if (!rect.width) return false;
-    const left = currentCenter - HALF_SPAN_KHZ;
-    const targetRatio = Math.max(0, Math.min(1, (targetKHz - left) / SPAN_KHZ));
+    const left = currentCenter - viewportSpanKHz / 2;
+    const targetRatio = Math.max(0, Math.min(1, (targetKHz - left) / viewportSpanKHz));
     const startX = cursorClientX();
     const endX = rect.left + targetRatio * rect.width;
     const pointerId = nextPointerId();
@@ -135,7 +139,7 @@
     // move the viewport only by the amount the needle has crossed that edge.
     // The needle therefore stays near 20%/80% while the RF world glides beneath
     // it, avoiding the large 15-20 kHz jumps of the original follow behavior.
-    const desiredCenter = clampCenter(tuned - (followRatio - 0.5) * SPAN_KHZ);
+    const desiredCenter = clampCenter(tuned - (followRatio - 0.5) * viewportSpanKHz);
     const centerDelta = desiredCenter - center;
     if (Math.abs(centerDelta) < EPSILON_KHZ) return; // Actual receiver edge.
 
@@ -145,7 +149,7 @@
     // continuous on a phone-sized scope instead of a visible chunked recenter.
     const rect = canvas.getBoundingClientRect();
     const minDeltaKHz = rect.width
-      ? (MIN_FOLLOW_PIXELS / rect.width) * SPAN_KHZ
+      ? (MIN_FOLLOW_PIXELS / rect.width) * viewportSpanKHz
       : EPSILON_KHZ;
     if (Math.abs(centerDelta) < Math.max(EPSILON_KHZ, minDeltaKHz)) return;
 
