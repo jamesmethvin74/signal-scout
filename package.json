@@ -2,7 +2,7 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "PROBE_SOURCE=OFCOM node scripts/probe-terrestrial-source.mjs",
+    "postinstall": "node -e \"console.log('Temporary Ofcom snapshot capture build')\"",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs"
   }
