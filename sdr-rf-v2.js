@@ -12,6 +12,7 @@
   const RF_START_TIMEOUT_MS = 11000;
   const RF_COMPAT_RETRY_MS = 4200;
   const RF_SETUP_FALLBACK_MS = 900;
+  const ZOOM_WHEEL_THROTTLE_MS = 120;
 
   const stepSizeTable = [
     7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,60,66,
@@ -38,6 +39,9 @@
     centerKHz: null,
     spanKHz: null,
     zoom: 10,
+    userZoom: null,
+    waterfallResetPending: false,
+    lastZoomWheelAt: 0,
     canvas: null,
     originalCanvas: null,
     hasFrame: false,
@@ -108,8 +112,78 @@
     if (el.classList.contains('is-error') !== Boolean(isError)) el.classList.toggle('is-error', isError);
   }
 
+  function updateZoomControls(wrap = document.querySelector('.sdr-spectrum-wrap')) {
+    const controls = wrap?.querySelector('[data-sdr-rf-zoom-controls]');
+    if (!controls) return;
+    const canZoom = state.configured && state.socket?.readyState === NativeWebSocket.OPEN;
+    const zoom = Number.isFinite(state.zoom) ? Math.round(state.zoom) : 0;
+    const cap = Math.max(0, Math.round(state.zoomCap || DEFAULT_ZOOM_CAP));
+    const out = controls.querySelector('[data-sdr-rf-zoom="-1"]');
+    const inside = controls.querySelector('[data-sdr-rf-zoom="1"]');
+    if (out) out.disabled = !canZoom || zoom <= 0;
+    if (inside) inside.disabled = !canZoom || zoom >= cap;
+    controls.dataset.zoom = String(zoom);
+    controls.dataset.zoomCap = String(cap);
+  }
+
+  function adjustZoom(step, reason = 'user-zoom') {
+    if (!state.configured || state.socket?.readyState !== NativeWebSocket.OPEN) return false;
+    const cap = Math.max(0, Math.round(state.zoomCap || DEFAULT_ZOOM_CAP));
+    const current = Number.isFinite(state.zoom) ? Math.round(state.zoom) : 0;
+    const next = clamp(current + Number(step || 0), 0, cap);
+    if (next === current) {
+      updateZoomControls();
+      return false;
+    }
+    state.userZoom = next;
+    state.waterfallResetPending = true;
+    configureWaterfall(reason);
+    updateZoomControls();
+    return true;
+  }
+
+  function ensureZoomControls(wrap, canvas) {
+    if (!wrap || !canvas) return;
+
+    let controls = wrap.querySelector('[data-sdr-rf-zoom-controls]');
+    if (!controls) {
+      controls = document.createElement('div');
+      controls.className = 'sdr-rf-zoom-controls';
+      controls.dataset.sdrRfZoomControls = '1';
+      controls.setAttribute('role', 'group');
+      controls.setAttribute('aria-label', 'Spectrum zoom');
+      controls.innerHTML = `
+        <button type="button" class="sdr-rf-zoom-button" data-sdr-rf-zoom="-1" aria-label="Zoom spectrum out" title="Zoom spectrum out">−</button>
+        <button type="button" class="sdr-rf-zoom-button" data-sdr-rf-zoom="1" aria-label="Zoom spectrum in" title="Zoom spectrum in">+</button>`;
+      controls.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-sdr-rf-zoom]');
+        if (!button || button.disabled) return;
+        adjustZoom(Number(button.dataset.sdrRfZoom || 0), 'zoom-button');
+      });
+      wrap.appendChild(controls);
+    }
+
+    if (canvas.dataset.sdrRfZoomWheel !== '1') {
+      canvas.dataset.sdrRfZoomWheel = '1';
+      canvas.addEventListener('wheel', (event) => {
+        if (!state.configured || state.socket?.readyState !== NativeWebSocket.OPEN || Math.abs(event.deltaY) < 1) return;
+        event.preventDefault();
+        const now = performance.now();
+        if (now - state.lastZoomWheelAt < ZOOM_WHEEL_THROTTLE_MS) return;
+        state.lastZoomWheelAt = now;
+        adjustZoom(event.deltaY < 0 ? 1 : -1, 'zoom-wheel');
+      }, { passive: false });
+    }
+
+    updateZoomControls(wrap);
+  }
+
   function ensureCanvas() {
-    if (state.canvas?.isConnected && state.originalCanvas?.isConnected) return state.canvas;
+    if (state.canvas?.isConnected && state.originalCanvas?.isConnected) {
+      const existingWrap = state.canvas.closest('.sdr-spectrum-wrap');
+      if (existingWrap) ensureZoomControls(existingWrap, state.canvas);
+      return state.canvas;
+    }
 
     const wrap = document.querySelector('.sdr-spectrum-wrap');
     const original = wrap?.querySelector('[data-sdr-canvas]');
@@ -128,15 +202,25 @@
       const style = document.createElement('style');
       style.id = 'signal-scout-rf-v2-style';
       style.textContent = `
+        .sdr-spectrum-wrap { position:relative; }
         .sdr-spectrum-wrap > [data-sdr-canvas] { display:none !important; }
         .sdr-rf-v2-spectrum { display:block; width:100%; height:150px; background:#020608; }
         .sdr-spectrum-label { z-index:3 !important; text-shadow:0 1px 3px #020608; }
+        .sdr-rf-zoom-controls { position:absolute; top:7px; right:7px; z-index:9; display:flex; gap:4px; padding:3px; border:1px solid rgba(255,255,255,.14); border-radius:8px; background:rgba(2,6,8,.76); backdrop-filter:blur(8px); box-shadow:0 3px 12px rgba(0,0,0,.28); }
+        .sdr-rf-zoom-button { width:30px; height:30px; padding:0; border:1px solid rgba(255,255,255,.20); border-radius:6px; color:#f2f5f6; background:rgba(9,15,18,.90); font:800 20px/1 system-ui,sans-serif; cursor:pointer; }
+        .sdr-rf-zoom-button:active:not(:disabled) { transform:translateY(1px); background:rgba(255,255,255,.12); }
+        .sdr-rf-zoom-button:disabled { opacity:.30; cursor:default; }
+        @media (max-width:420px) {
+          .sdr-rf-zoom-controls { top:6px; right:6px; gap:3px; padding:2px; }
+          .sdr-rf-zoom-button { width:28px; height:28px; font-size:18px; }
+        }
       `;
       document.head.appendChild(style);
     }
 
     state.canvas = canvas;
     state.originalCanvas = original;
+    ensureZoomControls(wrap, canvas);
     const label = wrap.querySelector('.sdr-spectrum-label');
     if (label && label.textContent !== 'Live RF spectrum / waterfall') label.textContent = 'Live RF spectrum / waterfall';
     return canvas;
@@ -309,13 +393,19 @@
     const minDb = state.displayMinDb;
     const maxDb = Math.max(minDb + 30, state.displayMaxDb);
     const dbSpan = maxDb - minDb;
+    const resetWaterfall = state.waterfallResetPending;
 
     if (!state.hasFrame) {
       ctx.fillStyle = '#020608';
       ctx.fillRect(0, 0, width, height);
     }
 
-    if (waterfallH > 3 && state.hasFrame) {
+    if (waterfallH > 3 && resetWaterfall) {
+      ctx.fillStyle = '#020608';
+      ctx.fillRect(0, waterfallTop, width, waterfallH);
+      state.waterfallResetPending = false;
+    }
+    if (waterfallH > 3 && state.hasFrame && !resetWaterfall) {
       ctx.drawImage(canvas, 0, waterfallTop, width, Math.max(1, waterfallH - 2), 0, waterfallTop + 2, width, Math.max(1, waterfallH - 2));
     }
     if (waterfallH > 3) {
@@ -388,6 +478,7 @@
     const label = document.querySelector('.sdr-spectrum-label');
     const labelText = `Live RF spectrum / waterfall · ${span.toFixed(1)} kHz span`;
     if (label && label.textContent !== labelText) label.textContent = labelText;
+    updateZoomControls();
     playerMessage('Actual receiver audio · RF spectrum and waterfall are live from this receiver.');
   }
 
@@ -495,13 +586,21 @@
       return;
     }
 
+    const wasConfigured = state.configured;
+    const previousZoom = state.zoom;
+    const previousCenter = state.centerKHz;
     state.targetKHz = target;
     const mode = currentMode();
     const desiredZoom = (mode === 'usb' || mode === 'lsb') ? 11 : 10;
-    const zoom = clamp(desiredZoom, 0, state.zoomCap || DEFAULT_ZOOM_CAP);
+    const requestedZoom = Number.isFinite(state.userZoom) ? state.userZoom : desiredZoom;
+    const zoom = clamp(Math.round(requestedZoom), 0, state.zoomCap || DEFAULT_ZOOM_CAP);
     const full = state.fullBandwidthKHz || DEFAULT_BANDWIDTH_KHZ;
     const span = full / (2 ** zoom);
     const center = clamp(target, span / 2, full - span / 2);
+    if (Number.isFinite(state.userZoom)) state.userZoom = zoom;
+    if (wasConfigured && (zoom !== previousZoom || !Number.isFinite(previousCenter) || Math.abs(center - previousCenter) > 0.0005)) {
+      state.waterfallResetPending = true;
+    }
     state.zoom = zoom;
     state.spanKHz = span;
     state.centerKHz = center;
@@ -524,6 +623,7 @@
     send('SET wf_speed=2');
     send('SET interp=13');
     send('SET keepalive');
+    updateZoomControls();
     if (!state.hasFrame) setStage(`configured-${reason}`, 'RF SETUP READY', `Waiting for ${state.fftBins}-bin waterfall frame…`);
   }
 
@@ -616,10 +716,12 @@
     state.configured = false;
     state.wfSetupSeen = false;
     state.pendingFrame = null;
+    state.waterfallResetPending = false;
     if (state.renderFrameRequest) window.cancelAnimationFrame(state.renderFrameRequest);
     state.renderFrameRequest = 0;
     state.requestedCompression = false;
     if (ensureCanvas()) drawStage(reason);
+    updateZoomControls();
   }
 
   function startWaterfall(meta, sndSocket) {
@@ -629,6 +731,9 @@
     state.receiverId = meta.receiverId;
     state.timestamp = meta.timestamp;
     state.targetKHz = currentFrequencyKHz();
+    state.userZoom = null;
+    state.lastZoomWheelAt = 0;
+    state.waterfallResetPending = true;
     state.fullBandwidthKHz = DEFAULT_BANDWIDTH_KHZ;
     state.fftBins = DEFAULT_BINS;
     state.zoomCap = DEFAULT_ZOOM_CAP;
@@ -678,7 +783,7 @@
       state.timeoutTimer = window.setTimeout(() => {
         if (generation !== state.generation || state.hasFrame || state.pendingFrame) return;
         const detail = state.binaryCount
-          ? `No decodable row. Last W/F frame: ${state.lastFrameBytes} bytes; ${state.unsupportedFrames} unsupported.`
+          ? `No decodable row. Last W/F frame: ${state.lastFrameBytes} bytes received; ${state.unsupportedFrames} unsupported.`
           : (state.wfSetupSeen
             ? 'Waterfall setup completed, but the receiver sent no W/F rows.'
             : `No W/F rows or wf_setup received (${state.msgCount} MSG frames).`);
