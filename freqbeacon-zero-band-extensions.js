@@ -1,14 +1,35 @@
 (() => {
   'use strict';
 
-  // Display-only extension for service/band ranges that are intentionally kept
-  // outside the qualified Zero dial/SDR engine. This adapter observes the
-  // existing viewport bridge and paints only the missing allocation bars.
-  const EXTRA_BANDS = Object.freeze([
+  // Display-only renderer for the band strip. It redraws the complete label/scale
+  // layer at phone-readable sizes while leaving the qualified RF engine alone.
+  const DISPLAY_BANDS = Object.freeze([
+    Object.freeze({ start: 530, end: 1700, label: 'MW BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 1800, end: 2000, label: '160 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 2300, end: 2495, label: '120 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 3200, end: 3400, label: '90 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 3500, end: 4000, label: '80 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 3900, end: 4000, label: '75 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 4750, end: 5060, label: '60 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 5330.5, end: 5406.5, label: '60 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 5900, end: 6200, label: '49 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 7000, end: 7300, label: '40 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 7200, end: 7600, label: '41 m BROADCAST', kind: 'broadcast' }),
     Object.freeze({ start: 8890, end: 9095, label: 'UTILITY', kind: 'service' }),
+    Object.freeze({ start: 9400, end: 9900, label: '31 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 10100, end: 10150, label: '30 m HAM', kind: 'ham' }),
     Object.freeze({ start: 11050, end: 11300, label: 'AVIATION', kind: 'service' }),
+    Object.freeze({ start: 11600, end: 12100, label: '25 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 14000, end: 14350, label: '20 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 15100, end: 15800, label: '19 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 17480, end: 17900, label: '16 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 18068, end: 18168, label: '17 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 21000, end: 21450, label: '15 m HAM', kind: 'ham' }),
+    Object.freeze({ start: 21450, end: 21850, label: '13 m BROADCAST', kind: 'broadcast' }),
     Object.freeze({ start: 24890, end: 24990, label: '12 m HAM', kind: 'ham' }),
-    Object.freeze({ start: 26965, end: 27405, label: 'CB', kind: 'cb' })
+    Object.freeze({ start: 25600, end: 26100, label: '11 m BROADCAST', kind: 'broadcast' }),
+    Object.freeze({ start: 26965, end: 27405, label: 'CB', kind: 'cb' }),
+    Object.freeze({ start: 28000, end: 29700, label: '10 m HAM', kind: 'ham' })
   ]);
 
   // FCC CBRS channel center frequencies. Channels 24 and 25 sit below channel
@@ -66,20 +87,45 @@
     return ((kHz - left) / span) * width;
   }
 
-  function drawStandardBand(band, left, right, span, width, scaleY, bandH) {
+  function visibleWidth(band, left, right) {
+    return Math.max(0, Math.min(right, band.end) - Math.max(left, band.start));
+  }
+
+  function drawBandBar(band, left, right, span, width, scaleY, bandH) {
     const x1 = Math.max(0, xFor(Math.max(left, band.start), left, span, width));
     const x2 = Math.min(width, xFor(Math.min(right, band.end), left, span, width));
     if (x2 <= x1) return;
-
     ctx.fillStyle = band.kind === 'ham' ? '#159a78' : '#df872b';
     ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
+  }
 
-    ctx.font = '700 22px ui-monospace, SFMono-Regular, Menlo, monospace';
+  function drawBandLabels(visible, left, right, span, width) {
+    // Erase the smaller base-canvas typography and redraw the visible band names
+    // as one clean phone-readable row. Wider allocations win when bands overlap.
+    ctx.fillStyle = '#060a0c';
+    ctx.fillRect(0, 0, width, 28);
+
+    const candidates = visible
+      .filter((band) => band.kind !== 'cb')
+      .sort((a, b) => visibleWidth(b, left, right) - visibleWidth(a, left, right));
+
+    const occupied = [];
+    ctx.font = '700 23px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = band.kind === 'ham' ? '#86efd0' : '#ffd188';
-    const labelX = Math.max(8, x1 + 8);
-    ctx.fillText(band.label, Math.min(width - 190, labelX), 0);
+
+    for (const band of candidates) {
+      const x = Math.max(8, xFor(Math.max(left, band.start), left, span, width) + 8);
+      const textWidth = ctx.measureText(band.label).width;
+      const labelX = Math.min(width - textWidth - 8, x);
+      const labelRight = labelX + textWidth;
+      if (occupied.some(([a, b]) => labelX < b + 12 && labelRight > a - 12)) continue;
+
+      ctx.fillStyle = band.kind === 'ham' ? '#86efd0' : '#ffd188';
+      ctx.fillText(band.label, labelX, 0);
+      occupied.push([labelX, labelRight]);
+      if (occupied.length >= 2) break;
+    }
   }
 
   function drawCbChannels(left, right, span, width, scaleY, bandH) {
@@ -93,8 +139,6 @@
     const x2 = Math.min(width, xFor(visibleRight, left, span, width));
     if (x2 <= x1) return;
 
-    // One continuous CB allocation bar. Channel boundaries are black separators
-    // between adjacent channel centers so the band stays unified but readable.
     ctx.fillStyle = '#df872b';
     ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
 
@@ -107,8 +151,6 @@
 
     const ordered = [...CB_CHANNELS].sort((a, b) => a.center - b.center);
 
-    // Draw a thin black divider halfway between each neighboring channel center.
-    // This preserves the true irregular spacing around the RC gaps and 23/24/25.
     ctx.fillStyle = 'rgba(3, 6, 8, .98)';
     for (let i = 0; i < ordered.length - 1; i += 1) {
       const boundary = (ordered[i].center + ordered[i + 1].center) / 2;
@@ -127,22 +169,12 @@
       if (center < left || center > right) continue;
       if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
 
-      // The black dividers define the visible channel cell. Center the label on
-      // that cell, not on the RF center frequency, so irregular CB spacing does
-      // not make the typography look left- or right-justified.
-      const cellLeft = i === 0
-        ? cbStart
-        : (ordered[i - 1].center + center) / 2;
-      const cellRight = i === ordered.length - 1
-        ? cbEnd
-        : (center + ordered[i + 1].center) / 2;
-      const labelFrequency = (cellLeft + cellRight) / 2;
-      const labelX = xFor(labelFrequency, left, span, width);
+      const cellLeft = i === 0 ? cbStart : (ordered[i - 1].center + center) / 2;
+      const cellRight = i === ordered.length - 1 ? cbEnd : (center + ordered[i + 1].center) / 2;
+      const labelX = xFor((cellLeft + cellRight) / 2, left, span, width);
       if (labelX < 0 || labelX > width) continue;
-
-      // Channel numbers stay above the bar on the same row as the CB label.
-      // Suppress only labels that would directly overlap the letters "CB".
       if (labelX < cbLabelX + 44 && labelX > cbLabelX - 8) continue;
+
       ctx.font = `700 ${channelFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -155,8 +187,7 @@
     const span = right - left;
     const scaleTop = scaleY + bandH;
 
-    // Cover the smaller base-canvas scale typography and repaint it at a size
-    // that remains legible on a phone held at normal viewing distance.
+    // Cover the smaller base scale and repaint all frequency text larger.
     ctx.fillStyle = '#060a0c';
     ctx.fillRect(0, scaleTop, width, overlay.height - scaleTop);
 
@@ -197,12 +228,14 @@
 
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-    const visible = EXTRA_BANDS.filter((band) => band.end > left && band.start < right);
+    const visible = DISPLAY_BANDS.filter((band) => band.end > left && band.start < right);
+    drawBandLabels(visible, left, right, span, width);
+
     for (const band of visible) {
       if (band.kind === 'cb') {
         drawCbChannels(left, right, span, width, scaleY, bandH);
       } else {
-        drawStandardBand(band, left, right, span, width, scaleY, bandH);
+        drawBandBar(band, left, right, span, width, scaleY, bandH);
       }
     }
 
