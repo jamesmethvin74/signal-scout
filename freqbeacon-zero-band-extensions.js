@@ -26,7 +26,6 @@
   ].map(([channel, center]) => Object.freeze({ channel, center })));
 
   const DEFAULT_VIEW_SPAN_KHZ = 30000 / (2 ** 8);
-  const CB_HALF_SEGMENT_KHZ = 4; // 8 kHz AM channel-width treatment.
 
   const centerMark = document.querySelector('#centerMark');
   const leftEdge = document.querySelector('#leftEdge');
@@ -84,53 +83,53 @@
   }
 
   function drawCbChannels(left, right, span, width, scaleY, bandH) {
-    const cbLeft = Math.max(left, 26961);
-    const cbRight = Math.min(right, 27409);
-    if (cbRight <= cbLeft) return;
+    const cbStart = 26965;
+    const cbEnd = 27405;
+    const visibleLeft = Math.max(left, cbStart);
+    const visibleRight = Math.min(right, cbEnd);
+    if (visibleRight <= visibleLeft) return;
 
-    const visibleChannels = CB_CHANNELS
-      .filter(({ center }) => center + CB_HALF_SEGMENT_KHZ > left && center - CB_HALF_SEGMENT_KHZ < right)
-      .sort((a, b) => a.center - b.center);
-    if (!visibleChannels.length) return;
+    const x1 = Math.max(0, xFor(visibleLeft, left, span, width));
+    const x2 = Math.min(width, xFor(visibleRight, left, span, width));
+    if (x2 <= x1) return;
 
-    // Keep the overall CB identity, then let the numbered channel cells carry
-    // the detail. At wider zooms the labels thin out while all 40 segments stay.
-    const labelStart = Math.max(8, xFor(Math.max(left, 26965), left, span, width) + 8);
+    // CB remains one continuous allocation bar. Channel structure is shown with
+    // center ticks instead of filled cells so the band does not look chopped up.
+    ctx.fillStyle = '#df872b';
+    ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
+
     ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#ffc46f';
-    ctx.fillText('CB', Math.min(width - 60, labelStart), 0);
+    const cbLabelX = Math.max(8, x1 + 8);
+    ctx.fillText('CB', Math.min(width - 36, cbLabelX), 0);
 
     const tenKHzPx = (10 / span) * width;
     const labelEvery = tenKHzPx >= 24 ? 1 : tenKHzPx >= 12 ? 5 : 10;
+    const visibleChannels = CB_CHANNELS
+      .filter(({ center }) => center >= left && center <= right)
+      .sort((a, b) => a.center - b.center);
 
     for (const { channel, center } of visibleChannels) {
-      const segmentLeft = center - CB_HALF_SEGMENT_KHZ;
-      const segmentRight = center + CB_HALF_SEGMENT_KHZ;
-      const x1 = Math.max(0, xFor(Math.max(left, segmentLeft), left, span, width));
-      const x2 = Math.min(width, xFor(Math.min(right, segmentRight), left, span, width));
-      if (x2 <= x1) continue;
-
-      ctx.fillStyle = '#df872b';
-      ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
-
-      // A faint center tick makes each channel center readable even when the
-      // 8 kHz segment is only a few pixels wide.
       const centerX = xFor(center, left, span, width);
-      if (centerX >= 0 && centerX <= width) {
-        ctx.fillStyle = 'rgba(255, 226, 174, .68)';
-        ctx.fillRect(Math.round(centerX), scaleY, 1, bandH);
-      }
+      if (centerX < 0 || centerX > width) continue;
 
-      if (labelEvery === 1 || channel === 1 || channel === 40 || channel % labelEvery === 0) {
-        const cellWidth = Math.max(1, x2 - x1);
-        ctx.font = `${tenKHzPx >= 24 ? 11 : 9}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = '#f3d4a0';
-        ctx.fillText(String(channel), x1 + cellWidth / 2, scaleY + 1);
-      }
+      // Fine center marks divide the continuous line without turning channels
+      // into separate boxes.
+      ctx.fillStyle = 'rgba(255, 235, 196, .78)';
+      ctx.fillRect(Math.round(centerX), scaleY, 1, bandH);
+
+      if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
+
+      // Channel numbers live on the label row with CB, above the allocation bar.
+      // Suppress only labels that would collide directly with the CB word itself.
+      if (centerX < cbLabelX + 34 && centerX > cbLabelX - 8) continue;
+      ctx.font = `${tenKHzPx >= 24 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#f3d4a0';
+      ctx.fillText(String(channel), centerX, 2);
     }
   }
 
