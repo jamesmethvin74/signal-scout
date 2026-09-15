@@ -18,5 +18,5 @@ console.log(report);
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
 const match = text.match(/UK\/Ofcom catalog:\s*(\d+) records/i);
 const count = match ? Number(match[1]) : -1;
-// Temporary classifier: failure means the current parsed Ofcom count is >= 4.
-process.exitCode = count >= 4 ? 1 : 0;
+// Temporary classifier: failure means the current parsed Ofcom count is >= 2.
+process.exitCode = count >= 2 ? 1 : 0;
