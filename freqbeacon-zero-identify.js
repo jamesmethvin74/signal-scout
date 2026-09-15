@@ -2,15 +2,25 @@
   'use strict';
 
   // Zero display adapter only. The shared engine performs lookup/ranking when
-  // the user taps the frequency. No work runs continuously while tuning.
+  // the user deliberately asks what is on the tuned frequency. No work runs
+  // continuously while tuning.
   const engine = window.FREQBEACON_IDENTIFICATION_ENGINE;
-  const frequencyButton = document.querySelector('.zero-frequency');
+  const readout = document.querySelector('.zero-readout');
   const frequencyDisplay = document.querySelector('#frequencyDisplay');
   const frequencyUnit = document.querySelector('#frequencyUnit');
   const frequencyBridge = document.querySelector('#frequencyValue');
   const receiverIdentity = document.querySelector('#receiverIdentity');
 
-  if (!engine || !frequencyButton || !frequencyDisplay) return;
+  if (!engine || !readout || !frequencyDisplay) return;
+
+  const identifyButton = document.createElement('button');
+  identifyButton.type = 'button';
+  identifyButton.id = 'zeroIdentifyButton';
+  identifyButton.className = 'zero-identify-trigger';
+  identifyButton.title = 'What am I hearing?';
+  identifyButton.setAttribute('aria-label', 'What am I hearing? Identify the tuned frequency');
+  identifyButton.innerHTML = '<span aria-hidden="true">?</span><small>IDENTIFY</small>';
+  readout.prepend(identifyButton);
 
   let backdrop = null;
   let titleEl = null;
@@ -144,7 +154,7 @@
     const token = ++lookupToken;
 
     // Open immediately from the in-memory catalog; a static A26 shard may then
-    // enrich the same sheet. This request happens only because the user tapped.
+    // enrich the same sheet. This request happens only because IDENTIFY was tapped.
     render(engine.identify(kHz, options));
     backdrop.hidden = false;
     window.requestAnimationFrame(() => closeButton?.focus({ preventScroll: true }));
@@ -162,19 +172,10 @@
     lookupToken += 1;
     if (!backdrop || backdrop.hidden) return;
     backdrop.hidden = true;
-    frequencyButton.focus({ preventScroll: true });
+    identifyButton.focus({ preventScroll: true });
   }
 
-  frequencyButton.setAttribute('role', 'button');
-  frequencyButton.setAttribute('tabindex', '0');
-  frequencyButton.setAttribute('title', 'Tap to identify this frequency');
-  frequencyButton.setAttribute('aria-label', 'Identify the tuned frequency');
-  frequencyButton.addEventListener('click', open);
-  frequencyButton.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    open();
-  });
+  identifyButton.addEventListener('click', open);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && backdrop && !backdrop.hidden) close();
   });

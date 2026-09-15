@@ -68,7 +68,7 @@
 }
 
 .frequency-entry-sheet > p {
-  margin: 8px 0 16px;
+  margin: 8px 0 14px;
   color: #8d989c;
   font-size: 12px;
   line-height: 1.4;
@@ -77,6 +77,37 @@
 .frequency-entry-sheet > p strong {
   color: #e2bd7c;
   font-weight: 850;
+}
+
+.frequency-entry-unit-switch {
+  width: fit-content;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(58px, 1fr));
+  gap: 2px;
+  margin: 0 0 11px auto;
+  padding: 2px;
+  border: 1px solid #354147;
+  border-radius: 8px;
+  background: #090d0f;
+}
+
+.frequency-entry-unit-switch button {
+  min-height: 31px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #7f8b8f;
+  cursor: pointer;
+  font: 850 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .06em;
+}
+
+.frequency-entry-unit-switch button[aria-pressed="true"] {
+  border-color: #715a32;
+  background: linear-gradient(180deg, rgba(245,189,105,.16), rgba(245,189,105,.055));
+  color: #ffc864;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
 }
 
 .frequency-entry-field > span {
@@ -118,6 +149,7 @@
   align-self: stretch;
   display: grid;
   place-items: center;
+  min-width: 58px;
   padding: 0 13px;
   border-left: 1px solid rgba(245, 189, 105, .18);
   color: #b99a68;
@@ -169,7 +201,8 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 
-.frequency-entry-actions button:active {
+.frequency-entry-actions button:active,
+.frequency-entry-unit-switch button:active {
   transform: translateY(1px);
 }
 
