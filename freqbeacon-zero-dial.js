@@ -140,7 +140,7 @@ style.textContent = `
     letter-spacing: 0;
     white-space: nowrap;
   }
-  #rfCanvas { cursor: grab; }
+  #rfCanvas { cursor: grab; touch-action: none; }
   #rfCanvas.zero-dragging { cursor: grabbing; }
   @media (pointer: coarse) { #rfCanvas { cursor: default; } }
 `;
@@ -172,6 +172,14 @@ const dial = {
   startTunedKHz: CFG.initialKHz,
   startedAt: 0,
   lastNetworkAt: 0
+};
+
+const touchPointers = new Map();
+const pinch = {
+  active: false,
+  locked: false,
+  startDistance: 0,
+  startZoom: CFG.initialZoom
 };
 
 function spanKHz() {
@@ -468,6 +476,48 @@ function zoomBy(step) {
   }));
 }
 
+function pinchDistance() {
+  const points = [...touchPointers.values()];
+  if (points.length < 2) return 0;
+  return Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+}
+
+function beginPinch() {
+  const distance = pinchDistance();
+  if (!(distance > 0)) return false;
+  pinch.active = true;
+  pinch.locked = true;
+  pinch.startDistance = distance;
+  pinch.startZoom = dial.zoom;
+  dial.pointerId = null;
+  dial.mode = 'pinch';
+  canvas.classList.remove('zero-dragging');
+  return true;
+}
+
+function updatePinch() {
+  if (!pinch.active) return;
+  const distance = pinchDistance();
+  if (!(distance > 0) || !(pinch.startDistance > 0)) return;
+  const steps = Math.round(Math.log(distance / pinch.startDistance) / Math.log(1.32));
+  const target = Math.max(CFG.minZoom, Math.min(CFG.maxZoom, pinch.startZoom + steps));
+  if (target !== dial.zoom) zoomBy(target - dial.zoom);
+}
+
+function releaseTouchPointer(event) {
+  touchPointers.delete(event.pointerId);
+  try { canvas.releasePointerCapture(event.pointerId); } catch {}
+  if (pinch.active && touchPointers.size < 2) pinch.active = false;
+  if (!touchPointers.size) {
+    pinch.active = false;
+    pinch.locked = false;
+    pinch.startDistance = 0;
+    dial.pointerId = null;
+    dial.mode = null;
+    canvas.classList.remove('zero-dragging');
+  }
+}
+
 function panToPointer(event, force = false) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
@@ -489,6 +539,17 @@ function beginGesture(event) {
   if (!socketReady(sockets.snd)) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+
+  if (event.pointerType === 'touch') {
+    touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    try { canvas.setPointerCapture(event.pointerId); } catch {}
+    if (touchPointers.size >= 2) {
+      beginPinch();
+      return;
+    }
+    if (pinch.locked) return;
+  }
+
   dial.pointerId = event.pointerId;
   dial.startX = event.clientX;
   dial.lastX = event.clientX;
@@ -502,6 +563,21 @@ function beginGesture(event) {
 }
 
 function moveGesture(event) {
+  if (event.pointerType === 'touch' && touchPointers.has(event.pointerId)) {
+    touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinch.active) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      updatePinch();
+      return;
+    }
+    if (pinch.locked) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+  }
+
   if (dial.pointerId !== event.pointerId) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -519,7 +595,17 @@ function moveGesture(event) {
 }
 
 function endGesture(event) {
-  if (dial.pointerId !== event.pointerId) return;
+  if (event.pointerType === 'touch' && touchPointers.has(event.pointerId) && pinch.locked) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    releaseTouchPointer(event);
+    return;
+  }
+
+  if (dial.pointerId !== event.pointerId) {
+    if (event.pointerType === 'touch' && touchPointers.has(event.pointerId)) releaseTouchPointer(event);
+    return;
+  }
   event.preventDefault();
   event.stopImmediatePropagation();
 
@@ -534,12 +620,19 @@ function endGesture(event) {
   }
 
   try { canvas.releasePointerCapture(event.pointerId); } catch {}
+  if (event.pointerType === 'touch') touchPointers.delete(event.pointerId);
   dial.pointerId = null;
   dial.mode = null;
   canvas.classList.remove('zero-dragging');
 }
 
 function cancelGesture(event) {
+  if (event.pointerType === 'touch' && touchPointers.has(event.pointerId)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    releaseTouchPointer(event);
+    return;
+  }
   if (dial.pointerId !== event.pointerId) return;
   event.preventDefault();
   event.stopImmediatePropagation();
