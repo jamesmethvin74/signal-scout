@@ -2,7 +2,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v21.js",
+  "main": "worker-ofcom-snapshot-temp.js",
   "preview_urls": true,
   "routes": [
     { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
@@ -24,6 +24,7 @@
     "directory": "./",
     "binding": "ASSETS",
     "run_worker_first": [
+      "/__ofcom-mf-snapshot",
       "/api/zero/*",
       "/zero",
       "/zero/",
