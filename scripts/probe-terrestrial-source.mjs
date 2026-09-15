@@ -7,7 +7,14 @@ const urls = {
 const url = urls[source];
 if(!url) throw new Error(`Unknown probe source ${source}`);
 try{
-  const r = await fetch(url,{redirect:'follow',headers:{'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},signal:AbortSignal.timeout(20000)});
+  const headers = source === 'OFCOM'
+    ? {
+        'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0.0.0 Safari/537.36',
+        'accept':'text/csv,text/plain;q=0.9,*/*;q=0.8',
+        'referer':'https://www.ofcom.org.uk/tv-radio-and-on-demand/coverage-and-transmitters/radio-tech-parameters'
+      }
+    : {'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'};
+  const r = await fetch(url,{redirect:'follow',headers,signal:AbortSignal.timeout(20000)});
   if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   const bytes = Buffer.from(await r.arrayBuffer()).length;
   console.log(`${source} fetch ok: ${bytes} bytes`);
