@@ -93,8 +93,8 @@
     const x2 = Math.min(width, xFor(visibleRight, left, span, width));
     if (x2 <= x1) return;
 
-    // CB remains one continuous allocation bar. Channel structure is shown with
-    // center ticks instead of filled cells so the band does not look chopped up.
+    // One continuous CB allocation bar. Channel boundaries are black separators
+    // between adjacent channel centers so the band stays unified but readable.
     ctx.fillStyle = '#df872b';
     ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
 
@@ -105,30 +105,36 @@
     const cbLabelX = Math.max(8, x1 + 8);
     ctx.fillText('CB', Math.min(width - 36, cbLabelX), 0);
 
+    const ordered = [...CB_CHANNELS].sort((a, b) => a.center - b.center);
+
+    // Draw a thin black divider halfway between each neighboring channel center.
+    // This preserves the true irregular spacing around the RC gaps and 23/24/25.
+    ctx.fillStyle = 'rgba(3, 6, 8, .96)';
+    for (let i = 0; i < ordered.length - 1; i += 1) {
+      const boundary = (ordered[i].center + ordered[i + 1].center) / 2;
+      if (boundary <= left || boundary >= right) continue;
+      const boundaryX = xFor(boundary, left, span, width);
+      if (boundaryX < x1 || boundaryX > x2) continue;
+      ctx.fillRect(Math.round(boundaryX), scaleY, 1, bandH);
+    }
+
     const tenKHzPx = (10 / span) * width;
-    const labelEvery = tenKHzPx >= 24 ? 1 : tenKHzPx >= 12 ? 5 : 10;
-    const visibleChannels = CB_CHANNELS
-      .filter(({ center }) => center >= left && center <= right)
-      .sort((a, b) => a.center - b.center);
+    const labelEvery = tenKHzPx >= 20 ? 1 : tenKHzPx >= 10 ? 5 : 10;
+    const visibleChannels = ordered.filter(({ center }) => center >= left && center <= right);
 
     for (const { channel, center } of visibleChannels) {
+      if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
+
       const centerX = xFor(center, left, span, width);
       if (centerX < 0 || centerX > width) continue;
 
-      // Fine center marks divide the continuous line without turning channels
-      // into separate boxes.
-      ctx.fillStyle = 'rgba(255, 235, 196, .78)';
-      ctx.fillRect(Math.round(centerX), scaleY, 1, bandH);
-
-      if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
-
-      // Channel numbers live on the label row with CB, above the allocation bar.
-      // Suppress only labels that would collide directly with the CB word itself.
+      // Channel numbers stay above the bar on the same row as the CB label.
+      // Suppress only labels that would directly overlap the letters "CB".
       if (centerX < cbLabelX + 34 && centerX > cbLabelX - 8) continue;
-      ctx.font = `${tenKHzPx >= 24 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      ctx.font = `${tenKHzPx >= 20 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#f3d4a0';
+      ctx.fillStyle = '#f7ddb0';
       ctx.fillText(String(channel), centerX, 2);
     }
   }
