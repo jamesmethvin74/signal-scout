@@ -1,0 +1,188 @@
+.zero-frequency-entry-trigger {
+  position: relative;
+  cursor: pointer;
+  padding: 0 44px 14px;
+  border-radius: 10px;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .14s ease, box-shadow .14s ease;
+}
+
+.zero-frequency-entry-trigger::after {
+  content: "ENTER";
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  color: rgba(245, 189, 105, .62);
+  font: 800 7px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .12em;
+}
+
+.zero-frequency-entry-trigger:active {
+  background: rgba(245, 189, 105, .045);
+}
+
+.zero-frequency-entry-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgba(245, 189, 105, .5);
+  background: rgba(245, 189, 105, .045);
+}
+
+.frequency-entry-dialog {
+  width: min(420px, calc(100vw - 28px));
+  max-width: 420px;
+  margin: auto;
+  padding: 0;
+  border: 1px solid #5a4729;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #151d20 0%, #090d0f 100%);
+  color: #e2e6e4;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, .72),
+    inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.frequency-entry-dialog::backdrop {
+  background: rgba(0, 0, 0, .72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.frequency-entry-sheet {
+  padding: 18px;
+}
+
+.frequency-entry-kicker {
+  margin-bottom: 6px;
+  color: #8e7955;
+  font: 850 8px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .15em;
+}
+
+.frequency-entry-sheet h2 {
+  margin: 0;
+  color: #f0f2ef;
+  font-size: 22px;
+  line-height: 1.05;
+  font-weight: 860;
+  letter-spacing: -.02em;
+}
+
+.frequency-entry-sheet > p {
+  margin: 8px 0 16px;
+  color: #8d989c;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.frequency-entry-sheet > p strong {
+  color: #e2bd7c;
+  font-weight: 850;
+}
+
+.frequency-entry-field > span {
+  display: block;
+  margin: 0 0 6px 2px;
+  color: #7b878b;
+  font: 850 7px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .13em;
+}
+
+.frequency-entry-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 58px;
+  border: 1px solid #5e4a2c;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(245,189,105,.075), rgba(245,189,105,.018));
+  overflow: hidden;
+}
+
+.frequency-entry-field input {
+  min-width: 0;
+  width: 100%;
+  padding: 0 14px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #ffd489;
+  font: 500 clamp(28px, 9vw, 38px)/1 "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.frequency-entry-field input::selection {
+  background: rgba(245, 189, 105, .28);
+}
+
+.frequency-entry-field b {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0 13px;
+  border-left: 1px solid rgba(245, 189, 105, .18);
+  color: #b99a68;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.frequency-entry-help,
+.frequency-entry-error {
+  display: block;
+  margin: 7px 2px 0;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.frequency-entry-help {
+  color: #657277;
+}
+
+.frequency-entry-error {
+  color: #ef8a80;
+}
+
+.frequency-entry-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.frequency-entry-actions button {
+  min-height: 46px;
+  border-radius: 9px;
+  cursor: pointer;
+  font: 900 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .1em;
+}
+
+.frequency-entry-cancel {
+  border: 1px solid #344147;
+  background: linear-gradient(180deg, #171f22, #0c1113);
+  color: #98a4a8;
+}
+
+.frequency-entry-tune {
+  border: 1px solid #765d31;
+  background: linear-gradient(180deg, #3b2e1a, #20180e);
+  color: #ffc864;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.frequency-entry-actions button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 430px) {
+  .zero-frequency-entry-trigger {
+    padding-inline: 34px;
+  }
+
+  .zero-frequency-entry-trigger::after {
+    right: 6px;
+  }
+
+  .frequency-entry-sheet {
+    padding: 16px 14px;
+  }
+}
