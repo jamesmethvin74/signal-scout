@@ -8,31 +8,145 @@
     Object.freeze({ start: 8890, end: 9095, label: 'UTILITY', kind: 'service' }),
     Object.freeze({ start: 11050, end: 11300, label: 'AVIATION', kind: 'service' }),
     Object.freeze({ start: 24890, end: 24990, label: '12 m HAM', kind: 'ham' }),
-    Object.freeze({ start: 26965, end: 27405, label: 'CB', kind: 'service' })
+    Object.freeze({ start: 26965, end: 27405, label: 'CB', kind: 'cb' })
   ]);
 
+  // FCC CBRS channel center frequencies. Channels 24 and 25 sit below channel
+  // 23 in frequency, so frequency-order labels intentionally read 22, 24, 25,
+  // 23, 26 across that portion of the scale.
+  const CB_CHANNELS = Object.freeze([
+    [1, 26965], [2, 26975], [3, 26985], [4, 27005], [5, 27015],
+    [6, 27025], [7, 27035], [8, 27055], [9, 27065], [10, 27075],
+    [11, 27085], [12, 27105], [13, 27115], [14, 27125], [15, 27135],
+    [16, 27155], [17, 27165], [18, 27175], [19, 27185], [20, 27205],
+    [21, 27215], [22, 27225], [23, 27255], [24, 27235], [25, 27245],
+    [26, 27265], [27, 27275], [28, 27285], [29, 27295], [30, 27305],
+    [31, 27315], [32, 27325], [33, 27335], [34, 27345], [35, 27355],
+    [36, 27365], [37, 27375], [38, 27385], [39, 27395], [40, 27405]
+  ].map(([channel, center]) => Object.freeze({ channel, center })));
+
+  const DEFAULT_VIEW_SPAN_KHZ = 30000 / (2 ** 8);
+
   const centerMark = document.querySelector('#centerMark');
+  const leftEdge = document.querySelector('#leftEdge');
+  const rightEdge = document.querySelector('#rightEdge');
   const scope = document.querySelector('.scope');
   if (!centerMark || !scope) return;
 
-  const VIEW_SPAN_KHZ = 30000 / (2 ** 8);
   let overlay = null;
   let ctx = null;
+
+  function parseMHzBridge(node) {
+    const match = String(node?.textContent || '').match(/(-?\d+(?:\.\d+)?)\s*MHz/i);
+    const value = match ? Number(match[1]) : NaN;
+    return Number.isFinite(value) ? value * 1000 : NaN;
+  }
 
   function centerKHz() {
     const match = centerMark.textContent.match(/VIEW\s+([0-9.]+)\s+kHz/i);
     return match ? Number(match[1]) : NaN;
   }
 
+  function viewport() {
+    const bridgeLeft = parseMHzBridge(leftEdge);
+    const bridgeRight = parseMHzBridge(rightEdge);
+    if (Number.isFinite(bridgeLeft) && Number.isFinite(bridgeRight) && bridgeRight > bridgeLeft) {
+      return { left: bridgeLeft, right: bridgeRight };
+    }
+
+    const center = centerKHz();
+    if (!Number.isFinite(center)) return null;
+    return {
+      left: center - DEFAULT_VIEW_SPAN_KHZ / 2,
+      right: center + DEFAULT_VIEW_SPAN_KHZ / 2
+    };
+  }
+
+  function xFor(kHz, left, span, width) {
+    return ((kHz - left) / span) * width;
+  }
+
+  function drawStandardBand(band, left, right, span, width, scaleY, bandH) {
+    const x1 = Math.max(0, xFor(Math.max(left, band.start), left, span, width));
+    const x2 = Math.min(width, xFor(Math.min(right, band.end), left, span, width));
+    if (x2 <= x1) return;
+
+    ctx.fillStyle = band.kind === 'ham' ? '#159a78' : '#df872b';
+    ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
+
+    ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = band.kind === 'ham' ? '#75e2bd' : '#ffc46f';
+    const labelX = Math.max(8, x1 + 8);
+    ctx.fillText(band.label, Math.min(width - 160, labelX), 0);
+  }
+
+  function drawCbChannels(left, right, span, width, scaleY, bandH) {
+    const cbStart = 26965;
+    const cbEnd = 27405;
+    const visibleLeft = Math.max(left, cbStart);
+    const visibleRight = Math.min(right, cbEnd);
+    if (visibleRight <= visibleLeft) return;
+
+    const x1 = Math.max(0, xFor(visibleLeft, left, span, width));
+    const x2 = Math.min(width, xFor(visibleRight, left, span, width));
+    if (x2 <= x1) return;
+
+    // One continuous CB allocation bar. Channel boundaries are black separators
+    // between adjacent channel centers so the band stays unified but readable.
+    ctx.fillStyle = '#df872b';
+    ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
+
+    ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#ffc46f';
+    const cbLabelX = Math.max(8, x1 + 8);
+    ctx.fillText('CB', Math.min(width - 36, cbLabelX), 0);
+
+    const ordered = [...CB_CHANNELS].sort((a, b) => a.center - b.center);
+
+    // Draw a thin black divider halfway between each neighboring channel center.
+    // This preserves the true irregular spacing around the RC gaps and 23/24/25.
+    ctx.fillStyle = 'rgba(3, 6, 8, .96)';
+    for (let i = 0; i < ordered.length - 1; i += 1) {
+      const boundary = (ordered[i].center + ordered[i + 1].center) / 2;
+      if (boundary <= left || boundary >= right) continue;
+      const boundaryX = xFor(boundary, left, span, width);
+      if (boundaryX < x1 || boundaryX > x2) continue;
+      ctx.fillRect(Math.round(boundaryX), scaleY, 1, bandH);
+    }
+
+    const tenKHzPx = (10 / span) * width;
+    const labelEvery = tenKHzPx >= 20 ? 1 : tenKHzPx >= 10 ? 5 : 10;
+    const visibleChannels = ordered.filter(({ center }) => center >= left && center <= right);
+
+    for (const { channel, center } of visibleChannels) {
+      if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
+
+      const centerX = xFor(center, left, span, width);
+      if (centerX < 0 || centerX > width) continue;
+
+      // Channel numbers stay above the bar on the same row as the CB label.
+      // Suppress only labels that would directly overlap the letters "CB".
+      if (centerX < cbLabelX + 34 && centerX > cbLabelX - 8) continue;
+      ctx.font = `${tenKHzPx >= 20 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#f7ddb0';
+      ctx.fillText(String(channel), centerX, 2);
+    }
+  }
+
   function draw() {
     if (!overlay || !ctx) return;
-    const center = centerKHz();
-    if (!Number.isFinite(center)) return;
+    const view = viewport();
+    if (!view) return;
 
-    const left = center - (VIEW_SPAN_KHZ / 2);
-    const right = center + (VIEW_SPAN_KHZ / 2);
+    const { left, right } = view;
     const span = right - left;
-    const w = overlay.width;
+    const width = overlay.width;
     const scaleY = 28;
     const bandH = 12;
 
@@ -40,19 +154,11 @@
 
     const visible = EXTRA_BANDS.filter((band) => band.end > left && band.start < right);
     for (const band of visible) {
-      const x1 = Math.max(0, ((Math.max(left, band.start) - left) / span) * w);
-      const x2 = Math.min(w, ((Math.min(right, band.end) - left) / span) * w);
-      if (x2 <= x1) continue;
-
-      ctx.fillStyle = band.kind === 'ham' ? '#159a78' : '#df872b';
-      ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
-
-      ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = band.kind === 'ham' ? '#75e2bd' : '#ffc46f';
-      const labelX = Math.max(8, x1 + 8);
-      ctx.fillText(band.label, Math.min(w - 160, labelX), 0);
+      if (band.kind === 'cb') {
+        drawCbChannels(left, right, span, width, scaleY, bandH);
+      } else {
+        drawStandardBand(band, left, right, span, width, scaleY, bandH);
+      }
     }
   }
 
@@ -80,12 +186,17 @@
     scope.appendChild(overlay);
     ctx = overlay.getContext('2d');
 
-    new MutationObserver(draw).observe(centerMark, {
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
+    const observer = new MutationObserver(draw);
+    for (const bridge of [centerMark, leftEdge, rightEdge]) {
+      if (!bridge) continue;
+      observer.observe(bridge, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
 
+    window.addEventListener('freqbeacon:zero-zoom', draw);
     draw();
   }
 
