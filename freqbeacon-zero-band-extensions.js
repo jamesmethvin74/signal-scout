@@ -74,12 +74,12 @@
     ctx.fillStyle = band.kind === 'ham' ? '#159a78' : '#df872b';
     ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
 
-    ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.font = '700 22px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = band.kind === 'ham' ? '#75e2bd' : '#ffc46f';
+    ctx.fillStyle = band.kind === 'ham' ? '#86efd0' : '#ffd188';
     const labelX = Math.max(8, x1 + 8);
-    ctx.fillText(band.label, Math.min(width - 160, labelX), 0);
+    ctx.fillText(band.label, Math.min(width - 190, labelX), 0);
   }
 
   function drawCbChannels(left, right, span, width, scaleY, bandH) {
@@ -98,18 +98,18 @@
     ctx.fillStyle = '#df872b';
     ctx.fillRect(x1, scaleY, Math.max(1, x2 - x1), bandH);
 
-    ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.font = '700 24px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#ffc46f';
+    ctx.fillStyle = '#ffd188';
     const cbLabelX = Math.max(8, x1 + 8);
-    ctx.fillText('CB', Math.min(width - 36, cbLabelX), 0);
+    ctx.fillText('CB', Math.min(width - 48, cbLabelX), 0);
 
     const ordered = [...CB_CHANNELS].sort((a, b) => a.center - b.center);
 
     // Draw a thin black divider halfway between each neighboring channel center.
     // This preserves the true irregular spacing around the RC gaps and 23/24/25.
-    ctx.fillStyle = 'rgba(3, 6, 8, .96)';
+    ctx.fillStyle = 'rgba(3, 6, 8, .98)';
     for (let i = 0; i < ordered.length - 1; i += 1) {
       const boundary = (ordered[i].center + ordered[i + 1].center) / 2;
       if (boundary <= left || boundary >= right) continue;
@@ -119,7 +119,8 @@
     }
 
     const tenKHzPx = (10 / span) * width;
-    const labelEvery = tenKHzPx >= 20 ? 1 : tenKHzPx >= 10 ? 5 : 10;
+    const labelEvery = tenKHzPx >= 34 ? 1 : tenKHzPx >= 16 ? 5 : 10;
+    const channelFontSize = tenKHzPx >= 34 ? 22 : tenKHzPx >= 16 ? 18 : 16;
 
     for (let i = 0; i < ordered.length; i += 1) {
       const { channel, center } = ordered[i];
@@ -141,12 +142,45 @@
 
       // Channel numbers stay above the bar on the same row as the CB label.
       // Suppress only labels that would directly overlap the letters "CB".
-      if (labelX < cbLabelX + 34 && labelX > cbLabelX - 8) continue;
-      ctx.font = `${tenKHzPx >= 20 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      if (labelX < cbLabelX + 44 && labelX > cbLabelX - 8) continue;
+      ctx.font = `700 ${channelFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#f7ddb0';
-      ctx.fillText(String(channel), labelX, 2);
+      ctx.fillStyle = '#fff0c9';
+      ctx.fillText(String(channel), labelX, 1);
+    }
+  }
+
+  function drawReadableScale(left, right, width, scaleY, bandH) {
+    const span = right - left;
+    const scaleTop = scaleY + bandH;
+
+    // Cover the smaller base-canvas scale typography and repaint it at a size
+    // that remains legible on a phone held at normal viewing distance.
+    ctx.fillStyle = '#060a0c';
+    ctx.fillRect(0, scaleTop, width, overlay.height - scaleTop);
+
+    ctx.strokeStyle = 'rgba(145, 169, 177, .58)';
+    ctx.fillStyle = 'rgba(218, 229, 232, .96)';
+    ctx.font = '600 26px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textBaseline = 'top';
+
+    for (let i = 0; i <= 8; i += 1) {
+      const x = (i / 8) * width;
+      const major = i % 2 === 0;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(x) + .5, scaleTop);
+      ctx.lineTo(Math.round(x) + .5, scaleTop + (major ? 7 : 4));
+      ctx.stroke();
+
+      if (!major) continue;
+      const frequency = left + (i / 8) * span;
+      ctx.textAlign = i === 0 ? 'left' : i === 8 ? 'right' : 'center';
+      ctx.fillText(
+        (frequency / 1000).toFixed(4),
+        Math.max(3, Math.min(width - 3, x)),
+        scaleTop + 4
+      );
     }
   }
 
@@ -171,6 +205,8 @@
         drawStandardBand(band, left, right, span, width, scaleY, bandH);
       }
     }
+
+    drawReadableScale(left, right, width, scaleY, bandH);
   }
 
   function attach() {
