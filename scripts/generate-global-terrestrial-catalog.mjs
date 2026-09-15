@@ -45,17 +45,26 @@ export function normalizeISED(dbfBuffer){
   return out;
 }
 
+function parseOfcomEmrp(raw){
+  const text=clean(raw).replace(/,/g,'');
+  if(!text) return null;
+  const match=text.match(/^([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*(kW|W)?$/i);
+  if(!match) return null;
+  const value=Number(match[1]);
+  return Number.isFinite(value)?{value,unit:(match[2]||'').toLowerCase()}:null;
+}
 function ofcomPower(row){
   const key=Object.keys(row).find(k=>/in.?use.*emrp/i.test(k));
   if(!key) throw new Error('Ofcom MF CSV missing In-use EMRP column');
-  const value=num(row[key]); if(value===null) return null;
-  if(/\bkw\b/i.test(key)) return value*1000;
-  if(/\bw\b|watt/i.test(key)) return value;
-  // Ofcom's MF TxParams convention expresses EMRP values in kW even where
-  // the current CSV header is the legacy unqualified "In-use EMRP" label.
-  // Validate the resulting range and marker records below rather than guessing
-  // from arbitrary field magnitude at runtime.
-  if(/^in.?use.*emrp$/i.test(clean(key))) return value*1000;
+  const parsed=parseOfcomEmrp(row[key]); if(!parsed) return null;
+  if(parsed.unit==='kw') return parsed.value*1000;
+  if(parsed.unit==='w') return parsed.value;
+  if(/\bkw\b/i.test(key)) return parsed.value*1000;
+  if(/\bw\b|watt/i.test(key)) return parsed.value;
+  // Ofcom's MF TxParams convention expresses EMRP values in kW where the
+  // legacy header is the unqualified "In-use EMRP" label. Current source
+  // cells may themselves carry a kW/W suffix, which is honored above.
+  if(/^in.?use.*emrp$/i.test(clean(key))) return parsed.value*1000;
   throw new Error(`Ofcom EMRP unit/header not recognized: ${key}`);
 }
 export function normalizeOfcom(csvText){
