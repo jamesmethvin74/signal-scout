@@ -75,7 +75,7 @@ zoomControls.setAttribute('role', 'group');
 zoomControls.setAttribute('aria-label', 'Spectrum zoom');
 zoomControls.innerHTML = `
   <button type="button" data-zero-zoom="-1" aria-label="Zoom spectrum out" title="Zoom spectrum out">−</button>
-  <span data-zero-zoom-span aria-live="polite">117 kHz</span>
+  <span data-zero-zoom-span aria-live="polite">117k</span>
   <button type="button" data-zero-zoom="1" aria-label="Zoom spectrum in" title="Zoom spectrum in">+</button>`;
 scope.appendChild(zoomControls);
 const zoomOutButton = zoomControls.querySelector('[data-zero-zoom="-1"]');
@@ -98,29 +98,29 @@ style.textContent = `
   .zero-zoom-controls {
     position: absolute;
     z-index: 8;
-    top: 10px;
-    left: 10px;
+    top: 6px;
+    left: 6px;
     display: grid;
-    grid-template-columns: 34px auto 34px;
+    grid-template-columns: 25px auto 25px;
     align-items: center;
-    gap: 3px;
-    padding: 3px;
-    border: 1px solid rgba(245,189,105,.38);
-    border-radius: 7px;
-    background: rgba(8,12,14,.86);
-    box-shadow: 0 3px 11px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.06);
-    backdrop-filter: blur(7px);
+    gap: 1px;
+    padding: 2px;
+    border: 1px solid rgba(245,189,105,.30);
+    border-radius: 5px;
+    background: rgba(8,12,14,.82);
+    box-shadow: 0 2px 7px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.045);
+    backdrop-filter: blur(5px);
   }
   .zero-zoom-controls button {
-    width: 34px;
-    height: 32px;
+    width: 25px;
+    height: 24px;
     padding: 0;
     border: 1px solid #493d2a;
-    border-radius: 5px;
+    border-radius: 4px;
     color: #f7d59a;
-    background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(0,0,0,.18)), #24231f;
-    box-shadow: inset 0 1px rgba(255,255,255,.07), 0 1px 3px rgba(0,0,0,.45);
-    font: 600 21px/1 system-ui, sans-serif;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.16)), #24231f;
+    box-shadow: inset 0 1px rgba(255,255,255,.055);
+    font: 600 16px/1 system-ui, sans-serif;
     cursor: pointer;
     touch-action: manipulation;
   }
@@ -132,21 +132,16 @@ style.textContent = `
   }
   .zero-zoom-controls button:disabled { opacity: .28; cursor: default; }
   .zero-zoom-controls span {
-    min-width: 52px;
-    padding: 0 4px;
+    min-width: 34px;
+    padding: 0 2px;
     color: #d8c39b;
     text-align: center;
-    font: 700 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: .02em;
+    font: 700 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0;
     white-space: nowrap;
   }
   #rfCanvas { cursor: grab; }
   #rfCanvas.zero-dragging { cursor: grabbing; }
-  @media (max-width: 430px) {
-    .zero-zoom-controls { top: 7px; left: 7px; grid-template-columns: 32px auto 32px; padding: 2px; }
-    .zero-zoom-controls button { width: 32px; height: 30px; font-size: 19px; }
-    .zero-zoom-controls span { min-width: 48px; font-size: 8px; }
-  }
   @media (pointer: coarse) { #rfCanvas { cursor: default; } }
 `;
 document.head.appendChild(style);
@@ -198,13 +193,16 @@ function socketReady(socket) {
 }
 
 function formatSpan(value) {
-  if (value >= 100) return `${value.toFixed(0)} kHz`;
-  if (value >= 10) return `${value.toFixed(1)} kHz`;
-  return `${value.toFixed(2)} kHz`;
+  if (value >= 100) return `${value.toFixed(0)}k`;
+  if (value >= 10) return `${value.toFixed(1)}k`;
+  return `${value.toFixed(2)}k`;
 }
 
 function updateZoomControls() {
-  if (zoomSpan) zoomSpan.textContent = formatSpan(spanKHz());
+  if (zoomSpan) {
+    zoomSpan.textContent = formatSpan(spanKHz());
+    zoomSpan.setAttribute('aria-label', `${spanKHz().toFixed(2)} kilohertz visible span`);
+  }
   if (zoomOutButton) zoomOutButton.disabled = dial.zoom <= CFG.minZoom;
   if (zoomInButton) zoomInButton.disabled = dial.zoom >= CFG.maxZoom;
 }
@@ -354,21 +352,56 @@ function shiftRfVisual(clientDx) {
   shiftRegion(CFG.wfTop, canvas.height - CFG.wfTop, px, '#04101c');
 }
 
-function clearRfForZoom() {
-  baseCtx.fillStyle = '#071a24';
-  baseCtx.fillRect(0, 0, canvas.width, CFG.spectrumH);
-  baseCtx.fillStyle = '#04101c';
-  baseCtx.fillRect(0, CFG.wfTop, canvas.width, canvas.height - CFG.wfTop);
+function snapshotRfView() {
+  const snapshot = document.createElement('canvas');
+  snapshot.width = canvas.width;
+  snapshot.height = canvas.height;
+  snapshot.getContext('2d', { alpha: false })?.drawImage(canvas, 0, 0);
+  const { left, right } = edges();
+  return { snapshot, left, right };
+}
+
+function reprojectRegion(oldView, newView, top, height, fillStyle) {
+  baseCtx.fillStyle = fillStyle;
+  baseCtx.fillRect(0, top, canvas.width, height);
+
+  const overlapLeft = Math.max(oldView.left, newView.left);
+  const overlapRight = Math.min(oldView.right, newView.right);
+  if (!(overlapRight > overlapLeft)) return;
+
+  const oldSpan = oldView.right - oldView.left;
+  const newSpan = newView.right - newView.left;
+  if (!(oldSpan > 0) || !(newSpan > 0)) return;
+
+  const sx = ((overlapLeft - oldView.left) / oldSpan) * canvas.width;
+  const sw = ((overlapRight - overlapLeft) / oldSpan) * canvas.width;
+  const dx = ((overlapLeft - newView.left) / newSpan) * canvas.width;
+  const dw = ((overlapRight - overlapLeft) / newSpan) * canvas.width;
+  if (sw < 1 || dw < 1) return;
+
+  baseCtx.drawImage(
+    oldView.snapshot,
+    sx, top, sw, height,
+    dx, top, dw, height
+  );
+}
+
+function preserveRfForZoom(oldView) {
+  const newView = edges();
+  reprojectRegion(oldView, newView, 0, CFG.spectrumH, '#071a24');
+  reprojectRegion(oldView, newView, CFG.wfTop, canvas.height - CFG.wfTop, '#04101c');
 }
 
 function zoomBy(step) {
   const next = Math.max(CFG.minZoom, Math.min(CFG.maxZoom, dial.zoom + Number(step || 0)));
   if (next === dial.zoom) return;
+
+  const oldView = snapshotRfView();
   dial.zoom = next;
   dial.centerKHz = clampCenter(dial.tunedKHz);
   dial.startCenterKHz = dial.centerKHz;
   dial.startTunedKHz = dial.tunedKHz;
-  clearRfForZoom();
+  preserveRfForZoom(oldView);
   updateUi();
   sendCenter();
   window.dispatchEvent(new CustomEvent('freqbeacon:zero-zoom', {
