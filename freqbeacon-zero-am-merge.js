@@ -10,7 +10,7 @@
 
   // Local/static development keeps the curated catalog if the build-time FCC
   // generator has not run. Production builds are guarded by the generator's
-  // minimum-count validation, so an incomplete FCC fetch cannot silently ship.
+  // minimum-count validation, so an incomplete bulk snapshot cannot silently ship.
   if (!fcc.length) return;
 
   const stationKey = (station) => `${Number(station?.frequencyKHz)}|${String(station?.callsign || '').trim().toUpperCase()}`;
@@ -33,11 +33,12 @@
       name: overlay.name || station.name,
       categories: Object.freeze([...(overlay.categories || station.categories || ['broadcast'])]),
       description: overlay.description || station.description,
+      classA: Boolean(overlay.classA || station.classA),
       source: `${station.source}; FREQBEACON curated programming overlay`
     }));
   }
 
-  // Preserve any curated entries not present in the FCC build as a safety net.
+  // Preserve any curated entries not present in the bulk build as a safety net.
   // They remain visibly sourced as curated data rather than pretending to be
   // regulator records.
   for (const station of curatedByKey.values()) merged.push(station);
@@ -49,7 +50,7 @@
 
   window.FREQBEACON_ZERO_AM_CATALOG = Object.freeze(merged);
   window.FREQBEACON_ZERO_AM_META = Object.freeze({
-    source: 'FCC technical catalog + FREQBEACON curated programming overlays',
+    source: 'FCC-derived technical catalog + FREQBEACON curated programming overlays',
     fccStationCount: fcc.length,
     curatedOverlayCount: overlayCount,
     curatedFallbackCount: curatedByKey.size,
