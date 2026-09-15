@@ -48,6 +48,7 @@
   window.addEventListener('freqbeacon:zero-zoom', (event) => {
     const nextSpan = Number(event.detail?.spanKHz);
     if (Number.isFinite(nextSpan) && nextSpan > 0) viewportSpanKHz = nextSpan;
+    renderFineCursor();
   });
 
   function clampKHz(value) {
@@ -73,6 +74,7 @@
 
   function renderFrequency() {
     if (frequencyDisplay) frequencyDisplay.textContent = formatHz(effectiveKHz());
+    renderFineCursor();
   }
 
   function renderMode() {
@@ -162,6 +164,14 @@
     const match = String(centerMark?.textContent || '').match(/(-?\d+(?:\.\d+)?)\s*kHz/i);
     const parsed = match ? Number(match[1]) : NaN;
     return Number.isFinite(parsed) ? parsed : baseKHz;
+  }
+
+  function renderFineCursor() {
+    if (!cursor || !Number.isFinite(viewportSpanKHz) || viewportSpanKHz <= 0) return;
+    const center = currentCenterKHz();
+    const left = center - viewportSpanKHz / 2;
+    const ratio = (effectiveKHz() - left) / viewportSpanKHz;
+    cursor.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   }
 
   function dispatchPointer(type, x, pointerId, buttons) {
@@ -324,12 +334,18 @@
   }
 
   let knobPointerId = null;
-  let lastAngle = 0;
+  let lastAngle = null;
   let angleCarry = 0;
 
-  function pointerAngle(event) {
+  function pointerPolar(event) {
     const rect = knob.getBoundingClientRect();
-    return Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI;
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    return {
+      angle: Math.atan2(dy, dx) * 180 / Math.PI,
+      radius: Math.hypot(dx, dy),
+      deadRadius: Math.min(rect.width, rect.height) * .20
+    };
   }
 
   function normalizedAngleDelta(next, previous) {
@@ -347,7 +363,8 @@
     if (!radioRunning()) return;
     event.preventDefault();
     knobPointerId = event.pointerId;
-    lastAngle = pointerAngle(event);
+    const point = pointerPolar(event);
+    lastAngle = point.radius <= point.deadRadius ? null : point.angle;
     angleCarry = 0;
     try { knob.setPointerCapture(event.pointerId); } catch {}
   });
@@ -355,9 +372,23 @@
   knob?.addEventListener('pointermove', (event) => {
     if (knobPointerId !== event.pointerId) return;
     event.preventDefault();
-    const nextAngle = pointerAngle(event);
-    const delta = normalizedAngleDelta(nextAngle, lastAngle);
-    lastAngle = nextAngle;
+    const point = pointerPolar(event);
+
+    // The polar angle is undefined near the center of the virtual knob. If a
+    // finger crosses that area, pause tuning and re-anchor on exit instead of
+    // converting a tiny center-crossing motion into a large frequency jump.
+    if (point.radius <= point.deadRadius) {
+      lastAngle = null;
+      angleCarry = 0;
+      return;
+    }
+    if (lastAngle === null) {
+      lastAngle = point.angle;
+      return;
+    }
+
+    const delta = normalizedAngleDelta(point.angle, lastAngle);
+    lastAngle = point.angle;
     knobRotation += delta;
     angleCarry += delta;
     paintKnob();
@@ -374,6 +405,7 @@
     event.preventDefault();
     try { knob.releasePointerCapture(event.pointerId); } catch {}
     knobPointerId = null;
+    lastAngle = null;
     angleCarry = 0;
   }
 
