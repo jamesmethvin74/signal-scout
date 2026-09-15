@@ -52,20 +52,35 @@ function coordinateFromCombined(value, allowedDirections) {
   if (!directionMatch) return null;
   const numbers = text.match(/\d+(?:\.\d+)?/g) || [];
   if (numbers.length < 3) return null;
-  return dms(directionMatch[0], numbers[0], numbers[1], numbers[2]);
+  const coordinate = dms(directionMatch[0], numbers[0], numbers[1], numbers[2]);
+  const maxDegrees = allowedDirections === 'NS' ? 90 : 180;
+  return coordinate !== null && Math.abs(coordinate) <= maxDegrees ? coordinate : null;
 }
 
 function coordinateFromTokens(fields, allowedDirections, startIndex = 0) {
+  const maxDegrees = allowedDirections === 'NS' ? 90 : 180;
+  const valid = (value) => value !== null && Math.abs(value) <= maxDegrees;
+
   for (let i = startIndex; i < fields.length; i += 1) {
     const token = String(fields[i] || '').trim().toUpperCase();
     if (new RegExp(`^[${allowedDirections}]$`).test(token)) {
-      if (i + 3 < fields.length) {
-        const forward = dms(token, fields[i + 1], fields[i + 2], fields[i + 3]);
-        if (forward !== null) return forward;
-      }
-      if (i >= 3) {
-        const backward = dms(token, fields[i - 3], fields[i - 2], fields[i - 1]);
-        if (backward !== null) return backward;
+      const forward = i + 3 < fields.length
+        ? dms(token, fields[i + 1], fields[i + 2], fields[i + 3])
+        : null;
+      const backward = i >= 3
+        ? dms(token, fields[i - 3], fields[i - 2], fields[i - 1])
+        : null;
+
+      // FCC has emitted both D M S N / D M S W and N D M S / W D M S
+      // layouts over time. Latitude suffix form is unambiguous when the prior
+      // triplet is numeric; longitude prefix form is unambiguous when a valid
+      // following triplet exists. Keep the opposite ordering as fallback.
+      if (allowedDirections === 'NS') {
+        if (valid(backward)) return backward;
+        if (valid(forward)) return forward;
+      } else {
+        if (valid(forward)) return forward;
+        if (valid(backward)) return backward;
       }
     }
 
