@@ -5,11 +5,14 @@
   --fb-nav-bg-top: rgba(20,29,33,.98);
   --fb-nav-bg-bottom: rgba(8,12,14,.995);
   --fb-nav-height: 54px;
+  --fb-nav-reserved-height: calc(var(--fb-nav-height) + env(safe-area-inset-bottom));
 }
 
 /*
- * Shared app shell: page content and navigation occupy separate grid rows.
- * Nothing can render or scroll underneath the bottom navigation.
+ * Shared app shell. The bottom navigation is pinned to the visible viewport
+ * instead of relying on a second grid row. Android standalone PWAs can report
+ * a layout viewport taller than the actually visible area while system chrome
+ * settles; a fixed shell keeps Radio / Explore / Lookup reachable throughout.
  */
 html,
 body {
@@ -23,43 +26,48 @@ body {
 }
 
 .has-fb-bottom-nav {
+  position: relative;
   height: 100vh;
   height: 100dvh;
   min-height: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: block !important;
 }
 
 .fb-page-scroll {
+  height: 100%;
   min-height: 0;
+  box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  scroll-padding-bottom: 20px;
+  scroll-padding-bottom: calc(var(--fb-nav-reserved-height) + 20px);
 }
 
 .zero-radio > .fb-page-scroll,
 .lookup-app > .fb-page-scroll {
-  padding: max(10px, env(safe-area-inset-top)) 10px 20px;
+  padding: max(10px, env(safe-area-inset-top)) 10px calc(var(--fb-nav-reserved-height) + 20px);
 }
 
 .explore-app > .fb-page-scroll {
-  padding: env(safe-area-inset-top) 0 20px;
+  padding: env(safe-area-inset-top) 0 calc(var(--fb-nav-reserved-height) + 20px);
 }
 
 .fb-bottom-nav {
-  position: relative;
-  z-index: 100;
-  left: auto;
-  bottom: auto;
-  width: 100%;
-  min-height: calc(var(--fb-nav-height) + env(safe-area-inset-bottom));
+  position: fixed !important;
+  z-index: 1000;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 0 !important;
+  width: min(100vw, 720px);
+  min-height: var(--fb-nav-reserved-height);
   padding-bottom: env(safe-area-inset-bottom);
-  transform: none;
-  display: grid;
+  transform: translateX(-50%) !important;
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid var(--fb-nav-line);
   background: linear-gradient(180deg, var(--fb-nav-bg-top), var(--fb-nav-bg-bottom));
@@ -112,6 +120,13 @@ body {
 .fb-nav-item:focus-visible {
   outline: 2px solid rgba(255,200,100,.65);
   outline-offset: -3px;
+}
+
+/* Zero intentionally keeps its instrument panel non-scrolling on phones. Its
+ * later viewport stylesheet sets overflow-y:hidden; reserve the fixed nav here
+ * so the receiver strip and controls still finish above the bar. */
+.zero-radio > .fb-page-scroll {
+  padding-bottom: calc(var(--fb-nav-reserved-height) + 3px);
 }
 
 @media (min-width: 720px) {
