@@ -120,22 +120,33 @@
 
     const tenKHzPx = (10 / span) * width;
     const labelEvery = tenKHzPx >= 20 ? 1 : tenKHzPx >= 10 ? 5 : 10;
-    const visibleChannels = ordered.filter(({ center }) => center >= left && center <= right);
 
-    for (const { channel, center } of visibleChannels) {
+    for (let i = 0; i < ordered.length; i += 1) {
+      const { channel, center } = ordered[i];
+      if (center < left || center > right) continue;
       if (labelEvery !== 1 && channel !== 1 && channel !== 40 && channel % labelEvery !== 0) continue;
 
-      const centerX = xFor(center, left, span, width);
-      if (centerX < 0 || centerX > width) continue;
+      // The black dividers define the visible channel cell. Center the label on
+      // that cell, not on the RF center frequency, so irregular CB spacing does
+      // not make the typography look left- or right-justified.
+      const cellLeft = i === 0
+        ? cbStart
+        : (ordered[i - 1].center + center) / 2;
+      const cellRight = i === ordered.length - 1
+        ? cbEnd
+        : (center + ordered[i + 1].center) / 2;
+      const labelFrequency = (cellLeft + cellRight) / 2;
+      const labelX = xFor(labelFrequency, left, span, width);
+      if (labelX < 0 || labelX > width) continue;
 
       // Channel numbers stay above the bar on the same row as the CB label.
       // Suppress only labels that would directly overlap the letters "CB".
-      if (centerX < cbLabelX + 34 && centerX > cbLabelX - 8) continue;
+      if (labelX < cbLabelX + 34 && labelX > cbLabelX - 8) continue;
       ctx.font = `${tenKHzPx >= 20 ? 12 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#f7ddb0';
-      ctx.fillText(String(channel), centerX, 2);
+      ctx.fillText(String(channel), labelX, 2);
     }
   }
 
