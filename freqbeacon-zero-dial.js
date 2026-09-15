@@ -10,10 +10,11 @@ function initialFrequencyKHz(defaultKHz = 560) {
 
 const CFG = Object.freeze({
   initialKHz: initialFrequencyKHz(),
-  zoom: 8,
+  initialZoom: 8,
+  minZoom: 5,
+  maxZoom: 12,
   fullBandwidthKHz: 30000,
   stepKHz: 1,
-  spanKHz: 30000 / (2 ** 8),
   spectrumH: 176,
   scaleTop: 176,
   scaleH: 42,
@@ -68,6 +69,19 @@ overlay.setAttribute('aria-hidden', 'true');
 scope.appendChild(overlay);
 const overlayCtx = overlay.getContext('2d');
 
+const zoomControls = document.createElement('div');
+zoomControls.className = 'zero-zoom-controls';
+zoomControls.setAttribute('role', 'group');
+zoomControls.setAttribute('aria-label', 'Spectrum zoom');
+zoomControls.innerHTML = `
+  <button type="button" data-zero-zoom="-1" aria-label="Zoom spectrum out" title="Zoom spectrum out">−</button>
+  <span data-zero-zoom-span aria-live="polite">117 kHz</span>
+  <button type="button" data-zero-zoom="1" aria-label="Zoom spectrum in" title="Zoom spectrum in">+</button>`;
+scope.appendChild(zoomControls);
+const zoomOutButton = zoomControls.querySelector('[data-zero-zoom="-1"]');
+const zoomInButton = zoomControls.querySelector('[data-zero-zoom="1"]');
+const zoomSpan = zoomControls.querySelector('[data-zero-zoom-span]');
+
 const style = document.createElement('style');
 style.textContent = `
   .zero-band-overlay {
@@ -81,8 +95,58 @@ style.textContent = `
   }
   .tune-cursor { z-index: 4; }
   .scope-message { z-index: 5; }
+  .zero-zoom-controls {
+    position: absolute;
+    z-index: 8;
+    top: 10px;
+    left: 10px;
+    display: grid;
+    grid-template-columns: 34px auto 34px;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid rgba(245,189,105,.38);
+    border-radius: 7px;
+    background: rgba(8,12,14,.86);
+    box-shadow: 0 3px 11px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.06);
+    backdrop-filter: blur(7px);
+  }
+  .zero-zoom-controls button {
+    width: 34px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #493d2a;
+    border-radius: 5px;
+    color: #f7d59a;
+    background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(0,0,0,.18)), #24231f;
+    box-shadow: inset 0 1px rgba(255,255,255,.07), 0 1px 3px rgba(0,0,0,.45);
+    font: 600 21px/1 system-ui, sans-serif;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .zero-zoom-controls button:active:not(:disabled) {
+    color: #fff0c9;
+    border-color: #8a6837;
+    background: #342c20;
+    transform: translateY(1px);
+  }
+  .zero-zoom-controls button:disabled { opacity: .28; cursor: default; }
+  .zero-zoom-controls span {
+    min-width: 52px;
+    padding: 0 4px;
+    color: #d8c39b;
+    text-align: center;
+    font: 700 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .02em;
+    white-space: nowrap;
+  }
   #rfCanvas { cursor: grab; }
   #rfCanvas.zero-dragging { cursor: grabbing; }
+  @media (max-width: 430px) {
+    .zero-zoom-controls { top: 7px; left: 7px; grid-template-columns: 32px auto 32px; padding: 2px; }
+    .zero-zoom-controls button { width: 32px; height: 30px; font-size: 19px; }
+    .zero-zoom-controls span { min-width: 48px; font-size: 8px; }
+  }
   @media (pointer: coarse) { #rfCanvas { cursor: default; } }
 `;
 document.head.appendChild(style);
@@ -90,16 +154,21 @@ document.head.appendChild(style);
 const sockets = { snd: null, wf: null };
 const nativeSend = WebSocket.prototype.send;
 WebSocket.prototype.send = function trackedZeroSend(data) {
+  let outgoing = data;
   if (typeof data === 'string') {
     if (data.includes('SERVER DE CLIENT FREQBEACON-ZERO SND')) sockets.snd = this;
     if (data.includes('SERVER DE CLIENT FREQBEACON-ZERO W/F')) sockets.wf = this;
+    if (sockets.wf === this && /^SET zoom=\d+\s+cf=/.test(data)) {
+      outgoing = `SET zoom=${dial.zoom} cf=${dial.centerKHz.toFixed(3)}`;
+    }
   }
-  return nativeSend.call(this, data);
+  return nativeSend.call(this, outgoing);
 };
 
 const dial = {
   tunedKHz: CFG.initialKHz,
   centerKHz: CFG.initialKHz,
+  zoom: CFG.initialZoom,
   pointerId: null,
   mode: null,
   startX: 0,
@@ -110,18 +179,34 @@ const dial = {
   lastNetworkAt: 0
 };
 
+function spanKHz() {
+  return CFG.fullBandwidthKHz / (2 ** dial.zoom);
+}
+
 function edges() {
-  const half = CFG.spanKHz / 2;
+  const half = spanKHz() / 2;
   return { left: dial.centerKHz - half, right: dial.centerKHz + half };
 }
 
 function clampCenter(value) {
-  const half = CFG.spanKHz / 2;
+  const half = spanKHz() / 2;
   return Math.max(half, Math.min(CFG.fullBandwidthKHz - half, value));
 }
 
 function socketReady(socket) {
   return socket && socket.readyState === WebSocket.OPEN;
+}
+
+function formatSpan(value) {
+  if (value >= 100) return `${value.toFixed(0)} kHz`;
+  if (value >= 10) return `${value.toFixed(1)} kHz`;
+  return `${value.toFixed(2)} kHz`;
+}
+
+function updateZoomControls() {
+  if (zoomSpan) zoomSpan.textContent = formatSpan(spanKHz());
+  if (zoomOutButton) zoomOutButton.disabled = dial.zoom <= CFG.minZoom;
+  if (zoomInButton) zoomInButton.disabled = dial.zoom >= CFG.maxZoom;
 }
 
 function sendTune() {
@@ -131,7 +216,7 @@ function sendTune() {
 
 function sendCenter() {
   if (!socketReady(sockets.wf)) return;
-  nativeSend.call(sockets.wf, `SET zoom=${CFG.zoom} cf=${dial.centerKHz.toFixed(3)}`);
+  nativeSend.call(sockets.wf, `SET zoom=${dial.zoom} cf=${dial.centerKHz.toFixed(3)}`);
 }
 
 function sendState(force = false) {
@@ -218,6 +303,7 @@ function updateUi() {
   const ratio = (dial.tunedKHz - left) / (right - left);
   cursor.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   drawBandOverlay();
+  updateZoomControls();
 }
 
 function pointerFrequency(event) {
@@ -268,11 +354,33 @@ function shiftRfVisual(clientDx) {
   shiftRegion(CFG.wfTop, canvas.height - CFG.wfTop, px, '#04101c');
 }
 
+function clearRfForZoom() {
+  baseCtx.fillStyle = '#071a24';
+  baseCtx.fillRect(0, 0, canvas.width, CFG.spectrumH);
+  baseCtx.fillStyle = '#04101c';
+  baseCtx.fillRect(0, CFG.wfTop, canvas.width, canvas.height - CFG.wfTop);
+}
+
+function zoomBy(step) {
+  const next = Math.max(CFG.minZoom, Math.min(CFG.maxZoom, dial.zoom + Number(step || 0)));
+  if (next === dial.zoom) return;
+  dial.zoom = next;
+  dial.centerKHz = clampCenter(dial.tunedKHz);
+  dial.startCenterKHz = dial.centerKHz;
+  dial.startTunedKHz = dial.tunedKHz;
+  clearRfForZoom();
+  updateUi();
+  sendCenter();
+  window.dispatchEvent(new CustomEvent('freqbeacon:zero-zoom', {
+    detail: { zoom: dial.zoom, spanKHz: spanKHz(), centerKHz: dial.centerKHz }
+  }));
+}
+
 function panToPointer(event, force = false) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dx = event.clientX - dial.startX;
-  const deltaKHz = -(dx / rect.width) * CFG.spanKHz;
+  const deltaKHz = -(dx / rect.width) * spanKHz();
   const nextCenter = clampCenter(dial.startCenterKHz + deltaKHz);
   const appliedDelta = nextCenter - dial.startCenterKHz;
   dial.centerKHz = nextCenter;
@@ -348,6 +456,15 @@ function cancelGesture(event) {
   canvas.classList.remove('zero-dragging');
 }
 
+zoomControls.addEventListener('pointerdown', (event) => event.stopPropagation());
+zoomControls.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-zero-zoom]');
+  if (!button || button.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  zoomBy(Number(button.dataset.zeroZoom));
+});
+
 canvas.addEventListener('pointerdown', beginGesture, { capture: true });
 canvas.addEventListener('pointermove', moveGesture, { capture: true });
 canvas.addEventListener('pointerup', endGesture, { capture: true });
@@ -358,6 +475,7 @@ power?.addEventListener('click', () => {
     if (power.getAttribute('aria-pressed') === 'true' && power.querySelector('span')?.textContent === 'STARTING') {
       dial.tunedKHz = CFG.initialKHz;
       dial.centerKHz = CFG.initialKHz;
+      dial.zoom = CFG.initialZoom;
       updateUi();
     }
   }, 0);
