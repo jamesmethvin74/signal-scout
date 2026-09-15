@@ -112,25 +112,39 @@
     if (el.classList.contains('is-error') !== Boolean(isError)) el.classList.toggle('is-error', isError);
   }
 
+  function minimumZoomForCenter(centerKHz = state.centerKHz, fullKHz = state.fullBandwidthKHz, cap = state.zoomCap) {
+    const full = Number(fullKHz) || DEFAULT_BANDWIDTH_KHZ;
+    const maxZoom = Math.max(0, Math.round(cap || DEFAULT_ZOOM_CAP));
+    if (!Number.isFinite(centerKHz)) return 0;
+    for (let zoom = 0; zoom <= maxZoom; zoom += 1) {
+      const halfSpan = (full / (2 ** zoom)) / 2;
+      if (centerKHz >= halfSpan && centerKHz <= full - halfSpan) return zoom;
+    }
+    return maxZoom;
+  }
+
   function updateZoomControls(wrap = document.querySelector('.sdr-spectrum-wrap')) {
     const controls = wrap?.querySelector('[data-sdr-rf-zoom-controls]');
     if (!controls) return;
     const canZoom = state.configured && state.socket?.readyState === NativeWebSocket.OPEN;
     const zoom = Number.isFinite(state.zoom) ? Math.round(state.zoom) : 0;
     const cap = Math.max(0, Math.round(state.zoomCap || DEFAULT_ZOOM_CAP));
+    const minZoom = minimumZoomForCenter(state.centerKHz, state.fullBandwidthKHz, cap);
     const out = controls.querySelector('[data-sdr-rf-zoom="-1"]');
     const inside = controls.querySelector('[data-sdr-rf-zoom="1"]');
-    if (out) out.disabled = !canZoom || zoom <= 0;
+    if (out) out.disabled = !canZoom || zoom <= minZoom;
     if (inside) inside.disabled = !canZoom || zoom >= cap;
     controls.dataset.zoom = String(zoom);
+    controls.dataset.zoomMin = String(minZoom);
     controls.dataset.zoomCap = String(cap);
   }
 
   function adjustZoom(step, reason = 'user-zoom') {
     if (!state.configured || state.socket?.readyState !== NativeWebSocket.OPEN) return false;
     const cap = Math.max(0, Math.round(state.zoomCap || DEFAULT_ZOOM_CAP));
-    const current = Number.isFinite(state.zoom) ? Math.round(state.zoom) : 0;
-    const next = clamp(current + Number(step || 0), 0, cap);
+    const minZoom = minimumZoomForCenter(state.centerKHz, state.fullBandwidthKHz, cap);
+    const current = Number.isFinite(state.zoom) ? Math.round(state.zoom) : minZoom;
+    const next = clamp(current + Number(step || 0), minZoom, cap);
     if (next === current) {
       updateZoomControls();
       return false;
@@ -596,7 +610,8 @@
     const zoom = clamp(Math.round(requestedZoom), 0, state.zoomCap || DEFAULT_ZOOM_CAP);
     const full = state.fullBandwidthKHz || DEFAULT_BANDWIDTH_KHZ;
     const span = full / (2 ** zoom);
-    const center = clamp(target, span / 2, full - span / 2);
+    const keepViewCenter = /^zoom-/.test(reason) && Number.isFinite(previousCenter);
+    const center = clamp(keepViewCenter ? previousCenter : target, span / 2, full - span / 2);
     if (Number.isFinite(state.userZoom)) state.userZoom = zoom;
     if (wasConfigured && (zoom !== previousZoom || !Number.isFinite(previousCenter) || Math.abs(center - previousCenter) > 0.0005)) {
       state.waterfallResetPending = true;
@@ -783,7 +798,7 @@
       state.timeoutTimer = window.setTimeout(() => {
         if (generation !== state.generation || state.hasFrame || state.pendingFrame) return;
         const detail = state.binaryCount
-          ? `No decodable row. Last W/F frame: ${state.lastFrameBytes} bytes received; ${state.unsupportedFrames} unsupported.`
+          ? `No decodable row. Last W/F frame: ${state.lastFrameBytes} bytes; ${state.unsupportedFrames} unsupported.`
           : (state.wfSetupSeen
             ? 'Waterfall setup completed, but the receiver sent no W/F rows.'
             : `No W/F rows or wf_setup received (${state.msgCount} MSG frames).`);
