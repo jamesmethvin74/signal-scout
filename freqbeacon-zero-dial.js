@@ -10,10 +10,11 @@ function initialFrequencyKHz(defaultKHz = 560) {
 
 const CFG = Object.freeze({
   initialKHz: initialFrequencyKHz(),
-  zoom: 8,
+  initialZoom: 8,
+  minZoom: 5,
+  maxZoom: 12,
   fullBandwidthKHz: 30000,
   stepKHz: 1,
-  spanKHz: 30000 / (2 ** 8),
   spectrumH: 176,
   scaleTop: 176,
   scaleH: 42,
@@ -68,6 +69,19 @@ overlay.setAttribute('aria-hidden', 'true');
 scope.appendChild(overlay);
 const overlayCtx = overlay.getContext('2d');
 
+const zoomControls = document.createElement('div');
+zoomControls.className = 'zero-zoom-controls';
+zoomControls.setAttribute('role', 'group');
+zoomControls.setAttribute('aria-label', 'Spectrum zoom');
+zoomControls.innerHTML = `
+  <button type="button" data-zero-zoom="-1" aria-label="Zoom spectrum out" title="Zoom spectrum out">−</button>
+  <span data-zero-zoom-span aria-live="polite">117k</span>
+  <button type="button" data-zero-zoom="1" aria-label="Zoom spectrum in" title="Zoom spectrum in">+</button>`;
+scope.appendChild(zoomControls);
+const zoomOutButton = zoomControls.querySelector('[data-zero-zoom="-1"]');
+const zoomInButton = zoomControls.querySelector('[data-zero-zoom="1"]');
+const zoomSpan = zoomControls.querySelector('[data-zero-zoom-span]');
+
 const style = document.createElement('style');
 style.textContent = `
   .zero-band-overlay {
@@ -81,6 +95,51 @@ style.textContent = `
   }
   .tune-cursor { z-index: 4; }
   .scope-message { z-index: 5; }
+  .zero-zoom-controls {
+    position: absolute;
+    z-index: 8;
+    top: 6px;
+    left: 6px;
+    display: grid;
+    grid-template-columns: 25px auto 25px;
+    align-items: center;
+    gap: 1px;
+    padding: 2px;
+    border: 1px solid rgba(245,189,105,.30);
+    border-radius: 5px;
+    background: rgba(8,12,14,.82);
+    box-shadow: 0 2px 7px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.045);
+    backdrop-filter: blur(5px);
+  }
+  .zero-zoom-controls button {
+    width: 25px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #493d2a;
+    border-radius: 4px;
+    color: #f7d59a;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.16)), #24231f;
+    box-shadow: inset 0 1px rgba(255,255,255,.055);
+    font: 600 16px/1 system-ui, sans-serif;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .zero-zoom-controls button:active:not(:disabled) {
+    color: #fff0c9;
+    border-color: #8a6837;
+    background: #342c20;
+    transform: translateY(1px);
+  }
+  .zero-zoom-controls button:disabled { opacity: .28; cursor: default; }
+  .zero-zoom-controls span {
+    min-width: 34px;
+    padding: 0 2px;
+    color: #d8c39b;
+    text-align: center;
+    font: 700 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
   #rfCanvas { cursor: grab; }
   #rfCanvas.zero-dragging { cursor: grabbing; }
   @media (pointer: coarse) { #rfCanvas { cursor: default; } }
@@ -90,16 +149,21 @@ document.head.appendChild(style);
 const sockets = { snd: null, wf: null };
 const nativeSend = WebSocket.prototype.send;
 WebSocket.prototype.send = function trackedZeroSend(data) {
+  let outgoing = data;
   if (typeof data === 'string') {
     if (data.includes('SERVER DE CLIENT FREQBEACON-ZERO SND')) sockets.snd = this;
     if (data.includes('SERVER DE CLIENT FREQBEACON-ZERO W/F')) sockets.wf = this;
+    if (sockets.wf === this && /^SET zoom=\d+\s+cf=/.test(data)) {
+      outgoing = `SET zoom=${dial.zoom} cf=${dial.centerKHz.toFixed(3)}`;
+    }
   }
-  return nativeSend.call(this, data);
+  return nativeSend.call(this, outgoing);
 };
 
 const dial = {
   tunedKHz: CFG.initialKHz,
   centerKHz: CFG.initialKHz,
+  zoom: CFG.initialZoom,
   pointerId: null,
   mode: null,
   startX: 0,
@@ -110,18 +174,37 @@ const dial = {
   lastNetworkAt: 0
 };
 
+function spanKHz() {
+  return CFG.fullBandwidthKHz / (2 ** dial.zoom);
+}
+
 function edges() {
-  const half = CFG.spanKHz / 2;
+  const half = spanKHz() / 2;
   return { left: dial.centerKHz - half, right: dial.centerKHz + half };
 }
 
 function clampCenter(value) {
-  const half = CFG.spanKHz / 2;
+  const half = spanKHz() / 2;
   return Math.max(half, Math.min(CFG.fullBandwidthKHz - half, value));
 }
 
 function socketReady(socket) {
   return socket && socket.readyState === WebSocket.OPEN;
+}
+
+function formatSpan(value) {
+  if (value >= 100) return `${value.toFixed(0)}k`;
+  if (value >= 10) return `${value.toFixed(1)}k`;
+  return `${value.toFixed(2)}k`;
+}
+
+function updateZoomControls() {
+  if (zoomSpan) {
+    zoomSpan.textContent = formatSpan(spanKHz());
+    zoomSpan.setAttribute('aria-label', `${spanKHz().toFixed(2)} kilohertz visible span`);
+  }
+  if (zoomOutButton) zoomOutButton.disabled = dial.zoom <= CFG.minZoom;
+  if (zoomInButton) zoomInButton.disabled = dial.zoom >= CFG.maxZoom;
 }
 
 function sendTune() {
@@ -131,7 +214,7 @@ function sendTune() {
 
 function sendCenter() {
   if (!socketReady(sockets.wf)) return;
-  nativeSend.call(sockets.wf, `SET zoom=${CFG.zoom} cf=${dial.centerKHz.toFixed(3)}`);
+  nativeSend.call(sockets.wf, `SET zoom=${dial.zoom} cf=${dial.centerKHz.toFixed(3)}`);
 }
 
 function sendState(force = false) {
@@ -218,6 +301,7 @@ function updateUi() {
   const ratio = (dial.tunedKHz - left) / (right - left);
   cursor.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   drawBandOverlay();
+  updateZoomControls();
 }
 
 function pointerFrequency(event) {
@@ -268,11 +352,127 @@ function shiftRfVisual(clientDx) {
   shiftRegion(CFG.wfTop, canvas.height - CFG.wfTop, px, '#04101c');
 }
 
+function snapshotRfView() {
+  const snapshot = document.createElement('canvas');
+  snapshot.width = canvas.width;
+  snapshot.height = canvas.height;
+  snapshot.getContext('2d', { alpha: false })?.drawImage(canvas, 0, 0);
+  const { left, right } = edges();
+  return { snapshot, left, right };
+}
+
+function overlapProjection(oldView, newView) {
+  const overlapLeft = Math.max(oldView.left, newView.left);
+  const overlapRight = Math.min(oldView.right, newView.right);
+  if (!(overlapRight > overlapLeft)) return null;
+
+  const oldSpan = oldView.right - oldView.left;
+  const newSpan = newView.right - newView.left;
+  if (!(oldSpan > 0) || !(newSpan > 0)) return null;
+
+  const sx = ((overlapLeft - oldView.left) / oldSpan) * canvas.width;
+  const sw = ((overlapRight - overlapLeft) / oldSpan) * canvas.width;
+  const dx = ((overlapLeft - newView.left) / newSpan) * canvas.width;
+  const dw = ((overlapRight - overlapLeft) / newSpan) * canvas.width;
+  if (sw < 1 || dw < 1) return null;
+
+  return { overlapLeft, overlapRight, sx, sw, dx, dw };
+}
+
+function reprojectRegion(oldView, newView, top, height, fillStyle) {
+  baseCtx.fillStyle = fillStyle;
+  baseCtx.fillRect(0, top, canvas.width, height);
+
+  const projection = overlapProjection(oldView, newView);
+  if (!projection) return;
+
+  baseCtx.drawImage(
+    oldView.snapshot,
+    projection.sx, top, projection.sw, height,
+    projection.dx, top, projection.dw, height
+  );
+}
+
+function paintUnknownWaterfall(top, height) {
+  // Newly exposed frequencies have no historical RF samples. Give that unknown
+  // history a subdued, frequency-neutral noise floor instead of hard black.
+  // The texture only varies with time (Y), never frequency (X), so it cannot
+  // invent carriers and remains stable when the view is reprojected again.
+  for (let row = 0; row < height; row += 1) {
+    const hash = Math.imul(row + 17, 1103515245) + 12345;
+    const noise = ((hash >>> 16) & 0xff) / 255;
+    const r = Math.round(4 + noise * 3);
+    const g = Math.round(24 + noise * 11);
+    const b = Math.round(32 + noise * 14);
+    baseCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    baseCtx.fillRect(0, top + row, canvas.width, 1);
+  }
+}
+
+function softenWaterfallCoverageEdges(projection, newView, top, height) {
+  const feather = Math.max(12, Math.min(28, projection.dw * 0.08));
+  const epsilon = 0.0001;
+
+  if (projection.overlapLeft > newView.left + epsilon) {
+    const gradient = baseCtx.createLinearGradient(projection.dx, 0, projection.dx + feather, 0);
+    gradient.addColorStop(0, 'rgba(5, 30, 39, .92)');
+    gradient.addColorStop(1, 'rgba(5, 30, 39, 0)');
+    baseCtx.fillStyle = gradient;
+    baseCtx.fillRect(projection.dx, top, feather, height);
+  }
+
+  if (projection.overlapRight < newView.right - epsilon) {
+    const start = projection.dx + projection.dw - feather;
+    const gradient = baseCtx.createLinearGradient(start, 0, projection.dx + projection.dw, 0);
+    gradient.addColorStop(0, 'rgba(5, 30, 39, 0)');
+    gradient.addColorStop(1, 'rgba(5, 30, 39, .92)');
+    baseCtx.fillStyle = gradient;
+    baseCtx.fillRect(start, top, feather, height);
+  }
+}
+
+function reprojectWaterfall(oldView, newView, top, height) {
+  paintUnknownWaterfall(top, height);
+
+  const projection = overlapProjection(oldView, newView);
+  if (!projection) return;
+
+  baseCtx.drawImage(
+    oldView.snapshot,
+    projection.sx, top, projection.sw, height,
+    projection.dx, top, projection.dw, height
+  );
+  softenWaterfallCoverageEdges(projection, newView, top, height);
+}
+
+function preserveRfForZoom(oldView) {
+  const newView = edges();
+  reprojectRegion(oldView, newView, 0, CFG.spectrumH, '#071a24');
+  reprojectWaterfall(oldView, newView, CFG.wfTop, canvas.height - CFG.wfTop);
+}
+
+function zoomBy(step) {
+  const next = Math.max(CFG.minZoom, Math.min(CFG.maxZoom, dial.zoom + Number(step || 0)));
+  if (next === dial.zoom) return;
+
+  const oldView = snapshotRfView();
+  dial.zoom = next;
+  dial.centerKHz = clampCenter(dial.tunedKHz);
+  dial.startCenterKHz = dial.centerKHz;
+  dial.startTunedKHz = dial.tunedKHz;
+  preserveRfForZoom(oldView);
+  updateUi();
+  sendCenter();
+  window.dispatchEvent(new CustomEvent('freqbeacon:zero-zoom', {
+    detail: { zoom: dial.zoom, spanKHz: spanKHz(), centerKHz: dial.centerKHz }
+  }));
+}
+
 function panToPointer(event, force = false) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
   const dx = event.clientX - dial.startX;
-  const deltaKHz = -(dx / rect.width) * CFG.spanKHz;
+  const deltaKHz = -(dx / rect.width) * spanKHz();
   const nextCenter = clampCenter(dial.startCenterKHz + deltaKHz);
   const appliedDelta = nextCenter - dial.startCenterKHz;
   dial.centerKHz = nextCenter;
@@ -348,6 +548,15 @@ function cancelGesture(event) {
   canvas.classList.remove('zero-dragging');
 }
 
+zoomControls.addEventListener('pointerdown', (event) => event.stopPropagation());
+zoomControls.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-zero-zoom]');
+  if (!button || button.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  zoomBy(Number(button.dataset.zeroZoom));
+});
+
 canvas.addEventListener('pointerdown', beginGesture, { capture: true });
 canvas.addEventListener('pointermove', moveGesture, { capture: true });
 canvas.addEventListener('pointerup', endGesture, { capture: true });
@@ -358,6 +567,7 @@ power?.addEventListener('click', () => {
     if (power.getAttribute('aria-pressed') === 'true' && power.querySelector('span')?.textContent === 'STARTING') {
       dial.tunedKHz = CFG.initialKHz;
       dial.centerKHz = CFG.initialKHz;
+      dial.zoom = CFG.initialZoom;
       updateUi();
     }
   }, 0);

@@ -14,7 +14,7 @@
   });
 
   const STEP_VALUES_HZ = Object.freeze([10, 100, 1000, 5000, 10000]);
-  const SPAN_KHZ = 30000 / (2 ** 8);
+  const DEFAULT_SPAN_KHZ = 30000 / (2 ** 8);
   const MIN_KHZ = 0;
   const MAX_KHZ = 30000;
 
@@ -27,6 +27,7 @@
   let stepIndex = 2;
   let knobRotation = 0;
   let pendingBand = null;
+  let viewportSpanKHz = DEFAULT_SPAN_KHZ;
 
   const modeButtons = [...document.querySelectorAll('[data-shell-mode]')];
   const bandButtons = [...document.querySelectorAll('[data-band-khz]')];
@@ -43,6 +44,11 @@
   const signalBar = document.querySelector('#signalBar');
   const dbmReadout = document.querySelector('#dbmReadout');
   const meterNeedle = document.querySelector('#meterNeedle');
+
+  window.addEventListener('freqbeacon:zero-zoom', (event) => {
+    const nextSpan = Number(event.detail?.spanKHz);
+    if (Number.isFinite(nextSpan) && nextSpan > 0) viewportSpanKHz = nextSpan;
+  });
 
   function clampKHz(value) {
     return Math.max(MIN_KHZ, Math.min(MAX_KHZ, value));
@@ -180,12 +186,13 @@
     const rect = canvas.getBoundingClientRect();
     if (!rect.width) return false;
 
+    const span = viewportSpanKHz;
     const center = currentCenterKHz();
-    const left = center - SPAN_KHZ / 2;
-    const rawRatio = (baseKHz - left) / SPAN_KHZ;
+    const left = center - span / 2;
+    const rawRatio = (baseKHz - left) / span;
     const ratio = Math.max(.002, Math.min(.998, rawRatio));
     const startX = rect.left + ratio * rect.width;
-    const endX = startX + (deltaKHz / SPAN_KHZ) * rect.width;
+    const endX = startX + (deltaKHz / span) * rect.width;
     const pointerId = 9101;
 
     const before = baseKHz;
@@ -206,10 +213,11 @@
 
     const rect = canvas.getBoundingClientRect();
     if (!rect.width) return false;
+    const span = viewportSpanKHz;
     const cursorX = rect.left + (parseFloat(getComputedStyle(cursor).left) || rect.width / 2);
     let startX = rect.left + Math.min(24, rect.width * .06);
     if (Math.abs(startX - cursorX) <= 36) startX = rect.right - Math.min(24, rect.width * .06);
-    const endX = startX - (delta / SPAN_KHZ) * rect.width;
+    const endX = startX - (delta / span) * rect.width;
     const pointerId = 9102;
 
     dispatchPointer('pointerdown', startX, pointerId, 1);
