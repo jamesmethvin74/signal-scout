@@ -27,47 +27,138 @@ function dms(direction, degrees, minutes, seconds) {
   const min = Number(minutes);
   const sec = Number(seconds);
   if (![deg, min, sec].every(Number.isFinite)) return null;
+  if (min < 0 || min >= 60 || sec < 0 || sec >= 60) return null;
   let value = deg + min / 60 + sec / 3600;
   if (/^[SW]$/i.test(String(direction))) value *= -1;
   return value;
 }
 
-function watts(value, unit) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return /kw/i.test(String(unit)) ? Math.round(numeric * 1000) : Math.round(numeric);
+function powerWatts(value, unit = '') {
+  const text = `${String(value || '').trim()} ${String(unit || '').trim()}`.trim();
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const numeric = Number(match[0]);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  if (/\bkw\b/i.test(text)) return Math.round(numeric * 1000);
+  if (/\bw\b/i.test(text) && !/\bkw\b/i.test(text)) return Math.round(numeric);
+  // FCC AM Query's POWER field is expressed in kW when the unit is omitted.
+  return Math.round(numeric * 1000);
+}
+
+function coordinateFromCombined(value, allowedDirections) {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text) return null;
+  const directionMatch = text.match(new RegExp(`[${allowedDirections}]`));
+  if (!directionMatch) return null;
+  const numbers = text.match(/\d+(?:\.\d+)?/g) || [];
+  if (numbers.length < 3) return null;
+  return dms(directionMatch[0], numbers[0], numbers[1], numbers[2]);
+}
+
+function coordinateFromTokens(fields, allowedDirections, startIndex = 0) {
+  for (let i = startIndex; i < fields.length; i += 1) {
+    const token = String(fields[i] || '').trim().toUpperCase();
+    if (new RegExp(`^[${allowedDirections}]$`).test(token)) {
+      if (i + 3 < fields.length) {
+        const forward = dms(token, fields[i + 1], fields[i + 2], fields[i + 3]);
+        if (forward !== null) return forward;
+      }
+      if (i >= 3) {
+        const backward = dms(token, fields[i - 3], fields[i - 2], fields[i - 1]);
+        if (backward !== null) return backward;
+      }
+    }
+
+    const combined = coordinateFromCombined(token, allowedDirections);
+    if (combined !== null) return combined;
+  }
+  return null;
+}
+
+function compactFields(line) {
+  const fields = htmlText(line).trim().split('|').map((value) => value.trim());
+  while (fields[0] === '') fields.shift();
+  while (fields.at(-1) === '') fields.pop();
+  return fields;
 }
 
 export function parsePipeRecord(line) {
-  const clean = htmlText(line).trim();
-  if (!clean.includes('|')) return null;
-  const fields = clean.split('|').map((value) => value.trim());
-  while (fields[0] === '') fields.shift();
-  while (fields.at(-1) === '') fields.pop();
+  const fields = compactFields(line);
+  if (fields.length < 12) return null;
 
-  const amIndex = fields.findIndex((value) => value.toUpperCase() === 'AM');
-  if (amIndex < 1) return null;
-  const call = String(fields[amIndex - 1] || '').toUpperCase();
-  const frequencyKHz = Number(fields[amIndex + 1]);
+  const statusIndex = fields.findIndex((value) => String(value).trim().toUpperCase() === 'LIC');
+  if (statusIndex < 5) return null;
+
+  // Documented FCC text-export schema:
+  // CALLSIGN | FREQUENCY | SERVICE | HOURSOP | CLASS | STATUS | CITY | STATE |
+  // COUNTRY | FILENUM | POWER | FACID | LAT | LON | LICENSEE | APPID
+  // Some historical output variants insert a frequency unit or split DMS/unit
+  // values into separate pipe fields, so the parser also handles those forms.
+  let call = '';
+  let frequencyKHz = NaN;
+  let hours = '';
+  let stationClass = '';
+
+  const serviceIndex = fields.findIndex((value, index) => index < statusIndex && String(value).trim().toUpperCase() === 'AM');
+  if (serviceIndex === 2 && Number.isFinite(Number(fields[1]))) {
+    call = String(fields[0] || '').toUpperCase();
+    frequencyKHz = Number(fields[1]);
+    hours = String(fields[3] || '').trim();
+    stationClass = String(fields[4] || '').trim();
+  } else if (serviceIndex === 1 && Number.isFinite(Number(fields[2]))) {
+    // Defensive support for the older CALLSIGN | SERVICE | FREQUENCY shape.
+    call = String(fields[0] || '').toUpperCase();
+    frequencyKHz = Number(fields[2]);
+    const between = fields.slice(3, statusIndex);
+    hours = between.find((value) => /day|night|unlimited|critical/i.test(String(value))) || '';
+    stationClass = [...between].reverse().find((value) => /^[ABCD]$/i.test(String(value).trim())) || '';
+  } else {
+    return null;
+  }
+
   if (!/^[A-Z0-9-]{3,12}$/.test(call) || !Number.isFinite(frequencyKHz) || frequencyKHz < 530 || frequencyKHz > 1700) return null;
 
-  const statusIndex = fields.findIndex((value, index) => index > amIndex && value.toUpperCase() === 'LIC');
-  if (statusIndex < 0 || statusIndex + 15 >= fields.length) return null;
-
-  const hours = String(fields[amIndex + 4] || '').trim();
-  const domesticClass = String(fields[amIndex + 5] || '').trim();
-  const region2Class = String(fields[amIndex + 6] || '').trim();
   const city = String(fields[statusIndex + 1] || '').trim();
   const state = String(fields[statusIndex + 2] || '').trim().toUpperCase();
   const country = String(fields[statusIndex + 3] || '').trim().toUpperCase();
   const fileNumber = String(fields[statusIndex + 4] || '').trim();
-  const powerW = watts(fields[statusIndex + 5], fields[statusIndex + 6]);
-  const facilityId = Number(fields[statusIndex + 7]);
-  const lat = dms(fields[statusIndex + 8], fields[statusIndex + 9], fields[statusIndex + 10], fields[statusIndex + 11]);
-  const lon = dms(fields[statusIndex + 12], fields[statusIndex + 13], fields[statusIndex + 14], fields[statusIndex + 15]);
+  if (!['US', 'USA'].includes(country)) return null;
 
-  if (!['US', 'USA'].includes(country) || !Number.isFinite(facilityId) || !Number.isFinite(powerW) || lat === null || lon === null) return null;
-  return { call, frequencyKHz, hours, domesticClass, region2Class, city, state, fileNumber, powerW, facilityId, lat, lon };
+  const powerIndex = statusIndex + 5;
+  const powerUnitIndex = /^(?:k?w)$/i.test(String(fields[powerIndex + 1] || '').trim()) ? powerIndex + 1 : -1;
+  const powerW = powerWatts(fields[powerIndex], powerUnitIndex > 0 ? fields[powerUnitIndex] : '');
+  if (!Number.isFinite(powerW)) return null;
+
+  const afterPower = powerUnitIndex > 0 ? powerUnitIndex + 1 : powerIndex + 1;
+  let facilityId = NaN;
+  let facilityIndex = -1;
+  for (let i = afterPower; i < Math.min(fields.length, afterPower + 4); i += 1) {
+    const value = String(fields[i] || '').trim();
+    if (/^\d{1,8}$/.test(value)) {
+      facilityId = Number(value);
+      facilityIndex = i;
+      break;
+    }
+  }
+  if (!Number.isFinite(facilityId)) return null;
+
+  const lat = coordinateFromTokens(fields, 'NS', facilityIndex + 1);
+  const lon = coordinateFromTokens(fields, 'EW', facilityIndex + 1);
+  if (lat === null || lon === null) return null;
+
+  return {
+    call,
+    frequencyKHz,
+    hours,
+    domesticClass: stationClass,
+    city,
+    state,
+    fileNumber,
+    powerW,
+    facilityId,
+    lat,
+    lon
+  };
 }
 
 export function parseFccExport(text) {
@@ -116,7 +207,7 @@ export function normalizeStations(records) {
       ...(station.criticalPowerW ? { criticalPowerW: station.criticalPowerW } : {}),
       categories: ['broadcast'],
       description: `FCC-licensed AM station serving ${city}, ${stateName}.`,
-      classA: station.domesticClass === 'A' || station.region2Class === 'A',
+      classA: station.domesticClass === 'A',
       facilityId: station.facilityId,
       fileNumber: station.fileNumber,
       source: 'FCC AM Query licensed-station export'
@@ -142,13 +233,27 @@ async function fetchFcc() {
   return response.text();
 }
 
-async function main() {
-  // Parser fixture mirrors FCC list=2 pipe-delimited field order.
-  const fixture = '|KBRT|AM|740|kHz|DA2|Daytime|D|D|LIC|COSTA MESA|CA|US|BL-TEST|50.0|kW|34588|N|33|49|44.00|W|117|38|18.00|3|Pacific|KIERTRON, INC.|';
-  if (parsePipeRecord(fixture)?.facilityId !== 34588) throw new Error('FCC AM parser fixture failed');
+function runParserFixtures() {
+  const documented = '|KBRT|740|AM|Daytime|D|LIC|COSTA MESA|CA|US|BL-TEST|50.0|34588|33|49|44.00|N|117|38|18.00|W|KIERTRON, INC.|12345|';
+  const splitUnits = '|KBRT|740|AM|Nighttime|D|LIC|COSTA MESA|CA|US|BL-TEST|0.19|kW|34588|N|33|49|44.00|W|117|38|18.00|KIERTRON, INC.|12345|';
+  const day = parsePipeRecord(documented);
+  const night = parsePipeRecord(splitUnits);
+  if (day?.facilityId !== 34588 || day.powerW !== 50000 || Math.abs(day.lat - 33.8288889) > 0.001 || Math.abs(day.lon + 117.6383333) > 0.001) {
+    throw new Error('FCC AM documented-schema parser fixture failed');
+  }
+  if (night?.powerW !== 190) throw new Error('FCC AM split-unit parser fixture failed');
+  const station = normalizeStations([day, night])[0];
+  if (station.dayPowerW !== 50000 || station.nightPowerW !== 190) throw new Error('FCC AM day/night merge fixture failed');
+}
 
-  const stations = normalizeStations(parseFccExport(await fetchFcc()));
-  if (stations.length < MIN_EXPECTED_STATIONS) throw new Error(`Refusing incomplete FCC AM catalog: only ${stations.length} licensed U.S. stations parsed`);
+async function main() {
+  runParserFixtures();
+
+  const parsed = parseFccExport(await fetchFcc());
+  const stations = normalizeStations(parsed);
+  if (stations.length < MIN_EXPECTED_STATIONS) {
+    throw new Error(`Refusing incomplete FCC AM catalog: ${parsed.length} operating records produced only ${stations.length} licensed U.S. stations`);
+  }
   const kbrt = stations.find((station) => station.callsign === 'KBRT' && station.frequencyKHz === 740);
   if (!kbrt || kbrt.dayPowerW < 10000) throw new Error('FCC AM validation failed: KBRT 740 missing or implausible');
 
