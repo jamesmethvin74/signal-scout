@@ -24,7 +24,17 @@
       top: auto !important;
       bottom: 16% !important;
       left: 12px !important;
+      grid-template-columns: 34px !important;
+      grid-template-rows: 24px auto 24px !important;
+      justify-items: center !important;
     }
+    .zero-zoom-controls [data-zero-zoom="1"] { order: 1; }
+    .zero-zoom-controls [data-zero-zoom-span] {
+      order: 2;
+      min-width: 34px !important;
+      padding: 3px 0 !important;
+    }
+    .zero-zoom-controls [data-zero-zoom="-1"] { order: 3; }
   </style>
 </head>
 <body>
