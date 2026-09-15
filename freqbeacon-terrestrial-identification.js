@@ -25,7 +25,7 @@
       _activePowerW: Number.isFinite(power) ? power : Number(entry.powerW)
     };
   };
-  const rank = (entry, receiver, now) => {
+  const rank = (entry, receiver, now, regulatorBonus = sourceTier(entry) === 1) => {
     const active = activeTechnical(entry, receiver, now);
     const powerW = Number(active._activePowerW);
     if (Number.isFinite(powerW) && powerW <= 0) return null;
@@ -33,7 +33,7 @@
     const schedule = base.scheduleState(entry, now);
     const p = Number.isFinite(powerW) && powerW > 0 ? powerW : 1000;
     let score = Math.log10(Math.max(1, p)) * 90 - (Number.isFinite(distance) ? distance : 5000);
-    if (sourceTier(entry) === 1) score += 500;
+    if (regulatorBonus) score += 500;
     else score -= 80;
     if (entry.locationApproximate) score -= 120;
     if (entry.band === 'LW') score += 80;
@@ -58,24 +58,30 @@
       kind: 'exact', frequencyKHz: Number(kHz), receiver,
       entry: best.entry, distance: best.distance, schedule: best.schedule,
       confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
-      alternatives: candidates.slice(1).map((c) => c.entry)
+      alternatives: candidates.slice(1).map((c) => c.entry),
+      technicalRank: best.score
     };
   }
 
-  function shouldPreferBase(baseResult, terrestrialResult) {
+  function shouldPreferBase(baseResult, terrestrialResult, options = {}) {
     if (!terrestrialResult) return true;
     if (!baseResult || baseResult.kind !== 'exact') return false;
-    const e = baseResult.entry || {};
-    if (e.type === 'signal' || e.type === 'service' || e.type === 'channel') return true;
-    if (e.type === 'station' && e.sourceAuthority && Number(e.sourceTier) === 1) return true;
-    if (e.type === 'station' && /FCC/i.test(String(e.source || ''))) return true;
-    return false;
+    const entry = baseResult.entry || {};
+    if (entry.type === 'signal' || entry.type === 'service' || entry.type === 'channel') return true;
+    if (entry.type !== 'station') return false;
+
+    const receiver = options.receiver || baseResult.receiver || base.resolveReceiver(options.receiverIdentity || '');
+    const now = options.now instanceof Date ? options.now : new Date();
+    const baseIsRegulator = Number(entry.sourceTier) === 1 || /FCC/i.test(String(entry.source || ''));
+    const scored = rank(entry, receiver, now, baseIsRegulator);
+    if (!scored) return false;
+    return scored.score >= terrestrialResult.technicalRank;
   }
 
   const identify = (kHz, options = {}) => {
     const existing = base.identify(kHz, options);
     const intl = terrestrialExact(kHz, options);
-    return shouldPreferBase(existing, intl) ? existing : intl;
+    return shouldPreferBase(existing, intl, options) ? existing : intl;
   };
   const identifyAsync = async (kHz, options = {}) => {
     if (Number(kHz) < 2300) return identify(kHz, options);
