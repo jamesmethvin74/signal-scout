@@ -207,15 +207,18 @@
   function keepGlobeReceiverCardVisible() {
     const card = document.getElementById('globeReceiverCard');
     const scrollHost = document.querySelector('.fb-page-scroll');
+    const bottomNav = document.querySelector('.fb-bottom-nav');
     if (!card || card.hidden || !scrollHost) return;
 
     const cardRect = card.getBoundingClientRect();
     const hostRect = scrollHost.getBoundingClientRect();
+    const navRect = bottomNav?.getBoundingClientRect();
+    const protectedBottom = Math.min(hostRect.bottom, Number.isFinite(navRect?.top) ? navRect.top : hostRect.bottom);
     const gap = 12;
     let delta = 0;
 
-    if (cardRect.bottom > hostRect.bottom - gap) {
-      delta = cardRect.bottom - (hostRect.bottom - gap);
+    if (cardRect.bottom > protectedBottom - gap) {
+      delta = cardRect.bottom - (protectedBottom - gap);
     } else if (cardRect.top < hostRect.top + gap) {
       delta = cardRect.top - (hostRect.top + gap);
     }
