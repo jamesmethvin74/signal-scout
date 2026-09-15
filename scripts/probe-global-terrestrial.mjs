@@ -16,6 +16,5 @@ writeFileSync('terrestrial-build-probe.txt', report, 'utf8');
 console.log(report);
 
 const text = `${result.stderr || ''}\n${result.stdout || ''}`;
-// Temporary binary classifier for the already-captured Ofcom failure.
-// Failure here means the root cause is source-header / EMRP schema handling.
-process.exitCode = /missing required header|missing In-use EMRP|EMRP unit|EMRP header/i.test(text) ? 1 : 0;
+// Temporary classifier: failure means Ofcom parsed but the selected marker is stale/mismatched.
+process.exitCode = /Ofcom marker missing|marker missing.*Ofcom/i.test(text) ? 1 : 0;
