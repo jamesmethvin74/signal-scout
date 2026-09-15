@@ -361,35 +361,94 @@ function snapshotRfView() {
   return { snapshot, left, right };
 }
 
-function reprojectRegion(oldView, newView, top, height, fillStyle) {
-  baseCtx.fillStyle = fillStyle;
-  baseCtx.fillRect(0, top, canvas.width, height);
-
+function overlapProjection(oldView, newView) {
   const overlapLeft = Math.max(oldView.left, newView.left);
   const overlapRight = Math.min(oldView.right, newView.right);
-  if (!(overlapRight > overlapLeft)) return;
+  if (!(overlapRight > overlapLeft)) return null;
 
   const oldSpan = oldView.right - oldView.left;
   const newSpan = newView.right - newView.left;
-  if (!(oldSpan > 0) || !(newSpan > 0)) return;
+  if (!(oldSpan > 0) || !(newSpan > 0)) return null;
 
   const sx = ((overlapLeft - oldView.left) / oldSpan) * canvas.width;
   const sw = ((overlapRight - overlapLeft) / oldSpan) * canvas.width;
   const dx = ((overlapLeft - newView.left) / newSpan) * canvas.width;
   const dw = ((overlapRight - overlapLeft) / newSpan) * canvas.width;
-  if (sw < 1 || dw < 1) return;
+  if (sw < 1 || dw < 1) return null;
+
+  return { overlapLeft, overlapRight, sx, sw, dx, dw };
+}
+
+function reprojectRegion(oldView, newView, top, height, fillStyle) {
+  baseCtx.fillStyle = fillStyle;
+  baseCtx.fillRect(0, top, canvas.width, height);
+
+  const projection = overlapProjection(oldView, newView);
+  if (!projection) return;
 
   baseCtx.drawImage(
     oldView.snapshot,
-    sx, top, sw, height,
-    dx, top, dw, height
+    projection.sx, top, projection.sw, height,
+    projection.dx, top, projection.dw, height
   );
+}
+
+function paintUnknownWaterfall(top, height) {
+  // Newly exposed frequencies have no historical RF samples. Give that unknown
+  // history a subdued, frequency-neutral noise floor instead of hard black.
+  // The texture only varies with time (Y), never frequency (X), so it cannot
+  // invent carriers and remains stable when the view is reprojected again.
+  for (let row = 0; row < height; row += 1) {
+    const hash = Math.imul(row + 17, 1103515245) + 12345;
+    const noise = ((hash >>> 16) & 0xff) / 255;
+    const r = Math.round(4 + noise * 3);
+    const g = Math.round(24 + noise * 11);
+    const b = Math.round(32 + noise * 14);
+    baseCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    baseCtx.fillRect(0, top + row, canvas.width, 1);
+  }
+}
+
+function softenWaterfallCoverageEdges(projection, newView, top, height) {
+  const feather = Math.max(12, Math.min(28, projection.dw * 0.08));
+  const epsilon = 0.0001;
+
+  if (projection.overlapLeft > newView.left + epsilon) {
+    const gradient = baseCtx.createLinearGradient(projection.dx, 0, projection.dx + feather, 0);
+    gradient.addColorStop(0, 'rgba(5, 30, 39, .92)');
+    gradient.addColorStop(1, 'rgba(5, 30, 39, 0)');
+    baseCtx.fillStyle = gradient;
+    baseCtx.fillRect(projection.dx, top, feather, height);
+  }
+
+  if (projection.overlapRight < newView.right - epsilon) {
+    const start = projection.dx + projection.dw - feather;
+    const gradient = baseCtx.createLinearGradient(start, 0, projection.dx + projection.dw, 0);
+    gradient.addColorStop(0, 'rgba(5, 30, 39, 0)');
+    gradient.addColorStop(1, 'rgba(5, 30, 39, .92)');
+    baseCtx.fillStyle = gradient;
+    baseCtx.fillRect(start, top, feather, height);
+  }
+}
+
+function reprojectWaterfall(oldView, newView, top, height) {
+  paintUnknownWaterfall(top, height);
+
+  const projection = overlapProjection(oldView, newView);
+  if (!projection) return;
+
+  baseCtx.drawImage(
+    oldView.snapshot,
+    projection.sx, top, projection.sw, height,
+    projection.dx, top, projection.dw, height
+  );
+  softenWaterfallCoverageEdges(projection, newView, top, height);
 }
 
 function preserveRfForZoom(oldView) {
   const newView = edges();
   reprojectRegion(oldView, newView, 0, CFG.spectrumH, '#071a24');
-  reprojectRegion(oldView, newView, CFG.wfTop, canvas.height - CFG.wfTop, '#04101c');
+  reprojectWaterfall(oldView, newView, CFG.wfTop, canvas.height - CFG.wfTop);
 }
 
 function zoomBy(step) {
