@@ -40,7 +40,7 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Source version used by this milestone: page/data update 5 August 2026
 - Fields ingested: station, area, site, frequency kHz, OS National Grid Reference, in-use EMRP, effective/change date when present
 - Coordinate handling: OS National Grid Reference is converted to WGS84 latitude/longitude during the build; no grid conversion occurs in the browser
-- Power handling: importer requires the current MF EMRP header to carry an explicit unit and normalizes kW to watts; it fails closed rather than guessing units
+- Power handling: the current MF feed uses the documented `In-use EMRP` field and may carry `kW`/`W` in the cell rather than the header. The importer accepts only a numeric value with an optional recognized `kW`/`W` suffix; an explicit suffix wins, while the legacy unqualified `In-use EMRP` convention is normalized as kW. Unrecognized units/text fail closed instead of being guessed.
 - Runtime: generated static catalog; no Ofcom request while listening
 - Confidence: Tier 1 / regulator; Ofcom describes the dataset as transmitters currently on-air
 - Refresh: run the global terrestrial generator and verify the current MF schema/marker checks
