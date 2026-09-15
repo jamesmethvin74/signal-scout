@@ -14,6 +14,9 @@ const report = [
 ].join('\n');
 writeFileSync('terrestrial-build-probe.txt', report, 'utf8');
 console.log(report);
-// Diagnostic commit only: allow Cloudflare preview deployment so the exact
-// generator failure is inspectable. Final branch restores fail-closed build.
-process.exitCode = 0;
+
+// Temporary diagnostic classifier. Cloudflare's GitHub check does not expose
+// build stdout/stderr, so classify the already-captured generator error via the
+// check result. Final branch deletes this probe and restores fail-closed build.
+const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+process.exitCode = /ACMA/i.test(text) ? 1 : 0;
