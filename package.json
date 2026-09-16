@@ -2,7 +2,7 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "node -e \"Promise.all([['A26','https://raw.githubusercontent.com/Roger-Need/StationFinder/55076d0767a2ba4a6d46a71d98c66db624749797/Frequency%20Lists/Merged/A26%20merged_schedule.csv'],['countries','https://raw.githubusercontent.com/google/dspl/db79dad685276dbf98ca44b875d1481bc240c5c1/samples/google/canonical/countries.csv']].map(async ([n,u])=>{const r=await fetch(u,{redirect:'follow',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(n+' '+r.status);const b=await r.arrayBuffer();if(b.byteLength<100)throw new Error(n+' short '+b.byteLength);console.log(n+' ok '+b.byteLength)})).catch(e=>{console.error(e);process.exit(1)})\"",
+    "postinstall": "node -e \"Promise.all([import('node:fs/promises'),import('node:zlib'),import('node:crypto')]).then(async ([fs,z,c])=>{const gz=await fs.readFile('data/ofcom/txparamsmf-2026-08-05.csv.gz');const raw=z.gunzipSync(gz);const h=c.createHash('sha256').update(raw).digest('hex');if(h!=='0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9')throw new Error('Ofcom SHA '+h);if(raw.length!==21658)throw new Error('Ofcom size '+raw.length);console.log('Ofcom snapshot ok',raw.length,h) }).catch(e=>{console.error(e);process.exit(1)})\"",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs"
   }
