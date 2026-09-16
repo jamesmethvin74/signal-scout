@@ -2,7 +2,7 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "node -e \"import('./scripts/generate-global-terrestrial-catalog.mjs').then(async g=>{const r=await fetch('https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip',{redirect:'follow',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('ACMA '+r.status);const rows=g.normalizeACMA(Buffer.from(await r.arrayBuffer()));if(rows.length<150)throw new Error('ACMA count '+rows.length);for(const x of rows){if(!Number.isFinite(x.frequencyKHz)||x.frequencyKHz<=0)throw new Error('bad freq');if(Number.isFinite(x.lat)&&(!Number.isFinite(x.lon)||Math.abs(x.lat)>90||Math.abs(x.lon)>180))throw new Error('bad coord '+x.callsign);for(const p of [x.powerW,x.dayPowerW,x.nightPowerW,x.criticalPowerW].filter(Number.isFinite)){if(p<0||p>5e6)throw new Error('bad power '+x.callsign+' '+p)}}if(!rows.some(x=>Math.abs(x.frequencyKHz-873)<0.1&&/2GB/i.test((x.callsign||'')+' '+(x.name||''))))throw new Error('ACMA 2GB marker missing');console.log('ACMA exact validation ok',rows.length)}).catch(e=>{console.error(e);process.exit(1)})\"",
+    "postinstall": "node scripts/diagnose-global-terrestrial.mjs",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs"
   }
