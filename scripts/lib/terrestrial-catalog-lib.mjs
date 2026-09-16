@@ -82,13 +82,47 @@ export function osGridToWgs84(ngr){
 }
 
 function colIndex(ref){let n=0; for(const c of ref.match(/[A-Z]+/i)?.[0]||'') n=n*26+c.toUpperCase().charCodeAt(0)-64; return n-1;}
+function attrValue(attrs,name){
+  const escaped=String(name).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return xmlDecode(attrs.match(new RegExp(`(?:^|\\s)${escaped}="([^"]*)"`,'i'))?.[1]||'');
+}
+function workbookTarget(target){
+  let key=clean(target).replace(/\\/g,'/').replace(/^\/+/, '');
+  if(key.startsWith('xl/')) return key;
+  key=key.replace(/^\.\//,'');
+  while(key.startsWith('../')) key=key.slice(3);
+  return `xl/${key}`;
+}
 export function parseXlsxSheets(zipBuf){
   const z=unzipEntries(zipBuf), wb=findZipEntry(z,'xl/workbook.xml'), rel=findZipEntry(z,'xl/_rels/workbook.xml.rels'); if(!wb||!rel) throw new Error('XLSX workbook metadata missing');
-  const sharedBuf=findZipEntry(z,'xl/sharedStrings.xml'); const shared=[]; if(sharedBuf){for(const m of sharedBuf.toString('utf8').matchAll(/<si[^>]*>([\s\S]*?)<\/si>/g)){shared.push(xmlDecode([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(x=>x[1]).join('')));}}
-  const relMap=new Map([...rel.toString('utf8').matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)].map(m=>[m[1],m[2]])); const sheets=[];
-  for(const m of wb.toString('utf8').matchAll(/<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g)){
-    const target=relMap.get(m[2]); if(!target) continue; const key=target.startsWith('/')?target.slice(1):`xl/${target.replace(/^\.\//,'')}`; const xml=z.get(key); if(!xml) continue; const rows=[];
-    for(const rm of xml.toString('utf8').matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)){const arr=[]; for(const cm of rm[1].matchAll(/<c[^>]*r="([A-Z]+\d+)"[^>]*?(?:t="([^"]+)")?[^>]*>([\s\S]*?)<\/c>/g)){const idx=colIndex(cm[1]),t=cm[2]||'',body=cm[3]; let val=''; const vm=body.match(/<v>([\s\S]*?)<\/v>/); const im=body.match(/<t[^>]*>([\s\S]*?)<\/t>/); if(t==='s'&&vm) val=shared[Number(vm[1])]??''; else if(im) val=xmlDecode(im[1]); else if(vm) val=xmlDecode(vm[1]); arr[idx]=val;} if(arr.some(v=>v!==undefined&&v!=='')) rows.push(arr.map(v=>v??''));}
-    sheets.push({name:xmlDecode(m[1]),rows});
-  } return sheets;
+  const sharedBuf=findZipEntry(z,'xl/sharedStrings.xml'), shared=[];
+  if(sharedBuf){
+    for(const m of sharedBuf.toString('utf8').matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)){
+      shared.push(xmlDecode([...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(x=>x[1]).join('')));
+    }
+  }
+  const relMap=new Map(), relText=rel.toString('utf8');
+  for(const m of relText.matchAll(/<Relationship\b([^>]*)\/?\s*>/g)){
+    const id=attrValue(m[1],'Id'), target=attrValue(m[1],'Target'); if(id&&target) relMap.set(id,target);
+  }
+  const sheets=[], wbText=wb.toString('utf8');
+  for(const m of wbText.matchAll(/<sheet\b([^>]*)\/?\s*>/g)){
+    const attrs=m[1], name=attrValue(attrs,'name'), rid=attrValue(attrs,'r:id'); if(!name||!rid) continue;
+    const target=relMap.get(rid); if(!target) continue; const xml=z.get(workbookTarget(target)); if(!xml) continue; const rows=[];
+    for(const rm of xml.toString('utf8').matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)){
+      const arr=[];
+      for(const cm of rm[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)){
+        const attrs=cm[1], ref=attrValue(attrs,'r'); if(!ref) continue;
+        const idx=colIndex(ref), t=attrValue(attrs,'t'), body=cm[2]; let val='';
+        const vm=body.match(/<v>([\s\S]*?)<\/v>/), tm=[...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)];
+        if(t==='s'&&vm) val=shared[Number(vm[1])]??'';
+        else if(tm.length) val=xmlDecode(tm.map(x=>x[1]).join(''));
+        else if(vm) val=xmlDecode(vm[1]);
+        arr[idx]=val;
+      }
+      if(arr.some(v=>v!==undefined&&v!=='')) rows.push(arr.map(v=>v??''));
+    }
+    sheets.push({name,rows});
+  }
+  return sheets;
 }
