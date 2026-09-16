@@ -16,6 +16,9 @@ const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spect
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
+const IFT_URL = 'https://rpc.ift.org.mx/vrpc/assets/publish/uploads/infraestructura/01_infraestructura_AM_FM_250826.xlsx';
+const IFT_SOURCE_DATE = '2026-08-25';
+const TRAFICOM_URL = 'https://opendata.traficom.fi/api/v13/Radioasematiedot?%24filter=%28Frequency%20ge%20148500%20and%20Frequency%20le%20283500%29%20or%20%28Frequency%20ge%20520000%20and%20Frequency%20le%201710000%29&%24top=500';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -59,6 +62,7 @@ async function readOfcomSnapshot(){
 }
 function validCoord(lat,lon){ return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180; }
 function stationBase(authority,tier,country){ return {type:'station',sourceAuthority:authority,sourceTier:tier,sourceCountry:country,technicalConfidence:tier===1?'regulator':'reference'}; }
+function bandForKHz(kHz){ if(kHz>=148.5&&kHz<=283.5)return 'LW'; if(kHz>=520&&kHz<=1710)return 'MW'; return null; }
 
 export function normalizeISED(dbfBuffer){
   const {fields,records}=parseDbf(dbfBuffer); const headers=fields.map(f=>f.name);
@@ -162,6 +166,95 @@ export function normalizeACMA(outerZip){
   return normalizeACMARows(sheet.rows);
 }
 
+function iftHeaderRow(rows){
+  for(let i=0;i<Math.min(rows.length,40);i++){
+    const keys=rows[i].map(headerKey);
+    if(keys.some(k=>/distintivo|indicativo|callsign/.test(k))&&keys.some(k=>k.includes('frecuencia'))&&keys.some(k=>k.includes('potencia'))) return i;
+  }
+  return -1;
+}
+function iftFrequencyKHz(row){
+  const key=Object.keys(row).find(k=>headerKey(k).includes('frecuencia'));
+  if(!key) throw new Error(`IFT workbook missing frequency column; got ${Object.keys(row).join(', ')}`);
+  const value=num(row[key]); if(!Number.isFinite(value)) return null;
+  const hk=headerKey(key);
+  if(hk.includes('mhz')) return value*1000;
+  if(hk.includes('khz')||value>=500) return value;
+  return null;
+}
+function numericWithUnit(raw){
+  const text=clean(raw).replace(/,/g,'');
+  const m=text.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)/);
+  return m?Number(m[0]):null;
+}
+function iftPowerW(row){
+  const keys=Object.keys(row).filter(k=>headerKey(k).includes('potencia'));
+  if(!keys.length) throw new Error(`IFT workbook missing power column; got ${Object.keys(row).join(', ')}`);
+  const generic=keys.find(k=>!/noct|noche|night|diurn|dia|day/.test(headerKey(k)))||keys[0];
+  const value=numericWithUnit(row[generic]); if(!Number.isFinite(value)) return null;
+  const unit=`${generic} ${clean(row[generic])}`;
+  if(/\bkw\b/i.test(unit)||/kilowatt/i.test(unit)) return value*1000;
+  if(/\bwatts?\b|\(\s*w\s*\)/i.test(unit)) return value;
+  throw new Error(`IFT power unit/header not recognized: ${generic}`);
+}
+function iftCoord(row,kind){
+  const key=Object.keys(row).find(k=>headerKey(k).includes(kind));
+  if(!key) throw new Error(`IFT workbook missing ${kind} column; got ${Object.keys(row).join(', ')}`);
+  const isLon=kind==='longitud';
+  const direct=coordinateValue(row[key],isLon);
+  if(Number.isFinite(direct)) return direct;
+  const dms=ddmmssToDecimal(row[key],isLon);
+  return Number.isFinite(dms)?dms:null;
+}
+export function normalizeIFTRows(rows){
+  const hi=iftHeaderRow(rows); if(hi<0) throw new Error('IFT AM/FM workbook header row not found');
+  const headers=rows[hi].map(clean);
+  const objects=rowsToObjects([headers,...rows.slice(hi+1)]), out=[];
+  for(const r of objects){
+    const callsign=clean(pick(r,['Distintivo','Distintivo de llamada','Indicativo','Callsign'])).toUpperCase();
+    const frequencyKHz=iftFrequencyKHz(r), band=bandForKHz(frequencyKHz);
+    if(!callsign||!band) continue;
+    const lat=iftCoord(r,'latitud'), lon=iftCoord(r,'longitud'); if(!validCoord(lat,lon)) continue;
+    const powerW=iftPowerW(r); if(!Number.isFinite(powerW)||powerW<=0) continue;
+    const serviceBand=clean(pick(r,['Banda','Servicio'])); if(serviceBand&&!/AM|OM|MW/i.test(serviceBand)) continue;
+    const population=pick(r,['Población','Poblacion','Localidad','Ciudad']), state=pick(r,['Estado','Entidad federativa','Entidad']), holder=pick(r,['Concesionario/Permisionario','Concesionario','Permisionario','Titular']);
+    const start=pick(r,['Vigencia Inicio','Inicio','Fecha de inicio']), end=pick(r,['Vigencia Término','Vigencia Termino','Término','Termino','Vencimiento','Fecha de vencimiento']);
+    out.push({...stationBase('CRT/IFT',1,'Mexico'),id:`ift:${callsign}:${frequencyKHz}:${headerKey(population)}:${headerKey(state)}`,sourceId:`${callsign}:${frequencyKHz}:${population}:${state}`,band,frequencyKHz,callsign,name:callsign,location:[population,state].filter(Boolean).join(', '),country:'Mexico',region:state,lat,lon,powerW,mode:'AM',status:end?`Licensed through ${end}`:'Licensed',categories:['broadcast',band],description:`Mexico regulator broadcast technical record${holder?` licensed to ${holder}`:''}.`,source:'Comisión Reguladora de Telecomunicaciones / IFT Registro Público de Concesiones — Infraestructura de estaciones de radio AM y FM',sourceDate:IFT_SOURCE_DATE,locationApproximate:false,...(start?{licenseStart:start}:{}),...(end?{licenseEnd:end}:{})});
+  }
+  return out;
+}
+export function normalizeIFT(workbook){
+  const sheets=parseXlsxSheets(workbook);
+  const candidates=sheets.map(s=>({sheet:s,hi:iftHeaderRow(s.rows)})).filter(x=>x.hi>=0);
+  if(!candidates.length) throw new Error(`IFT workbook contains no AM/FM infrastructure sheet with identity/frequency/power headers; sheets: ${sheets.map(s=>s.name).join(', ')}`);
+  const rows=candidates.flatMap(x=>normalizeIFTRows(x.sheet.rows));
+  if(!rows.length) throw new Error('IFT workbook parsed but yielded no MW/LW rows with valid coordinates and power');
+  return rows;
+}
+
+export function normalizeTraficom(jsonText, sourceDate=new Date().toISOString().slice(0,10)){
+  let payload;
+  try{ payload=typeof jsonText==='string'?JSON.parse(jsonText):jsonText; }
+  catch(error){ throw new Error(`Traficom radio station API is not valid JSON: ${error?.message||error}`); }
+  const records=Array.isArray(payload?.value)?payload.value:null;
+  if(!records) throw new Error('Traficom radio station API missing OData value array');
+  const out=[];
+  for(const r of records){
+    const frequencyHz=Number(r?.Frequency), frequencyKHz=frequencyHz/1000, band=bandForKHz(frequencyKHz);
+    if(!band) continue;
+    const lat=ddmmssToDecimal(r?.Latitude), lon=ddmmssToDecimal(r?.Longitude);
+    if(!validCoord(lat,lon)) continue;
+    const powerW=Number(r?.TransmissionPower); if(!Number.isFinite(powerW)||powerW<=0) continue;
+    const end=clean(r?.EndingDate);
+    if(end){ const endMs=Date.parse(end); if(Number.isFinite(endMs)&&endMs<Date.now()) continue; }
+    const id=clean(r?.ID), stationName=clean(r?.StationName), municipality=clean(r?.Municipality), owner=clean(r?.LicenseOwner), licence=clean(r?.LicenseNumber), info=clean(r?.Info);
+    if(!id||!stationName||!licence) continue;
+    const name=owner||stationName;
+    out.push({...stationBase('Traficom',1,'Finland'),id:`traficom:${id}`,sourceId:id,band,frequencyKHz,callsign:'',name,location:[stationName,municipality].filter(Boolean).join(', '),country:'Finland',lat,lon,powerW,mode:'AM',status:end?`Licensed through ${end.slice(0,10)}`:'Licensed',class:clean(r?.Directivity)||undefined,categories:['broadcast',band],description:`Traficom licensed radio transmitter${owner?` for ${owner}`:''}${info?`. ${info}`:''}.`,source:'Finnish Transport and Communications Agency Traficom — Radio stations in Finland (OData v4)',sourceDate,locationApproximate:false,licenseNumber:licence});
+  }
+  return out;
+}
+
 function countryCentroids(text){ const rows=parseCsv(text); const objs=rowsToObjects(rows), m=new Map(); for(const r of objs){const name=clean(r.name),lat=num(r.latitude),lon=num(r.longitude); if(name&&validCoord(lat,lon))m.set(headerKey(name),{lat,lon});} return m; }
 function countryKey(name){const k=headerKey(name); const a={uk:'unitedkingdom',greatbritain:'unitedkingdom',usa:'unitedstates',unitedstatesofamerica:'unitedstates',russianfederation:'russia'}; return a[k]||k;}
 export function normalizeLowFrequencyFallback(scheduleText,countryText){
@@ -184,32 +277,34 @@ function validate(name,entries,min){
     for(const p of [e.powerW,e.dayPowerW,e.nightPowerW,e.criticalPowerW].filter(Number.isFinite)){ if(p<0||p>5e6) throw new Error(`${name}: implausible power ${p}`); }
   }
 }
-function marker(entries,freq,name,label){ if(!entries.some(e=>Math.abs(e.frequencyKHz-freq)<0.1&&new RegExp(name,'i').test(`${e.callsign||''} ${e.name||''}`))) throw new Error(`${label} marker missing: ${name} ${freq}`); }
+function marker(entries,freq,name,label){ if(!entries.some(e=>Math.abs(e.frequencyKHz-freq)<0.1&&new RegExp(name,'i').test(`${e.callsign||''} ${e.name||''} ${e.location||''}`))) throw new Error(`${label} marker missing: ${name} ${freq}`); }
 function stableDedupe(entries){ const seen=new Map(); for(const e of entries){const k=`${e.sourceAuthority}|${e.sourceId}|${e.frequencyKHz}|${e.country}|${headerKey(e.location)}`; if(!seen.has(k))seen.set(k,e);} return [...seen.values()].sort((a,b)=>a.frequencyKHz-b.frequencyKHz||String(a.country).localeCompare(String(b.country))||String(a.name).localeCompare(String(b.name))); }
 function render(entries,meta,varName,metaName,comment){ return `(() => {\n  'use strict';\n  // ${comment} Do not hand-edit.\n  const entries = ${JSON.stringify(entries)};\n  window.${varName} = Object.freeze(entries.map((e) => Object.freeze({...e, categories:Object.freeze([...(e.categories||[])])})));\n  window.${metaName} = Object.freeze(${JSON.stringify(meta)});\n})();\n`; }
 
 async function main(){
   // Cloudflare's build network is reliable for these sources individually,
   // but concurrent regulator downloads can starve/timeout one another. Keep
-  // the slow national archives serialized; only parallelize the lightweight
-  // GitHub text inputs after the regulator fetches are complete.
+  // national regulator downloads serialized; only parallelize lightweight
+  // text inputs after regulator fetches are complete.
   const ofcomText=await readOfcomSnapshot();
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
+  const iftWorkbook=await fetchBuffer(IFT_URL,'Mexico IFT/CRT AM/FM infrastructure workbook');
+  const traficomText=await fetchText(TRAFICOM_URL,'Traficom radio station API');
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30);
-  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
-  const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
+  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), mx=normalizeIFT(iftWorkbook), fi=normalizeTraficom(traficomText), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Mexico/IFT',mx,100); validate('Finland/Traficom',fi,1); validate('global EiBi fallback',fallback,30);
+  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(mx,900,'XEW','IFT'); marker(fi,729,'Tampere|Pispala','Traficom');
+  const regulatorEntries=stableDedupe([...ca,...uk,...au,...mx,...fi]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
+  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},IFT:{authority:'Comisión Reguladora de Telecomunicaciones / IFT Registro Público de Concesiones',tier:1,url:IFT_URL,records:mx.length,format:'XLSX',sourceDate:IFT_SOURCE_DATE},Traficom:{authority:'Finnish Transport and Communications Agency Traficom',tier:1,url:TRAFICOM_URL,records:fi.length,format:'OData v4 JSON',sourceDate:builtAt.slice(0,10),attribution:'CC BY 4.0'}}};
   const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
-  const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
+  const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW/LW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, MX ${mx.length}, FI ${fi.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
