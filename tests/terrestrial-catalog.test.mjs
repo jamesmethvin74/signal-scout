@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeIFTRows, normalizeTraficom, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeTraficom, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -28,21 +28,6 @@ const au=normalizeACMARows(auRows); assert.equal(au.length,1); assert.equal(au[0
 const xlsxFixture=Buffer.from('UEsDBBQAAAAIAFtoMF1UIkUvqAAAANYAAAAPAAAAeGwvd29ya2Jvb2sueG1sNY7LCsIwEEX3fkWYvaZ1IVKaFkEEF+70A2I6taHNTMnE198bQVdzH1zm1O0rTOqBUTyTgXJVgEJy3Hm6GbicD8stKEmWOjsxoYE3CrTNon5yHK/Mo8p7kioaGFKaK63FDRisrHhGyl3PMdiUbbxp7nvvcM/uHpCSXhfFRkecbMq/ZfCzQFPLgJjkd1WsfGcgHrsyU3yTY7ZZkw2ZZXcC3dT6P9F/puYDUEsDBBQAAAAIAFtoMF2D4CN9eQAAAKAAAAAaAAAAeGwvX3JlbHMvd29ya2Jvb2sueG1sLnJlbHNVjTEOwjAQBHtecdqeGHcUsdMhpUXmARY+JRbGjnwWkN8TUZFqtRrtbD98noleXCWWbKC7E4jzvYSYJ4ObuxzPIGk+B59KZoOVBYM99FdOvm0bmeMidlfJ+TpxM3iX+pCZuYn6he62M5BbF/6DoDEY1DFoKNurvfgLUEsDBBQAAAAIAFtoMF08JOKv2AAAAM4BAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxt0cFLwzAUx/F/5ZHTdtiatm72kGXocE7YRJziOWsfNdC8YJOM1b/eiqCQeP18f4cXItYX08EZe6ctrVg+5wyQattoalfs9WU7q9haCuc81DaQHydLBoH0R8DNL4wDLYWXG9V1TrckMi9F9m0/vu1x3FM9TA67z2lcb3pUcMT+jE2cjtojPCqDSfDKBxfrXnntQ5Os95baf8NBXbQJBu6en2DyllxW3N/GxOfVdZlcMzSEQ6w7a/AU3HvsD86F9KmzsoQFh6KIQ77IoYSrZewV5/zPsvGL5BdQSwMEFAAAAAgAW2gwXYaJt/bGAAAAbAIAABgAAAB4bC93b3Jrc2hlZXRzL3NoZWV0MS54bWxt0t0OgiAAhuFbYZwXQlm2Ia7y7wLqApqxcpVs6LTLT8SZAkcO/R4P3kGj7+cNWi7rUlQhxGsPAl4V4l5WjxBeL+kqgBGjnZCv+sl5w+jwiG/NjVEpOiB7BBktQBPCGqrjUZ1b5lHUMooK9a1/e8IQ1Gqrh2qBZ4tJn7UmSx3beuPSidbbpU5t7bt0pvVuqXNb76cF6htMIYgRggzjwAhBrN8dnCG0xkbH2ObYGTIZvVEydXhnymz0Rsvc4X0jB5rdEfS/Oj9QSwECFAMUAAAACABbaDBdVCJFL6gAAADWAAAADwAAAAAAAAAAAAAAgAEAAAAAeGwvd29ya2Jvb2sueG1sUEsBAhQDFAAAAAgAW2gwXYPgI315AAAAoAAAABoAAAAAAAAAAAAAAIAB1QAAAHhsL19yZWxzL3dvcmtib29rLnhtbC5yZWxzUEsBAhQDFAAAAAgAW2gwXTwk4q/YAAAAzgEAABQAAAAAAAAAAAAAAIABhgEAAHhsL3NoYXJlZFN0cmluZ3MueG1sUEsBAhQDFAAAAAgAW2gwXYaJt/bGAAAAbAIAABgAAAAAAAAAAAAAAIABkAIAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFBLBQYAAAAABAAEAA0BAACMAwAAAAA=','base64');
 const parsedSheets=parseXlsxSheets(xlsxFixture); assert.equal(parsedSheets.length,1); assert.equal(parsedSheets[0].name,'AM'); assert.equal(parsedSheets[0].rows[0][0],'Callsign'); assert.equal(parsedSheets[0].rows[0][1],'Frequency(MHz)');
 const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.length,1); assert.equal(auCurrent[0].callsign,'2GB'); assert.equal(auCurrent[0].frequencyKHz,873); assert.equal(auCurrent[0].powerW,8000); assert.equal(auCurrent[0].status,'Issued');
-
-const mxRows=[
-  ['Infraestructura de estaciones de radio AM y FM'],
-  ['Población','Estado','Concesionario/Permisionario','Distintivo','Banda','Frecuencia kHz','Potencia kW','Latitud','Longitud','Vigencia Inicio','Vigencia Término'],
-  ['Los Reyes Acaquilpan','México','Cadena Radiodifusora Mexicana','XEW-AM','AM','900','100','19 21 54.18 N','98 57 27.73 W','2022-01-01','2042-01-01']
-];
-const mx=normalizeIFTRows(mxRows); assert.equal(mx.length,1); assert.equal(mx[0].callsign,'XEW-AM'); assert.equal(mx[0].frequencyKHz,900); assert.equal(mx[0].powerW,100000); assert.equal(mx[0].sourceTier,1); assert.equal(mx[0].sourceAuthority,'CRT/IFT'); assert.ok(Math.abs(mx[0].lat-19.36505)<0.001); assert.ok(Math.abs(mx[0].lon+98.95770)<0.001);
-assert.throws(()=>normalizeIFTRows([
-  ['Distintivo','Banda','Frecuencia kHz','Potencia kW'],
-  ['XEW-AM','AM','900','100']
-]),/latitud/i);
-assert.equal(normalizeIFTRows([
-  ['Distintivo','Banda','Frecuencia kHz','Potencia kW','Latitud','Longitud'],
-  ['TEST-AM','AM','1000','0','19 00 00 N','99 00 00 W']
-]).length,0);
 
 const fiPayload={value:[
   {ID:'72901',Municipality:'Tampere',StationName:'TAMPERE PISPALA',Frequency:729000,TransmissionPower:80,Latitude:'611000',Longitude:'0234300',LicenseNumber:'RA-729',LicenseOwner:'Pispalan Radioyhdistys ry',EndingDate:'2099-12-31T00:00:00Z',Directivity:'ND',Info:'AM'},
