@@ -118,20 +118,38 @@ function coordinateValue(v,isLon=false){
   return null;
 }
 function findHeaderRow(rows){ for(let i=0;i<Math.min(rows.length,30);i++){const keys=rows[i].map(headerKey); if(keys.some(k=>k.includes('callsign'))&&keys.some(k=>k.includes('frequency'))) return i;} return -1; }
+function acmaFrequencyKHz(row){
+  const key=Object.keys(row).find(k=>['frequency','frequencykhz','frequencymhz'].includes(headerKey(k)));
+  if(!key) throw new Error(`ACMA AM sheet missing frequency column; got ${Object.keys(row).join(', ')}`);
+  const value=num(row[key]); if(!Number.isFinite(value)) return null;
+  const normalized=headerKey(key);
+  if(normalized==='frequencymhz') return value*1000;
+  if(normalized==='frequencykhz'||normalized==='frequency') return value;
+  throw new Error(`ACMA frequency unit/header not recognized: ${key}`);
+}
+function acmaPowerW(row){
+  const key=Object.keys(row).find(k=>{
+    if(!/(erp|power)/i.test(k)) return false;
+    return /\(\s*kw\s*\)|\bkw\b|\bkilowatts?\b|\(\s*w\s*\)|\bwatts?\b|\bw\b/i.test(k);
+  });
+  if(!key) throw new Error(`ACMA AM power header lacks explicit W/kW unit; got ${Object.keys(row).join(', ')}`);
+  const value=num(row[key]); if(!Number.isFinite(value)) return null;
+  const isKw=/\(\s*kw\s*\)|\bkw\b|\bkilowatts?\b/i.test(key);
+  return isKw?value*1000:value;
+}
 export function normalizeACMARows(rows){
   const hi=findHeaderRow(rows); if(hi<0) throw new Error('ACMA AM sheet header row not found');
   const headers=rows[hi].map(clean);
-  requireAnyHeaders(headers,[['Callsign','Call Sign'],['Frequency','Frequency (kHz)','Frequency kHz'],['Service Area','Area Served'],['Maximum ERP (W)','Max ERP (W)','Power (W)']], 'ACMA AM sheet');
+  requireAnyHeaders(headers,[['Callsign','Call Sign'],['Frequency','Frequency (kHz)','Frequency kHz','Frequency(MHz)','Frequency (MHz)','Frequency MHz'],['Service Area','Area Served']], 'ACMA AM sheet');
   const objects=rowsToObjects([headers,...rows.slice(hi+1)]), out=[];
   for(const r of objects){
-    const callsign=pick(r,['Callsign','Call Sign']).toUpperCase(), frequencyKHz=num(pick(r,['Frequency (kHz)','Frequency kHz','Frequency']));
+    const callsign=pick(r,['Callsign','Call Sign']).toUpperCase(), frequencyKHz=acmaFrequencyKHz(r);
     if(!callsign||!Number.isFinite(frequencyKHz)||frequencyKHz<500||frequencyKHz>1800) continue;
+    const status=pick(r,['Status','Licence Status','License Status']); if(status&&!/^issued$/i.test(status)) continue;
     const lat=coordinateValue(pick(r,['Latitude','Lat']),false), lon=coordinateValue(pick(r,['Longitude','Long','Lon']),true); if(!validCoord(lat,lon)) continue;
-    const powerHeader=Object.keys(r).find(k=>/maximum.*erp.*\(w\)|max.*erp.*\(w\)|power.*\(w\)/i.test(k));
-    if(!powerHeader) throw new Error(`ACMA AM power header lacks explicit watts unit; got ${Object.keys(r).join(', ')}`);
-    const powerW=num(r[powerHeader]); if(!Number.isFinite(powerW)||powerW<=0) continue;
+    const powerW=acmaPowerW(r); if(!Number.isFinite(powerW)||powerW<=0) continue;
     const area=pick(r,['Service Area','Area Served']), site=pick(r,['Transmitter','Transmitter Site','Site','Site Name','Location']), purpose=pick(r,['Purpose','Service Type']), licence=pick(r,['Licence Number','License Number','Licence No','Licence No.']);
-    out.push({...stationBase('ACMA',1,'Australia'),id:`acma:${licence||callsign}:${frequencyKHz}:${headerKey(site)}`,sourceId:licence||`${callsign}:${frequencyKHz}:${site}`,band:'MW',frequencyKHz,callsign,name:callsign,location:[site,area].filter(Boolean).join(', '),country:'Australia',serviceArea:area,lat,lon,powerW,mode:'AM',status:'Licensed',class:purpose||undefined,categories:['broadcast','MW'],description:`ACMA licensed AM transmitter${area?` serving ${area}`:''}.`,source:'Australian Communications and Media Authority Licensed Broadcasting Transmitter Data',sourceDate:'2026-07-13',locationApproximate:false});
+    out.push({...stationBase('ACMA',1,'Australia'),id:`acma:${licence||callsign}:${frequencyKHz}:${headerKey(site)}`,sourceId:licence||`${callsign}:${frequencyKHz}:${site}`,band:'MW',frequencyKHz,callsign,name:callsign,location:[site,area].filter(Boolean).join(', '),country:'Australia',serviceArea:area,lat,lon,powerW,mode:'AM',status:status||'Licensed',class:purpose||undefined,categories:['broadcast','MW'],description:`ACMA licensed AM transmitter${area?` serving ${area}`:''}.`,source:'Australian Communications and Media Authority Licensed Broadcasting Transmitter Data',sourceDate:'2026-07-13',locationApproximate:false});
   }
   return out;
 }
