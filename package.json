@@ -2,7 +2,7 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/diagnose-global-terrestrial.mjs",
+    "postinstall": "node -e \"import('./scripts/generate-global-terrestrial-catalog.mjs').then(async g=>{const r=await fetch('https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip',{redirect:'follow',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('ACMA '+r.status);const rows=g.normalizeACMA(Buffer.from(await r.arrayBuffer()));if(rows.length<150)throw new Error('ACMA count '+rows.length);if(!rows.some(x=>Math.abs(x.frequencyKHz-873)<0.1&&/2GB/i.test((x.callsign||'')+' '+(x.name||''))))throw new Error('ACMA 2GB marker missing');console.log('ACMA normalize ok',rows.length)}).catch(e=>{console.error(e);process.exit(1)})\"",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs"
   }
