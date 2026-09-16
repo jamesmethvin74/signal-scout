@@ -73,3 +73,4 @@ await writeFile('brazil-probe.json',JSON.stringify(probe,null,2)+'\n','utf8');
 await writeFile('freqbeacon-zero-global-mw-lw.js',`(() => { 'use strict'; window.FREQBEACON_TERRESTRIAL_CATALOG=Object.freeze([]); window.FREQBEACON_TERRESTRIAL_META=Object.freeze({diagnostic:true}); })();\n`,'utf8');
 await writeFile('freqbeacon-zero-global-mw-lw-fallback.js',`(() => { 'use strict'; window.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=Object.freeze([]); window.FREQBEACON_TERRESTRIAL_FALLBACK_META=Object.freeze({diagnostic:true}); })();\n`,'utf8');
 console.log(`Brazil SCR diagnostic probe written: ${JSON.stringify({http:probe.http,bytes:probe.bytes,rows:probe.rows,omRows:probe.omRows,normalizedCount:probe.normalizedCount,normalizeError:probe.normalizeError,fetchError:probe.fetchError})}`);
+if(probe.fetchError||probe.normalizeError) process.exitCode=1;
