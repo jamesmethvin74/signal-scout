@@ -189,8 +189,16 @@ function stableDedupe(entries){ const seen=new Map(); for(const e of entries){co
 function render(entries,meta,varName,metaName,comment){ return `(() => {\n  'use strict';\n  // ${comment} Do not hand-edit.\n  const entries = ${JSON.stringify(entries)};\n  window.${varName} = Object.freeze(entries.map((e) => Object.freeze({...e, categories:Object.freeze([...(e.categories||[])])})));\n  window.${metaName} = Object.freeze(${JSON.stringify(meta)});\n})();\n`; }
 
 async function main(){
-  const [isedZipBuf,ofcomText,acmaZip,a26Text,countryText]=await Promise.all([
-    fetchBuffer(ISED_URL,'ISED broadcasting database'), readOfcomSnapshot(), fetchBuffer(ACMA_URL,'ACMA transmitter workbook'), fetchText(A26_URL,'A26 merged schedule'), fetchText(COUNTRY_URL,'country centroids')
+  // Cloudflare's build network is reliable for these sources individually,
+  // but concurrent regulator downloads can starve/timeout one another. Keep
+  // the slow national archives serialized; only parallelize the lightweight
+  // GitHub text inputs after the regulator fetches are complete.
+  const ofcomText=await readOfcomSnapshot();
+  const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
+  const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
+  const [a26Text,countryText]=await Promise.all([
+    fetchText(A26_URL,'A26 merged schedule'),
+    fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
   const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
