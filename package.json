@@ -2,7 +2,7 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "node -e \"import('./scripts/lib/terrestrial-catalog-lib.mjs').then(async l=>{const r=await fetch('https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip',{redirect:'follow',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('ACMA '+r.status);const z=l.unzipEntries(Buffer.from(await r.arrayBuffer()));const x=[...z.entries()].find(([n])=>/\\.xlsx$/i.test(n));if(!x)throw new Error('no xlsx');const sheets=l.parseXlsxSheets(x[1]);const s=sheets.find(s=>/^am$/i.test(String(s.name).trim()))||sheets.find(s=>/\\bam\\b|mf/i.test(s.name));if(!s)throw new Error('no AM sheet');if(s.rows.length<100)throw new Error('AM rows '+s.rows.length);const hi=s.rows.findIndex((row,i)=>i<30&&row.some(v=>/callsign/i.test(String(v)))&&row.some(v=>/frequency/i.test(String(v))));if(hi<0)throw new Error('no header row');console.log('ACMA workbook parse ok',s.name,s.rows.length,hi,s.rows[hi].join('|'))}).catch(e=>{console.error(e);process.exit(1)})\"",
+    "postinstall": "node scripts/generate-a26-identification-catalog.mjs && node scripts/generate-fcc-am-catalog.mjs && node scripts/generate-global-terrestrial-catalog.mjs && node scripts/wire-terrestrial-assets.mjs && npm run test:catalogs",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs"
   }
