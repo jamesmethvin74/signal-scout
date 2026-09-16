@@ -16,7 +16,7 @@ const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spect
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
-const TRAFICOM_URL = 'https://opendata.traficom.fi/api/v13/Radioasematiedot?%24filter=%28Frequency%20ge%20148500%20and%20Frequency%20le%20283500%29%20or%20%28Frequency%20ge%20520000%20and%20Frequency%20le%201710000%29&%24top=500';
+const BRAZIL_MCOM_URL = 'https://s3.mcom.gov.br/radcom/SCR_DADOS_RADIODIFUSAO_TV_GTVD_RTV_RTVD_FM_OM.csv';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -164,25 +164,69 @@ export function normalizeACMA(outerZip){
   return normalizeACMARows(sheet.rows);
 }
 
-export function normalizeTraficom(jsonText, sourceDate=new Date().toISOString().slice(0,10)){
-  let payload;
-  try{ payload=typeof jsonText==='string'?JSON.parse(jsonText):jsonText; }
-  catch(error){ throw new Error(`Traficom radio station API is not valid JSON: ${error?.message||error}`); }
-  const records=Array.isArray(payload?.value)?payload.value:null;
-  if(!records) throw new Error('Traficom radio station API missing OData value array');
-  const out=[];
-  for(const r of records){
-    const frequencyHz=Number(r?.Frequency), frequencyKHz=frequencyHz/1000, band=bandForKHz(frequencyKHz);
-    if(!band) continue;
-    const lat=ddmmssToDecimal(r?.Latitude), lon=ddmmssToDecimal(r?.Longitude);
-    if(!validCoord(lat,lon)) continue;
-    const powerW=Number(r?.TransmissionPower); if(!Number.isFinite(powerW)||powerW<=0) continue;
-    const end=clean(r?.EndingDate);
-    if(end){ const endMs=Date.parse(end); if(Number.isFinite(endMs)&&endMs<Date.now()) continue; }
-    const id=clean(r?.ID), stationName=clean(r?.StationName), municipality=clean(r?.Municipality), owner=clean(r?.LicenseOwner), licence=clean(r?.LicenseNumber), info=clean(r?.Info);
-    if(!id||!stationName||!licence) continue;
-    const name=owner||stationName;
-    out.push({...stationBase('Traficom',1,'Finland'),id:`traficom:${id}`,sourceId:id,band,frequencyKHz,callsign:'',name,location:[stationName,municipality].filter(Boolean).join(', '),country:'Finland',lat,lon,powerW,mode:'AM',status:end?`Licensed through ${end.slice(0,10)}`:'Licensed',class:clean(r?.Directivity)||undefined,categories:['broadcast',band],description:`Traficom licensed radio transmitter${owner?` for ${owner}`:''}${info?`. ${info}`:''}.`,source:'Finnish Transport and Communications Agency Traficom — Radio stations in Finland (OData v4)',sourceDate,locationApproximate:false,licenseNumber:licence});
+function parseSemicolonCsv(text){
+  const rows=[]; let row=[], cell='', quoted=false;
+  const input=String(text??'').replace(/^\uFEFF/,'');
+  for(let i=0;i<input.length;i+=1){
+    const c=input[i];
+    if(c==='"'){ if(quoted&&input[i+1]==='"'){cell+='"';i+=1;} else quoted=!quoted; }
+    else if(c===';'&&!quoted){ row.push(cell); cell=''; }
+    else if((c==='\n'||c==='\r')&&!quoted){ if(c==='\r'&&input[i+1]==='\n')i+=1; row.push(cell); if(row.some(v=>v!==''))rows.push(row); row=[]; cell=''; }
+    else cell+=c;
+  }
+  if(cell||row.length){row.push(cell);if(row.some(v=>v!==''))rows.push(row);}
+  return rows;
+}
+function brazilNumber(value){
+  let raw=clean(value).replace(/\s+/g,''); if(!raw)return null;
+  if(raw.includes(',')&&raw.includes('.')) raw=raw.replace(/\./g,'').replace(',','.');
+  else if(raw.includes(',')) raw=raw.replace(',','.');
+  const n=Number(raw); return Number.isFinite(n)?n:null;
+}
+function brazilFrequencyKHz(row){
+  const value=brazilNumber(pick(row,['licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia']));
+  if(!Number.isFinite(value))return null;
+  if(value>=0.52&&value<=1.71)return value*1000;
+  if(value>=520&&value<=1710)return value;
+  if(value>=520000&&value<=1710000)return value/1000;
+  return null;
+}
+function brazilPowerW(raw){ const kw=brazilNumber(raw); return Number.isFinite(kw)?Math.max(0,kw*1000):null; }
+export function normalizeBrazilMCom(csvText, sourceDate=new Date().toISOString().slice(0,10)){
+  const rows=parseSemicolonCsv(csvText); if(rows.length<2)throw new Error('Brazil MCom SCR CSV contains no data rows');
+  const headers=rows[0].map(clean);
+  requireAnyHeaders(headers,[
+    ['SiglaServico','srd_planobasico_SiglaServico'],
+    ['sitarwebStatus'],
+    ['licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia'],
+    ['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal'],
+    ['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal'],
+    ['srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna','srd_planobasico_MedPotenciaNoturna','MedPotenciaNoturna','medpotencianoturna','srd_planobasico_MedERPMax','MedERPMax','mederpmax','medpotenciairradiadaerpmax']
+  ],'Brazil MCom SCR CSV');
+  const objects=rowsToObjects([headers,...rows.slice(1)]), out=[];
+  for(const r of objects){
+    const service=pick(r,['SiglaServico','srd_planobasico_SiglaServico']).toUpperCase(); if(service!=='OM')continue;
+    const licenseStatus=pick(r,['sitarwebStatus']).toUpperCase(); if(licenseStatus!=='L')continue;
+    const situation=pick(r,['SiglaSituacao','siglasituacao','licenca_estacao_SiglaSituacao','estacao_SiglaSituacao']);
+    if(/^(?:I|INATIV[AO]?|CANCELAD[AO]?|EXCLUID[AO]?|ENCERRAD[AO]?|BAIXAD[AO]?)$/i.test(situation))continue;
+    const frequencyKHz=brazilFrequencyKHz(r), band=bandForKHz(frequencyKHz); if(band!=='MW')continue;
+    const lat=brazilNumber(pick(r,['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal']));
+    const lon=brazilNumber(pick(r,['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal']));
+    if(!validCoord(lat,lon)||Math.abs(lat)<0.0001||Math.abs(lon)<0.0001)continue;
+    const dayRaw=pick(r,['srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna','licenca_srd_planobasico_MedPotenciaDiurna']);
+    const nightRaw=pick(r,['srd_planobasico_MedPotenciaNoturna','MedPotenciaNoturna','medpotencianoturna','licenca_srd_planobasico_MedPotenciaNoturna']);
+    const erpRaw=pick(r,['srd_planobasico_MedERPMax','MedERPMax','mederpmax','medpotenciairradiadaerpmax','licenca_estacao_MedPotenciaIrradiadaERPMax']);
+    const dayPowerW=dayRaw!==''?brazilPowerW(dayRaw):null, nightPowerW=nightRaw!==''?brazilPowerW(nightRaw):null, powerW=erpRaw!==''?brazilPowerW(erpRaw):null;
+    if(!(dayPowerW>0||nightPowerW>0||powerW>0))continue;
+    const callsign=pick(r,['licenca_estacao_NomeIndicativo','NomeIndicativoEstacao','nomeindicativoestacao','licenca_estacao_NumEstacao','IdtEstacao']).toUpperCase();
+    const licensee=pick(r,['licenca_entidade_NomeEntidade','NomeEntidade','nomeentidade','licensee','NomeInteressada','nomeinteressada']);
+    if(!callsign&&!licensee)continue;
+    const city=pick(r,['licenca_srd_planobasico_NomeMunicipio','NomeMunicipio','srd_planobasico_NomeMunicipio','licenca_endereco_estacaoprincipal_NomeMunicipio']);
+    const region=pick(r,['licenca_srd_planobasico_SiglaUF','SiglaUF','srd_planobasico_SiglaUF','municipio_SiglaUF']).toUpperCase();
+    const sourceId=pick(r,['id_estacao','IdtEstacao','idtEstacao','licenca_estacao_NumEstacao','idtplanobasico','licenca_srd_planobasico_IdtPlanoBasico'])||`${callsign||headerKey(licensee)}:${frequencyKHz}:${headerKey(city)}`;
+    const extracted=pick(r,['data_extracao','DataExtracao','dataextracao']);
+    const name=licensee||callsign;
+    out.push({...stationBase('MCom/Anatel SCR',1,'Brazil'),id:`mcom-br:${sourceId}:${frequencyKHz}`,sourceId,band:'MW',frequencyKHz,callsign,name,location:[city,region].filter(Boolean).join(', '),country:'Brazil',region,lat,lon,...(Number.isFinite(powerW)?{powerW}:{}),...(Number.isFinite(dayPowerW)?{dayPowerW}:{}),...(Number.isFinite(nightPowerW)?{nightPowerW}:{}),mode:'AM',status:situation||'Licensed',categories:['broadcast','MW'],description:`Brazilian federal SCR licensed OM transmitter${licensee?` for ${licensee}`:''}.`,source:'Brazilian Ministry of Communications — Conjunto de Dados de Radiodifusão (SCR)',sourceDate:extracted||sourceDate,locationApproximate:false});
   }
   return out;
 }
@@ -221,21 +265,24 @@ async function main(){
   const ofcomText=await readOfcomSnapshot();
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
-  const traficomText=await fetchText(TRAFICOM_URL,'Traficom radio station API');
+  const brazilBuf=await fetchBuffer(BRAZIL_MCOM_URL,'Brazil MCom SCR radiodiffusion CSV');
+  const brazilText=new TextDecoder('iso-8859-1').decode(brazilBuf).replace(/^\uFEFF/,'');
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fi=normalizeTraficom(traficomText), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Finland/Traficom',fi,1); validate('global EiBi fallback',fallback,30);
-  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(fi,729,'Tampere|Pispala','Traficom');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au,...fi]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
-  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},Traficom:{authority:'Finnish Transport and Communications Agency Traficom',tier:1,url:TRAFICOM_URL,records:fi.length,format:'OData v4 JSON',sourceDate:builtAt.slice(0,10),attribution:'CC BY 4.0'}}};
+  const builtAt=new Date().toISOString();
+  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), br=normalizeBrazilMCom(brazilText,builtAt.slice(0,10)), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Brazil/MCom SCR',br,50); validate('global EiBi fallback',fallback,30);
+  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(br,980,'Bras[ií]lia|Nacional|EBC|Empresa Brasil','MCom/Anatel SCR');
+  const regulatorEntries=stableDedupe([...ca,...uk,...au,...br]), fallbackEntries=stableDedupe(fallback);
+  const brSourceDate=br.map(e=>e.sourceDate).filter(Boolean).sort().at(-1)||builtAt.slice(0,10);
+  const regulatorMeta={version:3,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},BrazilMCom:{authority:'Brazilian Ministry of Communications / Anatel SCR',tier:1,url:BRAZIL_MCOM_URL,records:br.length,format:'ISO-8859-1 semicolon CSV',sourceDate:brSourceDate,reuse:'Brazilian federal open-data policy'}}};
   const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW/LW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, FI ${fi.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, BR ${br.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
