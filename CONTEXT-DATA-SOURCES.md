@@ -62,20 +62,22 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Refresh: update the dated official workbook URL when ACMA publishes a new snapshot, rerun the generator, and verify minimum-count/current-marker validation
 - Limitations: categories remain generic broadcast/MW unless separately curated; licensed pattern information is not yet applied to directional ranking
 
-### Finland — regulator-grade MW/LW
-- Authority: Finnish Transport and Communications Agency Traficom
-- Official source: `Radioasematiedot` / Radio stations in Finland, Traficom Open Data API v13 (OData v4)
-- API documentation: `https://opendata.traficom.fi/swagger/ui/index`
-- Endpoint: `https://opendata.traficom.fi/api/v13/Radioasematiedot`
-- Freshness: Traficom describes the radio-station dataset as updated daily
-- Fields ingested: record ID, municipality, transmitter/station name, frequency in Hz, ERP in watts, EUREF-FIN DMS latitude/longitude, licence number/owner, start/end date, additional info and directivity
-- Band filtering: only 148.5–283.5 kHz LW broadcast and 520–1710 kHz MW records are retained; FM and non-broadcast bands never enter the terrestrial MW/LW asset
-- Status handling: expired dated records are rejected and zero/non-positive ERP is rejected
-- Current marker: Traficom's current frequency-planning guidance states that Finland has one licensed low-power AM frequency in operation, Tampere 729 kHz; the generator requires a Tampere/Pispala 729 kHz record before it will publish the Finland slice
-- Licence/attribution: Traficom Open Data API content and service documentation are licensed CC BY 4.0; generated metadata retains Traficom attribution
-- Runtime: OData is fetched only during the build; the radio never calls Traficom while listening
+### Brazil — regulator-grade MW
+- Authority: Brazilian Ministry of Communications (MCom), using the federal SCR/Mosaico broadcasting registry associated with Anatel licensing data
+- Official build input: `https://s3.mcom.gov.br/radcom/SCR_DADOS_RADIODIFUSAO_TV_GTVD_RTV_RTVD_FM_OM.csv`
+- Dataset: `Conjunto de Dados de Radiodifusão (SCR)`, which explicitly includes `OM` (Onda Média / medium wave) alongside the other broadcast services
+- Publication/freshness: MCom's open-data catalog lists the SCR broadcasting/licensing datasets as recurring federal open data; the 2025–2027 open-data plan provides monthly publication for the licensing data
+- File handling: the federal export is ISO-8859-1 and semicolon-delimited. It is decoded and parsed only at build time.
+- Service/status filtering: only `OM` records with the SCR licensed status are eligible. Explicit inactive/cancelled/closed station states are rejected rather than treated as plausible transmitters.
+- Fields ingested when present: station/plan identity, callsign, licensee/entity, municipality/UF, operating frequency, precise transmitter decimal latitude/longitude, day power, night power, ERP, station situation, and extraction date
+- Frequency handling: the importer accepts the official export's MHz representation and known SCR kHz/Hz variants, normalizes to kHz, and rejects anything outside 520–1710 kHz
+- Power handling: SCR OM day/night/ERP technical values are normalized from kW to watts. An explicit zero day or night value is preserved as zero; it is never overwritten by another power field. Records with no positive technical power are rejected.
+- Coordinate handling: only transmitter-coordinate fields are accepted; municipality/city centroids are never substituted for a missing site
+- Current marker: the build requires a licensed 980 kHz Brasília record (`Brasília`, `Nacional`, `EBC`, or `Empresa Brasil`) before the Brazil slice can be published
+- Runtime: the federal CSV is fetched only during the build; the radio never calls MCom/Anatel while listening
 - Confidence: Tier 1 / regulator
-- Limitations: Traficom exposes directional attenuation fields, but this milestone records the directivity indicator without yet applying the complete azimuth pattern in reception ranking
+- Reuse: source is published through the Brazilian federal open-data program; generated metadata retains the federal source URL and open-data provenance
+- Limitations: SCR carries directional/antenna technical fields beyond what this milestone uses. FREQBEACON preserves the important day/night power behavior now but does not yet apply a complete azimuth radiation pattern.
 
 ### Global MW/LW fallback — reference only
 - Authority/source: EiBi rows from the existing pinned A26 merged HFCC/EiBi schedule source
@@ -95,6 +97,7 @@ Receiver health is not part of this catalog and must not alter the user's local 
 
 These are intentionally left on EiBi/reference fallback until an official source satisfies the technical and build-reliability contract. This list is not a statement that the national regulator lacks data; it records why FREQBEACON is not importing it yet.
 
+- Finland — Traficom's `Radioasematiedot` API is authoritative and useful, but the live low-frequency inventory did not validate cleanly enough against the currently published 729 kHz Tampere/Pispala AM guidance to make a fail-closed production build dependable. Finland therefore stays on reference fallback until the precise live source/record contract is reconciled rather than forcing a stale marker or guessed record.
 - Mexico — CRT/IFT RPC publishes an authoritative current AM/FM infrastructure workbook and datos.gob.mx exposes monthly AM/FM open data under CC BY 4.0, but the published bulk field contract is concession/service-area oriented (folio, population/state, concession/use, callsign, band and frequency) rather than a transmitter-site engineering feed. The surfaced bulk data does not supply the precise transmitter coordinates required for FREQBEACON's distance ranking, so Mexico remains fallback rather than being geocoded from a city or municipality.
 - New Zealand — Radio Spectrum Management's Register of Radio Frequencies is authoritative, but the machine-oriented extract path is not presently a stable unauthenticated build input. Public search alone is not enough for a reproducible Cloudflare catalog build.
 - Ireland — ComReg publishes authoritative spectrum/frequency information, but no current machine-readable MW/LW broadcast transmitter dataset with the full identity + precise coordinates + power contract was verified for this milestone.
@@ -102,7 +105,7 @@ These are intentionally left on EiBi/reference fallback until an official source
 - Germany — Bundesnetzagentur is authoritative, but no practical current public bulk broadcast-transmitter export suitable for an unattended build was verified.
 - Spain — historical official MW plans contain useful technical detail, but historical plan data is not promoted as a current transmitter inventory.
 - Italy — no current official unattended bulk feed satisfying identity + frequency + precise site coordinates + power + status was verified.
-- Netherlands / Belgium / Scandinavia outside Finland — useful official frequency/licence/search surfaces exist, but the feeds evaluated did not yet provide a verified stable build path with the complete transmitter technical contract. Denmark's public frequency-register export is a promising future candidate and should be revisited separately rather than scraped ad hoc.
+- Netherlands / Belgium / Scandinavia — useful official frequency/licence/search surfaces exist, but the feeds evaluated did not yet provide a verified stable build path with the complete transmitter technical contract. Denmark's public frequency-register export is a promising future candidate and should be revisited separately rather than scraped ad hoc.
 - Japan — no current no-auth official bulk AM transmitter technical feed meeting the full contract was verified.
 - South Korea — the public radio-channel data surfaced for this milestone identifies broadcaster/region/channel/frequency but does not provide the precise transmitter coordinates and technical power needed for FREQBEACON's regulator-grade geographic ranking.
 
@@ -123,7 +126,7 @@ Sources are allowed to omit fields they do not publish. Identity/deduplication u
 
 - The selected SDR's real coordinates remain the listener location for IDENTIFY.
 - Receiver health and remote-SDR success/failure never alter the user's local reception score.
-- MW/LW station ranking uses transmitter distance and appropriate technical power; Canada can select separate day/night transmitter coordinates.
+- MW/LW station ranking uses transmitter distance and appropriate technical power; Canada can select separate day/night transmitter coordinates, and Brazil can preserve separate day/night licensed power.
 - Zero/silent technical records are rejected or made ineligible.
 - Tier 1 regulator records outrank EiBi/reference fallback records on the same channel.
 - Known station-level matches beat generic Medium Wave / AM Broadcast or Longwave cards only when the station-level candidate clears the geographic/technical confidence threshold.
@@ -132,10 +135,10 @@ Sources are allowed to omit fields they do not publish. Identity/deduplication u
 
 ## Build safety / refresh
 
-`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It validates required source structure, minimum national/fallback record counts, coordinate/frequency/power ranges, and known current marker records before writing either generated asset. The pinned Ofcom snapshot is additionally protected by an exact raw CSV SHA-256 check. Finland is required to expose its current 729 kHz Tampere marker. The generator also prints generated byte sizes so startup cost can be monitored before introducing country sharding.
+`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It validates required source structure, minimum national/fallback record counts, coordinate/frequency/power ranges, and known current marker records before writing either generated asset. The pinned Ofcom snapshot is additionally protected by an exact raw CSV SHA-256 check. Brazil is required to expose a licensed 980 kHz Brasília marker. The generator also prints generated byte sizes so startup cost can be monitored before introducing country sharding.
 
 The generated outputs are:
-- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia/Finland records
+- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia/Brazil records
 - `freqbeacon-zero-global-mw-lw-fallback.js` — separate EiBi/reference MW/LW fallback
 
 `postinstall` generates these assets and wires them into the built Zero and Lookup HTML immediately before the existing identification data/engine consumers. The existing A26 SW shards and SDR/Kiwi protocol files are untouched.
