@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeTraficom, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeBrazilMCom, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -29,12 +29,16 @@ const xlsxFixture=Buffer.from('UEsDBBQAAAAIAFtoMF1UIkUvqAAAANYAAAAPAAAAeGwvd29ya
 const parsedSheets=parseXlsxSheets(xlsxFixture); assert.equal(parsedSheets.length,1); assert.equal(parsedSheets[0].name,'AM'); assert.equal(parsedSheets[0].rows[0][0],'Callsign'); assert.equal(parsedSheets[0].rows[0][1],'Frequency(MHz)');
 const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.length,1); assert.equal(auCurrent[0].callsign,'2GB'); assert.equal(auCurrent[0].frequencyKHz,873); assert.equal(auCurrent[0].powerW,8000); assert.equal(auCurrent[0].status,'Issued');
 
-const fiPayload={value:[
-  {ID:'72901',Municipality:'Tampere',StationName:'TAMPERE PISPALA',Frequency:729000,TransmissionPower:80,Latitude:'611000',Longitude:'0234300',LicenseNumber:'RA-729',LicenseOwner:'Pispalan Radioyhdistys ry',EndingDate:'2099-12-31T00:00:00Z',Directivity:'ND',Info:'AM'},
-  {ID:'72902',Municipality:'Test',StationName:'ZERO POWER',Frequency:729000,TransmissionPower:0,Latitude:'611000',Longitude:'0234300',LicenseNumber:'RA-ZERO',LicenseOwner:'Test'}
-]};
-const fi=normalizeTraficom(fiPayload,'2026-09-16'); assert.equal(fi.length,1); assert.equal(fi[0].frequencyKHz,729); assert.equal(fi[0].powerW,80); assert.equal(fi[0].sourceTier,1); assert.equal(fi[0].sourceAuthority,'Traficom'); assert.match(fi[0].name,/Pispalan/i); assert.ok(Math.abs(fi[0].lat-61.166667)<0.001); assert.ok(Math.abs(fi[0].lon-23.716667)<0.001);
-assert.throws(()=>normalizeTraficom({records:[]}),/value array/i);
+const brCsv=[
+  'SiglaServico;sitarwebStatus;licenca_srd_planobasico_NomeMunicipio;licenca_srd_planobasico_SiglaUF;licenca_estacao_NomeIndicativo;licenca_entidade_NomeEntidade;licenca_frequency;licenca_loctx_coordinates_1;licenca_loctx_coordinates_0;srd_planobasico_MedPotenciaDiurna;srd_planobasico_MedPotenciaNoturna;id_estacao;SiglaSituacao;data_extracao',
+  'OM;L;Brasília;DF;ZYA980;Empresa Brasil de Comunicação;0,980;-15,824097;-47,963069;50;50;BR980;ATIVA;2026-09-01',
+  'FM;L;Brasília;DF;FMTEST;Empresa FM;0,980;-15,8;-47,9;10;10;BRFM;ATIVA;2026-09-01',
+  'OM;L;Teste;SP;ZERO;Zero Rádio;1,000;-23,5;-46,6;0;0;BRZERO;ATIVA;2026-09-01',
+  'OM;L;Teste;SP;OFF;Off Rádio;1,100;-23,5;-46,6;10;10;BROFF;INATIVA;2026-09-01'
+].join('\n');
+const br=normalizeBrazilMCom(brCsv,'2026-09-16'); assert.equal(br.length,1); assert.equal(br[0].frequencyKHz,980); assert.equal(br[0].dayPowerW,50000); assert.equal(br[0].nightPowerW,50000); assert.equal(br[0].sourceTier,1); assert.equal(br[0].sourceAuthority,'MCom/Anatel SCR'); assert.equal(br[0].country,'Brazil'); assert.match(br[0].name,/Empresa Brasil/i); assert.ok(br[0].lat<0&&br[0].lon<0);
+const brNightZero=normalizeBrazilMCom(brCsv.replace(';50;50;BR980;',';50;0;BR980;'),'2026-09-16'); assert.equal(brNightZero[0].nightPowerW,0); assert.equal(brNightZero[0].dayPowerW,50000);
+assert.throws(()=>normalizeBrazilMCom('SiglaServico;sitarwebStatus\nOM;L\n'),/missing required header/i);
 
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
