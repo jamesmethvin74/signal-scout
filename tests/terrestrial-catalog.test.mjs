@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ddmmssToDecimal, osGridToWgs84 } from '../scripts/lib/terrestrial-catalog-lib.mjs';
+import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
 import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
@@ -24,6 +24,10 @@ const ukCurrent=normalizeOfcom(ukCurrentCsv); assert.equal(ukCurrent.length,1); 
 
 const auRows=[['Broadcast AM transmitter data'],['Callsign','Frequency (kHz)','Purpose','Service Area','Transmitter Site','Latitude','Longitude','Maximum ERP (W)','Licence Number'],['2GB','873','Commercial','Sydney','Homebush','-33 50 22','151 3 46','8000','1385019']];
 const au=normalizeACMARows(auRows); assert.equal(au.length,1); assert.equal(au[0].callsign,'2GB'); assert.equal(au[0].powerW,8000); assert.ok(au[0].lat<0&&au[0].lon>0);
+
+const xlsxFixture=Buffer.from('UEsDBBQAAAAIAFtoMF1UIkUvqAAAANYAAAAPAAAAeGwvd29ya2Jvb2sueG1sNY7LCsIwEEX3fkWYvaZ1IVKaFkEEF+70A2I6taHNTMnE198bQVdzH1zm1O0rTOqBUTyTgXJVgEJy3Hm6GbicD8stKEmWOjsxoYE3CrTNon5yHK/Mo8p7kioaGFKaK63FDRisrHhGyl3PMdiUbbxp7nvvcM/uHpCSXhfFRkecbMq/ZfCzQFPLgJjkd1WsfGcgHrsyU3yTY7ZZkw2ZZXcC3dT6P9F/puYDUEsDBBQAAAAIAFtoMF2D4CN9eQAAAKAAAAAaAAAAeGwvX3JlbHMvd29ya2Jvb2sueG1sLnJlbHNVjTEOwjAQBHtecdqeGHcUsdMhpUXmARY+JRbGjnwWkN8TUZFqtRrtbD98noleXCWWbKC7E4jzvYSYJ4ObuxzPIGk+B59KZoOVBYM99FdOvm0bmeMidlfJ+TpxM3iX+pCZuYn6he62M5BbF/6DoDEY1DFoKNurvfgLUEsDBBQAAAAIAFtoMF08JOKv2AAAAM4BAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxt0cFLwzAUx/F/5ZHTdtiatm72kGXocE7YRJziOWsfNdC8YJOM1b/eiqCQeP18f4cXItYX08EZe6ctrVg+5wyQattoalfs9WU7q9haCuc81DaQHydLBoH0R8DNL4wDLYWXG9V1TrckMi9F9m0/vu1x3FM9TA67z2lcb3pUcMT+jE2cjtojPCqDSfDKBxfrXnntQ5Os95baf8NBXbQJBu6en2DyllxW3N/GxOfVdZlcMzSEQ6w7a/AU3HvsD86F9KmzsoQFh6KIQ77IoYSrZewV5/zPsvGL5BdQSwMEFAAAAAgAW2gwXYaJt/bGAAAAbAIAABgAAAB4bC93b3Jrc2hlZXRzL3NoZWV0MS54bWxt0t0OgiAAhuFbYZwXQlm2Ia7y7wLqApqxcpVs6LTLT8SZAkcO/R4P3kGj7+cNWi7rUlQhxGsPAl4V4l5WjxBeL+kqgBGjnZCv+sl5w+jwiG/NjVEpOiB7BBktQBPCGqrjUZ1b5lHUMooK9a1/e8IQ1Gqrh2qBZ4tJn7UmSx3beuPSidbbpU5t7bt0pvVuqXNb76cF6htMIYgRggzjwAhBrN8dnCG0xkbH2ObYGTIZvVEydXhnymz0Rsvc4X0jB5rdEfS/Oj9QSwECFAMUAAAACABbaDBdVCJFL6gAAADWAAAADwAAAAAAAAAAAAAAgAEAAAAAeGwvd29ya2Jvb2sueG1sUEsBAhQDFAAAAAgAW2gwXYPgI315AAAAoAAAABoAAAAAAAAAAAAAAIAB1QAAAHhsL19yZWxzL3dvcmtib29rLnhtbC5yZWxzUEsBAhQDFAAAAAgAW2gwXTwk4q/YAAAAzgEAABQAAAAAAAAAAAAAAIABhgEAAHhsL3NoYXJlZFN0cmluZ3MueG1sUEsBAhQDFAAAAAgAW2gwXYaJt/bGAAAAbAIAABgAAAAAAAAAAAAAAIABkAIAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFBLBQYAAAAABAAEAA0BAACMAwAAAAA=','base64');
+const parsedSheets=parseXlsxSheets(xlsxFixture); assert.equal(parsedSheets.length,1); assert.equal(parsedSheets[0].name,'AM'); assert.equal(parsedSheets[0].rows[0][0],'Callsign'); assert.equal(parsedSheets[0].rows[0][1],'Frequency(MHz)');
+const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.length,1); assert.equal(auCurrent[0].callsign,'2GB'); assert.equal(auCurrent[0].frequencyKHz,873); assert.equal(auCurrent[0].powerW,8000); assert.equal(auCurrent[0].status,'Issued');
 
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
