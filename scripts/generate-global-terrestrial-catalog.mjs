@@ -177,6 +177,16 @@ function parseSemicolonCsv(text){
   if(cell||row.length){row.push(cell);if(row.some(v=>v!==''))rows.push(row);}
   return rows;
 }
+function semanticMatch(key,aliases){ const k=headerKey(key); return aliases.some(a=>{const n=headerKey(a);return k===n||k.endsWith(n);}); }
+function semanticHeader(headers,aliases){ return headers.some(h=>semanticMatch(h,aliases)); }
+function requireSemanticHeaders(headers,groups,label){
+  for(const group of groups){ if(!semanticHeader(headers,group)) throw new Error(`${label} missing required header: ${group.join(' | ')}; got ${headers.join(', ')}`); }
+}
+function pickSemantic(row,aliases){
+  const direct=pick(row,aliases); if(clean(direct)!=='')return clean(direct);
+  for(const [key,value] of Object.entries(row)){ if(semanticMatch(key,aliases)&&clean(value)!=='')return clean(value); }
+  return '';
+}
 function brazilNumber(value){
   let raw=clean(value).replace(/\s+/g,''); if(!raw)return null;
   if(raw.includes(',')&&raw.includes('.')) raw=raw.replace(/\./g,'').replace(',','.');
@@ -184,49 +194,60 @@ function brazilNumber(value){
   const n=Number(raw); return Number.isFinite(n)?n:null;
 }
 function brazilFrequencyKHz(row){
-  const value=brazilNumber(pick(row,['licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia']));
+  const value=brazilNumber(pickSemantic(row,['freqop','licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia']));
   if(!Number.isFinite(value))return null;
   if(value>=0.52&&value<=1.71)return value*1000;
   if(value>=520&&value<=1710)return value;
   if(value>=520000&&value<=1710000)return value/1000;
   return null;
 }
+function brazilCoordinate(row,isLon=false){
+  const aliases=isLon
+    ?['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal','MedLongitudeDecimal','medlongitude']
+    :['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal','MedLatitudeDecimal','medlatitude'];
+  const raw=pickSemantic(row,aliases); if(!raw)return null;
+  const decimal=brazilNumber(raw); if(Number.isFinite(decimal)&&Math.abs(decimal)<=(isLon?180:90))return decimal;
+  return coordinateValue(raw,isLon);
+}
 function brazilPowerW(raw){ const kw=brazilNumber(raw); return Number.isFinite(kw)?Math.max(0,kw*1000):null; }
 export function normalizeBrazilMCom(csvText, sourceDate=new Date().toISOString().slice(0,10)){
   const rows=parseSemicolonCsv(csvText); if(rows.length<2)throw new Error('Brazil MCom SCR CSV contains no data rows');
   const headers=rows[0].map(clean);
-  requireAnyHeaders(headers,[
+  requireSemanticHeaders(headers,[
     ['SiglaServico','srd_planobasico_SiglaServico'],
-    ['sitarwebStatus'],
-    ['licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia'],
-    ['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal'],
-    ['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal'],
-    ['srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna','srd_planobasico_MedPotenciaNoturna','MedPotenciaNoturna','medpotencianoturna','srd_planobasico_MedERPMax','MedERPMax','mederpmax','medpotenciairradiadaerpmax']
+    ['indstatusestacao','sitarwebStatus'],
+    ['freqop','licenca_frequency','frequency','srd_planobasico_MedFrequencia','MedFrequencia','frequencia'],
+    ['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal','MedLatitudeDecimal','medlatitude'],
+    ['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal','MedLongitudeDecimal','medlongitude'],
+    ['medpotenciairradiadaerpmax','srd_planobasico_MedERPMax','MedERPMax','mederpmax','licenca_estacao_MedPotenciaIrradiadaERPMax','srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna']
   ],'Brazil MCom SCR CSV');
   const objects=rowsToObjects([headers,...rows.slice(1)]), out=[];
   for(const r of objects){
-    const service=pick(r,['SiglaServico','srd_planobasico_SiglaServico']).toUpperCase(); if(service!=='OM')continue;
-    const licenseStatus=pick(r,['sitarwebStatus']).toUpperCase(); if(licenseStatus!=='L')continue;
-    const situation=pick(r,['SiglaSituacao','siglasituacao','licenca_estacao_SiglaSituacao','estacao_SiglaSituacao']);
+    const service=pickSemantic(r,['SiglaServico','srd_planobasico_SiglaServico']).toUpperCase(); if(service!=='OM')continue;
+    const installedStatus=pickSemantic(r,['indstatusestacao','IndStatusEstacao']).toUpperCase();
+    const sitarStatus=pickSemantic(r,['sitarwebStatus']).toUpperCase();
+    if(installedStatus){ if(installedStatus!=='M')continue; }
+    else if(sitarStatus){ if(sitarStatus!=='L')continue; }
+    else continue;
+    const situation=pickSemantic(r,['SiglaSituacao','licenca_estacao_SiglaSituacao','estacao_SiglaSituacao']);
     if(/^(?:I|INATIV[AO]?|CANCELAD[AO]?|EXCLUID[AO]?|ENCERRAD[AO]?|BAIXAD[AO]?)$/i.test(situation))continue;
     const frequencyKHz=brazilFrequencyKHz(r), band=bandForKHz(frequencyKHz); if(band!=='MW')continue;
-    const lat=brazilNumber(pick(r,['licenca_loctx_coordinates_1','locpb_coordinates_1','licenca_srd_planobasico_MedLatitudeDecimal','srd_planobasico_MedLatitudeDecimal']));
-    const lon=brazilNumber(pick(r,['licenca_loctx_coordinates_0','locpb_coordinates_0','licenca_srd_planobasico_MedLongitudeDecimal','srd_planobasico_MedLongitudeDecimal']));
-    if(!validCoord(lat,lon)||Math.abs(lat)<0.0001||Math.abs(lon)<0.0001)continue;
-    const dayRaw=pick(r,['srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna','licenca_srd_planobasico_MedPotenciaDiurna']);
-    const nightRaw=pick(r,['srd_planobasico_MedPotenciaNoturna','MedPotenciaNoturna','medpotencianoturna','licenca_srd_planobasico_MedPotenciaNoturna']);
-    const erpRaw=pick(r,['srd_planobasico_MedERPMax','MedERPMax','mederpmax','medpotenciairradiadaerpmax','licenca_estacao_MedPotenciaIrradiadaERPMax']);
+    const lat=brazilCoordinate(r,false), lon=brazilCoordinate(r,true);
+    if(!validCoord(lat,lon)||lat<-35||lat>6||lon<-75||lon>-32)continue;
+    const dayRaw=pickSemantic(r,['srd_planobasico_MedPotenciaDiurna','MedPotenciaDiurna','medpotenciadiurna','licenca_srd_planobasico_MedPotenciaDiurna']);
+    const nightRaw=pickSemantic(r,['srd_planobasico_MedPotenciaNoturna','MedPotenciaNoturna','medpotencianoturna','licenca_srd_planobasico_MedPotenciaNoturna']);
+    const erpRaw=pickSemantic(r,['medpotenciairradiadaerpmax','srd_planobasico_MedERPMax','MedERPMax','mederpmax','licenca_estacao_MedPotenciaIrradiadaERPMax']);
     const dayPowerW=dayRaw!==''?brazilPowerW(dayRaw):null, nightPowerW=nightRaw!==''?brazilPowerW(nightRaw):null, powerW=erpRaw!==''?brazilPowerW(erpRaw):null;
     if(!(dayPowerW>0||nightPowerW>0||powerW>0))continue;
-    const callsign=pick(r,['licenca_estacao_NomeIndicativo','NomeIndicativoEstacao','nomeindicativoestacao','licenca_estacao_NumEstacao','IdtEstacao']).toUpperCase();
-    const licensee=pick(r,['licenca_entidade_NomeEntidade','NomeEntidade','nomeentidade','licensee','NomeInteressada','nomeinteressada']);
+    const callsign=pickSemantic(r,['licenca_estacao_NomeIndicativo','NomeIndicativoEstacao','nomeindicativoestacao','estIndicativo']).toUpperCase();
+    const licensee=pickSemantic(r,['licenca_entidade_NomeEntidade','NomeEntidade','nomeentidade','licensee','NomeInteressada','nomeinteressada','respnomeentidade','respLegalNome']);
     if(!callsign&&!licensee)continue;
-    const city=pick(r,['licenca_srd_planobasico_NomeMunicipio','NomeMunicipio','srd_planobasico_NomeMunicipio','licenca_endereco_estacaoprincipal_NomeMunicipio']);
-    const region=pick(r,['licenca_srd_planobasico_SiglaUF','SiglaUF','srd_planobasico_SiglaUF','municipio_SiglaUF']).toUpperCase();
-    const sourceId=pick(r,['id_estacao','IdtEstacao','idtEstacao','licenca_estacao_NumEstacao','idtplanobasico','licenca_srd_planobasico_IdtPlanoBasico'])||`${callsign||headerKey(licensee)}:${frequencyKHz}:${headerKey(city)}`;
-    const extracted=pick(r,['data_extracao','DataExtracao','dataextracao']);
+    const city=pickSemantic(r,['licenca_srd_planobasico_NomeMunicipio','NomeMunicipio','srd_planobasico_NomeMunicipio','licenca_endereco_estacaoprincipal_NomeMunicipio','endnomemunicipiotransm','endEstacaoprincipalNomeMunicipio']);
+    const region=pickSemantic(r,['licenca_srd_planobasico_SiglaUF','SiglaUF','srd_planobasico_SiglaUF','municipio_SiglaUF','endsiglauftransm','endEstacaoprincipalSiglaUF']).toUpperCase();
+    const sourceId=pickSemantic(r,['id_estacao','IdtEstacao','idtEstacao','licenca_estacao_NumEstacao','numestacao','idtplanobasico','licenca_srd_planobasico_IdtPlanoBasico'])||`${callsign||headerKey(licensee)}:${frequencyKHz}:${headerKey(city)}`;
+    const extracted=pickSemantic(r,['data_extracao','DataExtracao','dataextracao']);
     const name=licensee||callsign;
-    out.push({...stationBase('MCom/Anatel SCR',1,'Brazil'),id:`mcom-br:${sourceId}:${frequencyKHz}`,sourceId,band:'MW',frequencyKHz,callsign,name,location:[city,region].filter(Boolean).join(', '),country:'Brazil',region,lat,lon,...(Number.isFinite(powerW)?{powerW}:{}),...(Number.isFinite(dayPowerW)?{dayPowerW}:{}),...(Number.isFinite(nightPowerW)?{nightPowerW}:{}),mode:'AM',status:situation||'Licensed',categories:['broadcast','MW'],description:`Brazilian federal SCR licensed OM transmitter${licensee?` for ${licensee}`:''}.`,source:'Brazilian Ministry of Communications — Conjunto de Dados de Radiodifusão (SCR)',sourceDate:extracted||sourceDate,locationApproximate:false});
+    out.push({...stationBase('MCom/Anatel SCR',1,'Brazil'),id:`mcom-br:${sourceId}:${frequencyKHz}`,sourceId,band:'MW',frequencyKHz,callsign,name,location:[city,region].filter(Boolean).join(', '),country:'Brazil',region,lat,lon,...(Number.isFinite(powerW)?{powerW}:{}),...(Number.isFinite(dayPowerW)?{dayPowerW}:{}),...(Number.isFinite(nightPowerW)?{nightPowerW}:{}),mode:'AM',status:situation||'Installed/licensed',categories:['broadcast','MW'],description:`Brazilian federal SCR licensed OM transmitter${licensee?` for ${licensee}`:''}.`,source:'Brazilian Ministry of Communications — Conjunto de Dados de Radiodifusão (SCR)',sourceDate:extracted||sourceDate,locationApproximate:false});
   }
   return out;
 }
