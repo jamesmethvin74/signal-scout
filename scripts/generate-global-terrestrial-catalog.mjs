@@ -1,6 +1,8 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import {
   clean, num, parseCsv, rowsToObjects, pick, requireAnyHeaders,
   parseDbf, ddmmssToDecimal, unzipEntries, findZipEntry,
@@ -11,6 +13,8 @@ const OUT = path.resolve('freqbeacon-zero-global-mw-lw.js');
 const FALLBACK_OUT = path.resolve('freqbeacon-zero-global-mw-lw-fallback.js');
 const ISED_URL = 'https://www.ic.gc.ca/engineering/BC_DBF_FILES/baserad.zip';
 const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471';
+const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
+const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
@@ -44,6 +48,15 @@ async function fetchBuffer(url,label){
   throw new Error(`${label} fetch failed after ${FETCH_ATTEMPTS} attempts: ${detail}`);
 }
 async function fetchText(url,label){ return (await fetchBuffer(url,label)).toString('utf8').replace(/^\uFEFF/,''); }
+async function readOfcomSnapshot(){
+  const compressed=await readFile(OFCOM_SNAPSHOT);
+  let raw;
+  try{ raw=gunzipSync(compressed); }
+  catch(error){ throw new Error(`Pinned Ofcom MF snapshot is not valid gzip: ${error?.message||error}`); }
+  const sha256=createHash('sha256').update(raw).digest('hex');
+  if(sha256!==OFCOM_SNAPSHOT_SHA256) throw new Error(`Pinned Ofcom MF snapshot SHA-256 mismatch: expected ${OFCOM_SNAPSHOT_SHA256}, got ${sha256}`);
+  return raw.toString('utf8').replace(/^\uFEFF/,'');
+}
 function validCoord(lat,lon){ return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180; }
 function stationBase(authority,tier,country){ return {type:'station',sourceAuthority:authority,sourceTier:tier,sourceCountry:country,technicalConfidence:tier===1?'regulator':'reference'}; }
 
@@ -80,9 +93,6 @@ function ofcomPower(row){
   if(parsed.unit==='w') return parsed.value;
   if(/\bkw\b/i.test(key)) return parsed.value*1000;
   if(/\bw\b|watt/i.test(key)) return parsed.value;
-  // Ofcom's MF TxParams convention expresses EMRP values in kW where the
-  // legacy header is the unqualified "In-use EMRP" label. Current source
-  // cells may themselves carry a kW/W suffix, which is honored above.
   if(/^in.?use.*emrp$/i.test(clean(key))) return parsed.value*1000;
   throw new Error(`Ofcom EMRP unit/header not recognized: ${key}`);
 }
@@ -162,14 +172,14 @@ function render(entries,meta,varName,metaName,comment){ return `(() => {\n  'use
 
 async function main(){
   const [isedZipBuf,ofcomText,acmaZip,a26Text,countryText]=await Promise.all([
-    fetchBuffer(ISED_URL,'ISED broadcasting database'), fetchText(OFCOM_URL,'Ofcom MF CSV'), fetchBuffer(ACMA_URL,'ACMA transmitter workbook'), fetchText(A26_URL,'A26 merged schedule'), fetchText(COUNTRY_URL,'country centroids')
+    fetchBuffer(ISED_URL,'ISED broadcasting database'), readOfcomSnapshot(), fetchBuffer(ACMA_URL,'ACMA transmitter workbook'), fetchText(A26_URL,'A26 merged schedule'), fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
   const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
   validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30);
   marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA');
   const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
-  const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV',sourceDate:'2026-08-05'},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
+  const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
   const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
