@@ -30,7 +30,7 @@ async function fetchBuffer(url,label){
   let lastError=null;
   for(let attempt=1;attempt<=FETCH_ATTEMPTS;attempt+=1){
     try{
-      const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'FREQBEACON catalog builder/2.0 (+https://freqbeacon.methvindigitalworks.com)'},signal:AbortSignal.timeout(FETCH_TIMEOUT_MS)});
+      const r=await fetch(url,{redirect:'follow',signal:AbortSignal.timeout(FETCH_TIMEOUT_MS)});
       if(!r.ok){
         const error=new Error(`${label} fetch failed: ${r.status} ${r.statusText}`);
         if(!RETRYABLE_HTTP.has(r.status)){ error.nonRetryable=true; throw error; }
