@@ -43,11 +43,11 @@ assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
   {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']},
-  {type:'station',band:'MW',frequencyKHz:729,name:'Pispalan Radioyhdistys ry',location:'TAMPERE PISPALA, Tampere',country:'Finland',sourceAuthority:'Traficom',sourceTier:1,lat:61.1667,lon:23.7167,powerW:80,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:980,name:'Empresa Brasil de Comunicação',callsign:'ZYA980',location:'Brasília, DF',country:'Brazil',sourceAuthority:'MCom/Anatel SCR',sourceTier:1,lat:-15.8241,lon:-47.9631,dayPowerW:50000,nightPowerW:50000,categories:['broadcast','MW']}
 ];
 c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
   {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']},
-  {type:'station',band:'MW',frequencyKHz:729,name:'FINLAND FALLBACK',country:'Finland',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:64,lon:26,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:980,name:'BRAZIL FALLBACK',country:'Brazil',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:-10,lon:-55,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
 engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
@@ -55,7 +55,7 @@ result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T1
 assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG');
 result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-16T05:00:00Z')});
 assert.notEqual(result.entry?.name,'REG');
-result=engine.identify(729,{receiver:{lat:61.17,lon:23.72},now:new Date('2026-09-15T12:00:00Z')});
-assert.equal(result.kind,'exact'); assert.match(result.entry.name,/Pispalan/i); assert.equal(result.entry.sourceAuthority,'Traficom');
+result=engine.identify(980,{receiver:{lat:-15.82,lon:-47.96},now:new Date('2026-09-15T17:00:00Z')});
+assert.equal(result.kind,'exact'); assert.match(result.entry.name,/Empresa Brasil/i); assert.equal(result.entry.sourceAuthority,'MCom/Anatel SCR');
 
 console.log('terrestrial identification regressions: ok');
