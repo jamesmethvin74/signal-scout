@@ -29,6 +29,7 @@ const xlsxFixture=Buffer.from('UEsDBBQAAAAIAFtoMF1UIkUvqAAAANYAAAAPAAAAeGwvd29ya
 const parsedSheets=parseXlsxSheets(xlsxFixture); assert.equal(parsedSheets.length,1); assert.equal(parsedSheets[0].name,'AM'); assert.equal(parsedSheets[0].rows[0][0],'Callsign'); assert.equal(parsedSheets[0].rows[0][1],'Frequency(MHz)');
 const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.length,1); assert.equal(auCurrent[0].callsign,'2GB'); assert.equal(auCurrent[0].frequencyKHz,873); assert.equal(auCurrent[0].powerW,8000); assert.equal(auCurrent[0].status,'Issued');
 
+// Legacy flattened SCR/Mosaico aliases remain supported because the federal export has used them in production.
 const brCsv=[
   'SiglaServico;sitarwebStatus;licenca_srd_planobasico_NomeMunicipio;licenca_srd_planobasico_SiglaUF;licenca_estacao_NomeIndicativo;licenca_entidade_NomeEntidade;licenca_frequency;licenca_loctx_coordinates_1;licenca_loctx_coordinates_0;srd_planobasico_MedPotenciaDiurna;srd_planobasico_MedPotenciaNoturna;id_estacao;SiglaSituacao;data_extracao',
   'OM;L;Brasília;DF;ZYA980;Empresa Brasil de Comunicação;0,980;-15,824097;-47,963069;50;50;BR980;ATIVA;2026-09-01',
@@ -38,7 +39,17 @@ const brCsv=[
 ].join('\n');
 const br=normalizeBrazilMCom(brCsv,'2026-09-16'); assert.equal(br.length,1); assert.equal(br[0].frequencyKHz,980); assert.equal(br[0].dayPowerW,50000); assert.equal(br[0].nightPowerW,50000); assert.equal(br[0].sourceTier,1); assert.equal(br[0].sourceAuthority,'MCom/Anatel SCR'); assert.equal(br[0].country,'Brazil'); assert.match(br[0].name,/Empresa Brasil/i); assert.ok(br[0].lat<0&&br[0].lon<0);
 const brNightZero=normalizeBrazilMCom(brCsv.replace(';50;50;BR980;',';50;0;BR980;'),'2026-09-16'); assert.equal(brNightZero[0].nightPowerW,0); assert.equal(brNightZero[0].dayPowerW,50000);
-assert.throws(()=>normalizeBrazilMCom('SiglaServico;sitarwebStatus\nOM;L\n'),/missing required header/i);
+
+// Current MCom station dictionary: M = installed and licensed, freqop = operating frequency,
+// transmitter coordinates are exact station values, and ERPmax is expressed in kW.
+const brCurrentCsv=[
+  'SiglaServico;indstatusestacao;freqop;medlatitude;medlongitude;medpotenciairradiadaerpmax;nomeindicativoestacao;respnomeentidade;endnomemunicipiotransm;endsiglauftransm;id_estacao;SiglaSituacao;data_extracao',
+  'OM;M;980;-15,824097;-47,963069;50;ZYA980;Empresa Brasil de Comunicação;Brasília;DF;BR980CURRENT;ATIVA;2026-09-16',
+  'OM;L;1130;-22,9;-43,2;100;PENDING;Pending Rádio;Rio de Janeiro;RJ;BRPENDING;ATIVA;2026-09-16',
+  'OM;M;1200;-23,5;-46,6;0;ZERO;Zero Rádio;São Paulo;SP;BRZEROCURRENT;ATIVA;2026-09-16'
+].join('\n');
+const brCurrent=normalizeBrazilMCom(brCurrentCsv,'2026-09-16'); assert.equal(brCurrent.length,1); assert.equal(brCurrent[0].frequencyKHz,980); assert.equal(brCurrent[0].powerW,50000); assert.equal(brCurrent[0].callsign,'ZYA980'); assert.match(brCurrent[0].location,/Brasília, DF/); assert.equal(brCurrent[0].status,'ATIVA');
+assert.throws(()=>normalizeBrazilMCom('SiglaServico;indstatusestacao\nOM;M\n'),/missing required header/i);
 
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
