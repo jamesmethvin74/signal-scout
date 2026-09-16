@@ -62,6 +62,34 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Refresh: update the dated official workbook URL when ACMA publishes a new snapshot, rerun the generator, and verify minimum-count/current-marker validation
 - Limitations: categories remain generic broadcast/MW unless separately curated; licensed pattern information is not yet applied to directional ranking
 
+### Mexico — regulator-grade MW candidate, fail-closed
+- Authority: Comisión Reguladora de Telecomunicaciones / IFT Registro Público de Concesiones (RPC)
+- Official open-data source: `Infraestructura de estaciones de radio AM y FM` workbook, dated 25 August 2026
+- Source URL: `https://rpc.ift.org.mx/vrpc/assets/publish/uploads/infraestructura/01_infraestructura_AM_FM_250826.xlsx`
+- Source page: `https://rpc.ift.org.mx/vrpc/visor/downloads`
+- Required fields for FREQBEACON promotion: station identity/callsign, AM frequency, transmitter latitude/longitude, technical power, plus licence/location metadata when published
+- Power handling: only explicit watt/kilowatt units are accepted; unknown units fail closed
+- Coordinate handling: only coordinates present in the official technical workbook are accepted. FREQBEACON does not geocode a municipality or service area and pretend it is a transmitter site.
+- Build gate: at least 100 valid MW transmitter records and the XEW 900 kHz marker must survive normalization. If the current workbook does not expose real transmitter coordinates, the build is intentionally rejected and Mexico remains on EiBi fallback instead of being promoted.
+- Runtime: when the build gate passes, the app receives static normalized records and never calls RPC while listening
+- Confidence: Tier 1 only after all technical gates pass; merely appearing in the RPC open-data workbook is not by itself enough for FREQBEACON's station-level geographic ranking
+- Attribution/licensing: RPC labels the workbook as open data and the generated metadata/source text retains CRT/IFT/RPC attribution. No Creative Commons licence is asserted by this implementation where the source page does not state one.
+
+### Finland — regulator-grade MW/LW
+- Authority: Finnish Transport and Communications Agency Traficom
+- Official source: `Radioasematiedot` / Radio stations in Finland, Traficom Open Data API v13 (OData v4)
+- API documentation: `https://opendata.traficom.fi/swagger/ui/index`
+- Endpoint: `https://opendata.traficom.fi/api/v13/Radioasematiedot`
+- Freshness: Traficom describes the radio-station dataset as updated daily
+- Fields ingested: record ID, municipality, transmitter/station name, frequency in Hz, ERP in watts, EUREF-FIN DMS latitude/longitude, licence number/owner, start/end date, additional info and directivity
+- Band filtering: only 148.5–283.5 kHz LW broadcast and 520–1710 kHz MW records are retained; FM and non-broadcast bands never enter the terrestrial MW/LW asset
+- Status handling: expired dated records are rejected and zero/non-positive ERP is rejected
+- Current marker: Traficom's current frequency-planning guidance states that Finland has one licensed low-power AM frequency in operation, Tampere 729 kHz; the generator requires a Tampere/Pispala 729 kHz record before it will publish the Finland slice
+- Licence/attribution: Traficom Open Data API content and service documentation are licensed CC BY 4.0; generated metadata retains Traficom attribution
+- Runtime: OData is fetched only during the build; the radio never calls Traficom while listening
+- Confidence: Tier 1 / regulator
+- Limitations: Traficom exposes directional attenuation fields, but this milestone records the directivity indicator without yet applying the complete azimuth pattern in reception ranking
+
 ### Global MW/LW fallback — reference only
 - Authority/source: EiBi rows from the existing pinned A26 merged HFCC/EiBi schedule source
 - Output: separate generated low-frequency fallback asset; these rows are not mixed into the existing A26 shortwave shards
@@ -75,6 +103,20 @@ Receiver health is not part of this catalog and must not alter the user's local 
 ### Global shortwave
 - Existing FREQBEACON A26 HFCC/EiBi schedule pipeline remains unchanged and sharded from 2.3–30 MHz
 - ITU eHFBC is an additional authoritative schedule/reference source and may be used for verification, but FREQBEACON does not require an authenticated or paid ITU service for ordinary builds
+
+## Sources evaluated but not promoted to regulator-grade terrestrial coverage
+
+These are intentionally left on EiBi/reference fallback until an official source satisfies the technical and build-reliability contract. This list is not a statement that the national regulator lacks data; it records why FREQBEACON is not importing it yet.
+
+- New Zealand — Radio Spectrum Management's Register of Radio Frequencies is authoritative, but the machine-oriented extract path is not presently a stable unauthenticated build input. Public search alone is not enough for a reproducible Cloudflare catalog build.
+- Ireland — ComReg publishes authoritative spectrum/frequency information, but no current machine-readable MW/LW broadcast transmitter dataset with the full identity + precise coordinates + power contract was verified for this milestone.
+- France — ANFR open-data services are authoritative, but no current broadcast AM transmitter feed meeting the complete FREQBEACON technical contract was verified.
+- Germany — Bundesnetzagentur is authoritative, but no practical current public bulk broadcast-transmitter export suitable for an unattended build was verified.
+- Spain — historical official MW plans contain useful technical detail, but historical plan data is not promoted as a current transmitter inventory.
+- Italy — no current official unattended bulk feed satisfying identity + frequency + precise site coordinates + power + status was verified.
+- Netherlands / Belgium / Scandinavia outside Finland — useful official frequency/licence/search surfaces exist, but the feeds evaluated did not yet provide a verified stable build path with the complete transmitter technical contract. Denmark's public frequency-register export is a promising future candidate and should be revisited separately rather than scraped ad hoc.
+- Japan — no current no-auth official bulk AM transmitter technical feed meeting the full contract was verified.
+- South Korea — the public radio-channel data surfaced for this milestone identifies broadcaster/region/channel/frequency but does not provide the precise transmitter coordinates and technical power needed for FREQBEACON's regulator-grade geographic ranking.
 
 ## Generated terrestrial contract
 
@@ -102,10 +144,10 @@ Sources are allowed to omit fields they do not publish. Identity/deduplication u
 
 ## Build safety / refresh
 
-`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It validates required source headers, minimum national/fallback record counts, coordinate/frequency/power ranges, and known current marker records before writing either generated asset. The pinned Ofcom snapshot is additionally protected by an exact raw CSV SHA-256 check. The generator also prints generated byte sizes so startup cost can be monitored before introducing country sharding.
+`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It validates required source structure, minimum national/fallback record counts, coordinate/frequency/power ranges, and known current marker records before writing either generated asset. The pinned Ofcom snapshot is additionally protected by an exact raw CSV SHA-256 check. Mexico is additionally required to expose genuine coordinate-bearing technical rows; Finland is required to expose its current 729 kHz Tampere marker. The generator also prints generated byte sizes so startup cost can be monitored before introducing country sharding.
 
 The generated outputs are:
-- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia records
+- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia plus any new country slice that passes all build gates (currently Finland; Mexico only when its live technical workbook passes the coordinate/count/marker gates)
 - `freqbeacon-zero-global-mw-lw-fallback.js` — separate EiBi/reference MW/LW fallback
 
 `postinstall` generates these assets and wires them into the built Zero and Lookup HTML immediately before the existing identification data/engine consumers. The existing A26 SW shards and SDR/Kiwi protocol files are untouched.
