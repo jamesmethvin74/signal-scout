@@ -16,6 +16,8 @@ const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spect
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
+const TAIWAN_NCC_URL = 'https://api.ncc.gov.tw/chncc/app/data/doc?aplistdn=undefined&detailNo=1490965165540118528&id=104&module=commonMessage45&preview=undefined&serno=51003_4173_news&type=s';
+const TAIWAN_NCC_SOURCE_DATE = '2026-04-07';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -162,6 +164,71 @@ export function normalizeACMA(outerZip){
   return normalizeACMARows(sheet.rows);
 }
 
+function xmlText(value=''){
+  return String(value)
+    .replace(/<text:line-break\s*\/>/gi,' ')
+    .replace(/<text:tab\s*\/>/gi,' ')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi,(_,n)=>String.fromCodePoint(parseInt(n,16)))
+    .replace(/\s+/g,' ').trim();
+}
+function odsAttr(attrs,name){
+  const raw=String(attrs).match(new RegExp('(?:^|\\s)'+name.replace(/[.*+?^$()|[\\]\\\\]/g,'\\function countryCentroids(text){')+'="([^"]*)"','i'))?.[1]||'';
+  return xmlText(raw);
+}
+export function parseOdsRows(odsBuffer){
+  const entries=unzipEntries(odsBuffer), content=findZipEntry(entries,'content.xml');
+  if(!content) throw new Error('Taiwan NCC ODS missing content.xml');
+  const xml=content.toString('utf8'), rows=[];
+  for(const rm of xml.matchAll(/<table:table-row\b([^>]*)>([\s\S]*?)<\/table:table-row>/g)){
+    const rowRepeat=Math.min(Number(odsAttr(rm[1],'table:number-rows-repeated'))||1,10);
+    const row=[];
+    for(const cm of rm[2].matchAll(/<(table:table-cell|table:covered-table-cell)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g)){
+      const attrs=cm[2]||'', body=cm[3]||'', repeat=Math.min(Number(odsAttr(attrs,'table:number-columns-repeated'))||1,50);
+      const paragraphs=[...body.matchAll(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/g)].map(x=>xmlText(x[1])).filter(Boolean);
+      const value=paragraphs.join(' ')||xmlText(odsAttr(attrs,'office:value'))||xmlText(odsAttr(attrs,'office:string-value'));
+      for(let i=0;i<repeat;i+=1) row.push(value);
+    }
+    if(row.some(Boolean)) for(let i=0;i<rowRepeat;i+=1) rows.push([...row]);
+  }
+  if(rows.length<2) throw new Error('Taiwan NCC ODS contains no usable rows');
+  return rows;
+}
+function taiwanHeaderIndex(rows){
+  for(let i=0;i<Math.min(rows.length,25);i+=1){
+    const cells=rows[i].map(clean);
+    if(cells.some(v=>/電臺名稱/.test(v))&&cells.some(v=>/頻率/.test(v))&&cells.some(v=>/東經/.test(v))&&cells.some(v=>/北緯/.test(v))) return i;
+  }
+  return -1;
+}
+function taiwanColumn(headers,re,label){
+  const idx=headers.findIndex(v=>re.test(clean(v)));
+  if(idx<0) throw new Error('Taiwan NCC ODS missing required header: '+label+'; got '+headers.join(', '));
+  return idx;
+}
+export function normalizeTaiwanNCCRows(rows){
+  const hi=taiwanHeaderIndex(rows); if(hi<0) throw new Error('Taiwan NCC ODS header row not found');
+  const headers=rows[hi].map(clean);
+  const nameCol=taiwanColumn(headers,/電臺名稱/,'AM 電臺名稱');
+  const freqCol=taiwanColumn(headers,/頻率/,'頻率(kHz)');
+  const addressCol=taiwanColumn(headers,/發射機地址/,'發射機地址');
+  const lonCol=taiwanColumn(headers,/東經/,'東經');
+  const latCol=taiwanColumn(headers,/北緯/,'北緯');
+  const classCol=headers.findIndex(v=>/電臺類別/.test(clean(v)));
+  const out=[];
+  for(const row of rows.slice(hi+1)){
+    const name=clean(row[nameCol]), frequencyKHz=num(row[freqCol]), location=clean(row[addressCol]);
+    const lon=num(row[lonCol]), lat=num(row[latCol]), stationClass=classCol>=0?clean(row[classCol]):'';
+    if(!name||!location||!Number.isFinite(frequencyKHz)||frequencyKHz<520||frequencyKHz>1710) continue;
+    if(!validCoord(lat,lon)||lat<21||lat>27||lon<118||lon>123) continue;
+    const sourceId=[frequencyKHz,name,lat.toFixed(6),lon.toFixed(6)].join(':');
+    out.push({...stationBase('Taiwan NCC',1,'Taiwan'),id:'ncc-tw:'+sourceId,sourceId,band:'MW',frequencyKHz,callsign:'',name,location,country:'Taiwan',lat,lon,class:stationClass||undefined,status:'Licensed',mode:'AM',categories:['broadcast','MW'],description:'Taiwan NCC licensed AM transmitter at '+location+'.',source:'Taiwan National Communications Commission — AM broadcast frequency and transmitter location',sourceDate:TAIWAN_NCC_SOURCE_DATE,locationApproximate:false});
+  }
+  return out;
+}
+export function normalizeTaiwanNCC(odsBuffer){ return normalizeTaiwanNCCRows(parseOdsRows(odsBuffer)); }
 function countryCentroids(text){ const rows=parseCsv(text); const objs=rowsToObjects(rows), m=new Map(); for(const r of objs){const name=clean(r.name),lat=num(r.latitude),lon=num(r.longitude); if(name&&validCoord(lat,lon))m.set(headerKey(name),{lat,lon});} return m; }
 function countryKey(name){const k=headerKey(name); const a={uk:'unitedkingdom',greatbritain:'unitedkingdom',usa:'unitedstates',unitedstatesofamerica:'unitedstates',russianfederation:'russia'}; return a[k]||k;}
 export function normalizeLowFrequencyFallback(scheduleText,countryText){
@@ -196,20 +263,21 @@ async function main(){
   const ofcomText=await readOfcomSnapshot();
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
+  const taiwanOds=await fetchBuffer(TAIWAN_NCC_URL,'Taiwan NCC AM transmitter ODS');
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30);
-  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
-  const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
+  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), tw=normalizeTaiwanNCC(taiwanOds), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Taiwan/NCC',tw,80); validate('global EiBi fallback',fallback,30);
+  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(tw,531,'中國廣播股份有限公司','Taiwan NCC');
+  const regulatorEntries=stableDedupe([...ca,...uk,...au,...tw]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
+  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},TaiwanNCC:{authority:'Taiwan National Communications Commission',tier:1,url:TAIWAN_NCC_URL,records:tw.length,format:'ODS',sourceDate:TAIWAN_NCC_SOURCE_DATE,license:'Open Government Data License v1.0'}}};
   const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, TW ${tw.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
