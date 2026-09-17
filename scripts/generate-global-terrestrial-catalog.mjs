@@ -175,7 +175,7 @@ function xmlText(value=''){
     .replace(/\s+/g,' ').trim();
 }
 function odsAttr(attrs,name){
-  const raw=String(attrs).match(new RegExp('(?:^|\\s)'+name.replace(/[.*+?^$()|[\\]\\\\]/g,'\\function countryCentroids(text){')+'="([^"]*)"','i'))?.[1]||'';
+  const raw=String(attrs).match(new RegExp('(?:^|\\s)'+name+'="([^"]*)"','i'))?.[1]||'';
   return xmlText(raw);
 }
 export function parseOdsRows(odsBuffer){
