@@ -196,12 +196,17 @@ export function parseOdsRows(odsBuffer){
   if(rows.length<2) throw new Error('Taiwan NCC ODS contains no usable rows');
   return rows;
 }
-function taiwanHeaderIndex(rows){
+function taiwanHeader(rows){
   for(let i=0;i<Math.min(rows.length,25);i+=1){
-    const cells=rows[i].map(clean);
-    if(cells.some(v=>/電臺名稱/.test(v))&&cells.some(v=>/頻率/.test(v))&&cells.some(v=>/東經/.test(v))&&cells.some(v=>/北緯/.test(v))) return i;
+    const first=rows[i].map(clean);
+    if(!first.some(v=>/電臺名稱/.test(v))||!first.some(v=>/頻率/.test(v))||!first.some(v=>/發射機地址/.test(v))) continue;
+    for(let end=i;end<Math.min(rows.length,i+4);end+=1){
+      const width=Math.max(...rows.slice(i,end+1).map(r=>r.length));
+      const headers=Array.from({length:width},(_,col)=>rows.slice(i,end+1).map(r=>clean(r[col])).filter(Boolean).join(' '));
+      if(headers.some(v=>/東經/.test(v))&&headers.some(v=>/北緯/.test(v))) return {start:i,end,headers};
+    }
   }
-  return -1;
+  return null;
 }
 function taiwanColumn(headers,re,label){
   const idx=headers.findIndex(v=>re.test(clean(v)));
@@ -209,8 +214,8 @@ function taiwanColumn(headers,re,label){
   return idx;
 }
 export function normalizeTaiwanNCCRows(rows){
-  const hi=taiwanHeaderIndex(rows); if(hi<0) throw new Error('Taiwan NCC ODS header row not found');
-  const headers=rows[hi].map(clean);
+  const header=taiwanHeader(rows); if(!header) throw new Error('Taiwan NCC ODS header row not found');
+  const headers=header.headers;
   const nameCol=taiwanColumn(headers,/電臺名稱/,'AM 電臺名稱');
   const freqCol=taiwanColumn(headers,/頻率/,'頻率(kHz)');
   const addressCol=taiwanColumn(headers,/發射機地址/,'發射機地址');
@@ -218,7 +223,7 @@ export function normalizeTaiwanNCCRows(rows){
   const latCol=taiwanColumn(headers,/北緯/,'北緯');
   const classCol=headers.findIndex(v=>/電臺類別/.test(clean(v)));
   const out=[];
-  for(const row of rows.slice(hi+1)){
+  for(const row of rows.slice(header.end+1)){
     const name=clean(row[nameCol]), frequencyKHz=num(row[freqCol]), location=clean(row[addressCol]);
     const lon=num(row[lonCol]), lat=num(row[latCol]), stationClass=classCol>=0?clean(row[classCol]):'';
     if(!name||!location||!Number.isFinite(frequencyKHz)||frequencyKHz<520||frequencyKHz>1710) continue;
