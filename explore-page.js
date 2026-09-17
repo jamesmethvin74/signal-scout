@@ -8,7 +8,7 @@
   const AUTO_DEGREES_PER_MS = 0.0022;
   const MAX_DPR = 2;
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 4;
+  const MAX_ZOOM = 25;
   const BUTTON_ZOOM_FACTOR = 1.5;
   const DOUBLE_TAP_ZOOM_FACTOR = 1.7;
   const DOUBLE_TAP_MS = 340;
@@ -419,6 +419,7 @@
       if (t >= 1) state.focusTween = null;
     } else if (
       state.ready &&
+      state.zoom <= MIN_ZOOM + 0.01 &&
       state.pointers.size === 0 &&
       !state.dragging &&
       !state.pinching &&
