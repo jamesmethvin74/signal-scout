@@ -17,6 +17,7 @@
 .hardware-slider.is-interactive:focus-visible,
 .agc-switch.is-interactive:focus-visible,
 .mini-knob.is-interactive:focus-visible,
+.gain-value:focus-visible,
 .adv-button:focus-visible {
   outline: 1px solid rgba(89, 226, 220, .78);
   outline-offset: 2px;
@@ -42,10 +43,72 @@
   color: #ef9f72;
 }
 
+.gain-heading {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+.gain-heading > span {
+  color: #d1d4d5;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .035em;
+  text-shadow: 0 -1px rgba(0,0,0,.8);
+  white-space: nowrap;
+}
+
+.gain-value {
+  min-width: 30px;
+  min-height: 12px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  color: #9aa5a8;
+  background: transparent;
+  font-size: 7px;
+  font-weight: 650;
+  line-height: 12px;
+  letter-spacing: .04em;
+  cursor: default;
+}
+
+.gain-value.manual {
+  color: #e2c076;
+  cursor: pointer;
+}
+
 .mini-knob.is-interactive {
   cursor: ew-resize;
   touch-action: none;
   outline: none;
+}
+
+.mini-knob.is-interactive::before,
+.mini-knob.is-interactive::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #879397;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.mini-knob.is-interactive::before {
+  content: "−";
+  left: -13px;
+}
+
+.mini-knob.is-interactive::after {
+  content: "+";
+  right: -13px;
+}
+
+.mini-knob.is-interactive.is-adjusting {
+  cursor: grabbing;
 }
 
 .mini-knob.is-interactive i {

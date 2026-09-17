@@ -7,6 +7,7 @@
   const agcLabel = agcControl?.querySelector('b');
   const agcOptions = agcControl?.querySelector('small');
   const gainControl = document.querySelector('.gain-block .mini-knob');
+  const gainValue = document.querySelector('#rfGainValue');
   const advButton = document.querySelector('.adv-button');
   const hardwareDeck = document.querySelector('.hardware-deck');
   const power = document.querySelector('#power');
@@ -156,6 +157,7 @@
   function cycleAgc() {
     agcMode = agcMode === 'fast' ? 'slow' : agcMode === 'slow' ? 'off' : 'fast';
     renderAgc();
+    renderGain();
     sendAgc(true);
   }
 
@@ -173,10 +175,25 @@
 
   function renderGain() {
     if (!gainControl) return;
+    const manual = agcMode === 'off';
     const angle = -135 + (manualGain / 100) * 270;
     gainControl.style.setProperty('--gain-angle', `${angle}deg`);
+    gainControl.dataset.gainMode = manual ? 'manual' : 'auto';
     gainControl.setAttribute('aria-valuenow', String(manualGain));
-    gainControl.setAttribute('aria-valuetext', `${manualGain} percent manual gain`);
+    gainControl.setAttribute(
+      'aria-valuetext',
+      manual ? `${manualGain} percent manual gain` : 'automatic gain'
+    );
+    if (gainValue) {
+      gainValue.textContent = manual ? `${manualGain}%` : 'AUTO';
+      gainValue.classList.toggle('manual', manual);
+      gainValue.setAttribute(
+        'aria-label',
+        manual
+          ? `RF gain ${manualGain} percent. Tap to restore automatic gain.`
+          : 'RF gain is automatic.'
+      );
+    }
     updateAdvancedReadout();
   }
 
@@ -195,7 +212,7 @@
     gainControl.removeAttribute('aria-hidden');
     gainControl.setAttribute('role', 'slider');
     gainControl.setAttribute('tabindex', '0');
-    gainControl.setAttribute('aria-label', 'RF gain');
+    gainControl.setAttribute('aria-label', 'RF gain. Drag right or up to increase; left or down to decrease.');
     gainControl.setAttribute('aria-valuemin', '0');
     gainControl.setAttribute('aria-valuemax', '100');
 
@@ -206,6 +223,7 @@
       gainStartY = event.clientY;
       gainStartValue = manualGain;
       gainMoved = false;
+      gainControl.classList.add('is-adjusting');
       try { gainControl.setPointerCapture(event.pointerId); } catch {}
     });
     gainControl.addEventListener('pointermove', (event) => {
@@ -218,13 +236,16 @@
     const endGain = (event) => {
       if (gainPointerId !== event.pointerId) return;
       event.preventDefault();
-      if (!gainMoved) setManualGain(manualGain + 5, true);
-      else sendAgc(true);
+      if (gainMoved) sendAgc(true);
       try { gainControl.releasePointerCapture(event.pointerId); } catch {}
       gainPointerId = null;
+      gainControl.classList.remove('is-adjusting');
     };
     gainControl.addEventListener('pointerup', endGain);
-    gainControl.addEventListener('pointercancel', () => { gainPointerId = null; });
+    gainControl.addEventListener('pointercancel', () => {
+      gainPointerId = null;
+      gainControl.classList.remove('is-adjusting');
+    });
     gainControl.addEventListener('keydown', (event) => {
       const delta = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 5
         : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -5 : 0;
@@ -233,6 +254,14 @@
       setManualGain(manualGain + delta, true);
     });
   }
+
+  gainValue?.addEventListener('click', () => {
+    if (agcMode !== 'off') return;
+    agcMode = 'fast';
+    renderAgc();
+    renderGain();
+    sendAgc(true);
+  });
 
   let advancedPanel = null;
   let advVolume = null;
@@ -273,7 +302,7 @@
   function updateAdvancedReadout() {
     if (advVolume) advVolume.textContent = `${volume}%`;
     if (advAgc) advAgc.textContent = agcMode.toUpperCase();
-    if (advGain) advGain.textContent = `${manualGain}%`;
+    if (advGain) advGain.textContent = agcMode === 'off' ? `${manualGain}%` : 'AUTO';
   }
 
   function setAdvancedOpen(open) {

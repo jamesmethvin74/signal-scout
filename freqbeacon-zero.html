@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/freqbeacon-zero-shell.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-zero-frequency-entry.css?v=2">
   <link rel="stylesheet" href="/freqbeacon-zero-ux-fix.css?v=2">
-  <link rel="stylesheet" href="/freqbeacon-zero-lower-controls.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-zero-lower-controls.css?v=2">
   <link rel="stylesheet" href="/freqbeacon-zero-smeter.css?v=4">
   <link rel="stylesheet" href="/freqbeacon-zero-identify.css?v=2">
   <link rel="stylesheet" href="/freqbeacon-zero-pwa-nav.css?v=2">
@@ -175,8 +175,11 @@
             <div class="agc-switch" aria-label="AGC display"><i></i><b>FAST</b><small>SLOW<br>OFF</small></div>
           </div>
           <div class="control-block gain-block">
-            <span>RF GAIN</span>
-            <div class="mini-knob" aria-hidden="true"><i></i></div>
+            <div class="gain-heading">
+              <span>RF GAIN</span>
+              <button id="rfGainValue" class="gain-value" type="button" aria-label="RF gain is automatic">AUTO</button>
+            </div>
+            <div class="mini-knob" aria-label="RF gain. Drag right or up to increase; left or down to decrease."><i></i></div>
           </div>
         </div>
       </section>
@@ -232,7 +235,7 @@
   <script src="/freqbeacon-zero-state-sync.js?v=2"></script>
   <script src="/freqbeacon-zero-ux-fix.js?v=3"></script>
   <script src="/freqbeacon-zero-step-indicator.js?v=1"></script>
-  <script src="/freqbeacon-zero-lower-controls.js?v=1"></script>
+  <script src="/freqbeacon-zero-lower-controls.js?v=2"></script>
   <script src="/freqbeacon-zero-interaction-guard.js?v=1"></script>
   <script type="module" src="/freqbeacon-zero.js?v=7"></script>
   <script type="module" src="/freqbeacon-zero-dial.js?v=10"></script>
