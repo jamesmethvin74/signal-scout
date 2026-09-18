@@ -42,10 +42,12 @@ result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:0
 assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:531,name:'中國廣播股份有限公司臺北新聞暨服務廣播電臺',location:'新北市土城區員福段687-2地號',country:'Taiwan',sourceAuthority:'Taiwan NCC',sourceTier:1,lat:24.983889,lon:121.436667,categories:['broadcast','MW']}
 ];
 c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:531,name:'TAIWAN FALLBACK',country:'Taiwan',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:23.7,lon:121.0,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
 engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
@@ -54,4 +56,6 @@ assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG');
 result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-16T05:00:00Z')});
 assert.notEqual(result.entry?.name,'REG');
 
+result=engine.identify(531,{receiver:{lat:24.98,lon:121.44},now:new Date('2026-09-15T17:00:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.sourceAuthority,'Taiwan NCC'); assert.match(result.entry.name,/中國廣播股份有限公司/);
 console.log('terrestrial identification regressions: ok');

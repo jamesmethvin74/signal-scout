@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeTaiwanNCCRows, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -29,6 +29,18 @@ const xlsxFixture=Buffer.from('UEsDBBQAAAAIAFtoMF1UIkUvqAAAANYAAAAPAAAAeGwvd29ya
 const parsedSheets=parseXlsxSheets(xlsxFixture); assert.equal(parsedSheets.length,1); assert.equal(parsedSheets[0].name,'AM'); assert.equal(parsedSheets[0].rows[0][0],'Callsign'); assert.equal(parsedSheets[0].rows[0][1],'Frequency(MHz)');
 const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.length,1); assert.equal(auCurrent[0].callsign,'2GB'); assert.equal(auCurrent[0].frequencyKHz,873); assert.equal(auCurrent[0].powerW,8000); assert.equal(auCurrent[0].status,'Issued');
 
+const twRows=[
+  ['無線調幅廣播電臺頻率、發射機地址、座標資料表'],
+  ['最後更新日期：115/4/7'],
+  ['AM 電臺名稱','頻率(kHz)','發射機地址','天線位置','','電臺類別'],
+  ['','','','東經','北緯',''],
+  ['中國廣播股份有限公司臺北新聞暨服務廣播電臺','531','新北市土城區員福段687-2地號','121.436667','24.983889','丙'],
+  ['海外短波測試','6085','臺灣測試位址','121.5','25.0','海外電臺'],
+  ['座標錯誤','990','錯誤位址','150','50','丙']
+];
+const tw=normalizeTaiwanNCCRows(twRows);
+assert.equal(tw.length,1); assert.equal(tw[0].frequencyKHz,531); assert.equal(tw[0].sourceTier,1); assert.equal(tw[0].sourceAuthority,'Taiwan NCC'); assert.equal(tw[0].country,'Taiwan');
+assert.equal(tw[0].lat,24.983889); assert.equal(tw[0].lon,121.436667); assert.equal(tw[0].locationApproximate,false); assert.ok(!Object.hasOwn(tw[0],'powerW'));
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
 const fb=normalizeLowFrequencyFallback(schedule,countries); assert.equal(fb.length,2); assert.ok(fb.every(e=>e.sourceTier==='reference/fallback')); assert.ok(!fb.some(e=>/NDB/.test(e.name)));
