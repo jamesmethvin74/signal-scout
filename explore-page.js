@@ -4,6 +4,7 @@
   const RECEIVER_FEED = '/api/explore/receivers';
   const STATUS_FEED = '/api/explore/status';
   const WORLD_FEED = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+  const ADMIN1_FEED = '/explore-admin1-boundaries.geojson?v=1';
   const RESUME_DELAY_MS = 4200;
   const AUTO_DEGREES_PER_MS = 0.0022;
   const MAX_DPR = 2;
@@ -44,6 +45,7 @@
     graticule: null,
     land: null,
     borders: null,
+    admin1: null,
     receivers: [],
     filteredReceivers: [],
     selected: null,
@@ -303,6 +305,17 @@
     ctx.lineWidth = .62;
     ctx.stroke();
     ctx.restore();
+
+    if (state.admin1) {
+      const detail = Math.max(0, Math.min(1, Math.log2(Math.max(1, state.zoom)) / 3));
+      ctx.save();
+      ctx.beginPath();
+      state.path(state.admin1);
+      ctx.strokeStyle = `rgba(132,176,184,${(.085 + detail * .095).toFixed(3)})`;
+      ctx.lineWidth = .29 + detail * .12;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     if (state.borders) {
       ctx.save();
@@ -711,6 +724,20 @@
     updateZoomControls();
 
     try {
+      const admin1Promise = fetch(ADMIN1_FEED, { cache: 'force-cache' })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Admin-1 geography returned ${response.status}`);
+          return response.json();
+        })
+        .then((geometry) => {
+          if (geometry?.type === 'Feature' || geometry?.type === 'MultiLineString') {
+            state.admin1 = geometry;
+          }
+        })
+        .catch(() => {
+          // Admin-1 detail is enhancement-only; the trusted receiver globe must still work without it.
+        });
+
       const [receiverResponse, worldResponse] = await Promise.all([
         fetch(RECEIVER_FEED, { headers: { accept: 'application/geo+json,application/json' } }),
         fetch(WORLD_FEED, { mode: 'cors', cache: 'force-cache' })
@@ -726,6 +753,7 @@
       if (!countries) throw new Error('World geography did not contain country geometry.');
       state.land = window.topojson.feature(world, world.objects.land || countries);
       state.borders = window.topojson.mesh(world, countries, (a, b) => a !== b);
+      void admin1Promise;
       state.receivers = receivers.sort((a, b) => (a.location || a.name).localeCompare(b.location || b.name));
       state.selected = chooseInitialReceiver(state.receivers);
       state.ready = true;
