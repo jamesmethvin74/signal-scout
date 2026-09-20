@@ -55,6 +55,7 @@ assert.equal(result.kind,'range'); assert.match(result.range.name,/Medium Wave|A
 result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
+await run(c,'freqbeacon-zero-philippines-am.js');
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
   {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
 ];
@@ -63,6 +64,9 @@ c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
 engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
+result=engine.identify(560,{receiver:{lat:14.65,lon:120.98},now:new Date('2026-09-15T17:00:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'DZXL'); assert.equal(result.nominalFrequencyKHz,558);
+assert.equal(result.frequencyOffsetKHz,2);
 result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T17:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG');
 result=engine.identify(997,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T17:00:00Z')});
