@@ -301,21 +301,22 @@
     landGradient.addColorStop(1, '#183741');
     ctx.fillStyle = landGradient;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(93,148,158,.42)';
-    ctx.lineWidth = .62;
+    // Keep coastlines crisp so the globe reads cleanly at regional zooms.
+    ctx.strokeStyle = 'rgba(184,216,224,.72)';
+    ctx.lineWidth = .82;
     ctx.stroke();
     ctx.restore();
 
     if (state.admin1) {
-      // State/province boundaries must remain visibly distinct from the land
-      // texture on a phone. Keep them subordinate to national borders, but
-      // strengthen them progressively as the listener zooms into a region.
+      // Admin-1 detail is intentionally secondary to national borders.
+      // It remains readable when zoomed in without turning dense regions such
+      // as Europe into one equally weighted boundary grid.
       const detail = Math.max(0, Math.min(1, Math.log2(Math.max(1, state.zoom)) / 3));
       ctx.save();
       ctx.beginPath();
       state.path(state.admin1);
-      ctx.strokeStyle = `rgba(151,194,202,${(.22 + detail * .30).toFixed(3)})`;
-      ctx.lineWidth = .48 + detail * .26;
+      ctx.strokeStyle = `rgba(151,194,202,${(.12 + detail * .18).toFixed(3)})`;
+      ctx.lineWidth = .30 + detail * .18;
       ctx.stroke();
       ctx.restore();
     }
@@ -324,8 +325,9 @@
       ctx.save();
       ctx.beginPath();
       state.path(state.borders);
-      ctx.strokeStyle = 'rgba(145,190,198,.62)';
-      ctx.lineWidth = .9;
+      // National borders are the primary geographic hierarchy.
+      ctx.strokeStyle = 'rgba(210,238,244,.90)';
+      ctx.lineWidth = 1.35;
       ctx.stroke();
       ctx.restore();
     }
