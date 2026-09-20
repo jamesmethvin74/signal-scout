@@ -36,4 +36,9 @@ result=engine.identify(660,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09
 assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WFAN');
 result=await engine.identifyAsync(9955,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.band,'SW'); assert.equal(result.entry.name,'A26 TEST 9955');
-console.log('exact identification regressions: ok');
+result=engine.identify(740,{receiver:{lat:-33.86,lon:151.2},now:new Date('2026-09-15T19:00:00Z')});
+assert.equal(result.kind,'range'); assert.match(result.range.name,/Medium Wave|AM Broadcast/i);
+result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:00:00Z')});
+assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
+
+console.log('base exact and range identification regressions: ok');
