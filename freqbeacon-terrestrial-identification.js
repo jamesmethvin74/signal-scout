@@ -3,7 +3,8 @@
   const base = window.FREQBEACON_IDENTIFICATION_ENGINE;
   const terrestrial = [
     ...(Array.isArray(window.FREQBEACON_TERRESTRIAL_CATALOG) ? window.FREQBEACON_TERRESTRIAL_CATALOG : []),
-    ...(Array.isArray(window.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG) ? window.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG : [])
+    ...(Array.isArray(window.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG) ? window.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG : []),
+    ...(Array.isArray(window.FREQBEACON_PHILIPPINES_AM_CATALOG) ? window.FREQBEACON_PHILIPPINES_AM_CATALOG : [])
   ];
   if (!base || !terrestrial.length) return;
 
@@ -74,7 +75,9 @@
       frequencyErrorKHz: best.frequencyErrorKHz,
       matchToleranceKHz: best.matchToleranceKHz,
       confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
-      alternatives: candidates.slice(1).map((c) => c.entry),
+      alternatives: candidates.slice(1)
+        .filter((c) => Math.abs(c.nominalFrequencyKHz - best.nominalFrequencyKHz) < 0.001)
+        .map((c) => c.entry),
       technicalRank: best.score
     };
   }
