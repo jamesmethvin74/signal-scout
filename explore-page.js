@@ -324,8 +324,8 @@
       ctx.save();
       ctx.beginPath();
       state.path(state.borders);
-      ctx.strokeStyle = 'rgba(125,174,183,.48)';
-      ctx.lineWidth = .72;
+      ctx.strokeStyle = 'rgba(145,190,198,.62)';
+      ctx.lineWidth = .9;
       ctx.stroke();
       ctx.restore();
     }
