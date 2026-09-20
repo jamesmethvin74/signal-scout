@@ -286,14 +286,10 @@
     return identifyFromEntries(kHz, options);
   }
 
-  function shardsFor(kHz) {
+  function shardFor(kHz) {
     const frequencyKHz = Number(kHz);
-    if (!Number.isFinite(frequencyKHz)) return [];
-    // A tolerant lookup close to a shard boundary may need the neighbor too.
-    const tolerance = 2.5;
-    return A26_SHARDS.filter((shard) =>
-      frequencyKHz >= shard.minKHz - tolerance && frequencyKHz <= shard.maxKHz + tolerance
-    );
+    if (!Number.isFinite(frequencyKHz)) return null;
+    return A26_SHARDS.find((shard) => frequencyKHz >= shard.minKHz && frequencyKHz <= shard.maxKHz) || null;
   }
 
   async function loadShard(shard) {
@@ -319,10 +315,10 @@
   }
 
   async function identifyAsync(kHz, options = {}) {
-    const shards = shardsFor(kHz);
-    if (!shards.length) return identify(kHz, options);
+    const shard = shardFor(kHz);
+    if (!shard) return identify(kHz, options);
     try {
-      const entries = (await Promise.all(shards.map(loadShard))).flat();
+      const entries = await loadShard(shard);
       return identifyFromEntries(kHz, options, entries);
     } catch (error) {
       console.warn('FREQBEACON static A26 identification fallback:', error);
