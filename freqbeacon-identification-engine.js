@@ -31,8 +31,8 @@
 
     if (entry?.type === 'station') {
       const band = String(entry.band || '').toUpperCase();
-      if (band === 'MW' || band === 'LW') return 4;
-      if (band === 'SW') return 2.5;
+      if (band === 'MW') return 4;
+      if (band === 'LW' || band === 'SW') return 2.5;
     }
 
     if (entry?.type === 'channel') {
