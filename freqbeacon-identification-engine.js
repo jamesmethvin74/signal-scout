@@ -22,6 +22,27 @@
 
   const exactEntries = () => catalog.entries || catalog.stations || [];
 
+  // IDENTIFY is intentionally tolerant of a listener being a little off the
+  // nominal carrier. Broadcast channels get a wider window than fixed utility
+  // signals, and a source row may override the default with matchToleranceKHz.
+  function frequencyToleranceKHz(entry) {
+    const configured = Number(entry?.matchToleranceKHz);
+    if (Number.isFinite(configured) && configured > 0) return Math.min(configured, 25);
+
+    if (entry?.type === 'station') {
+      const band = String(entry.band || '').toUpperCase();
+      if (band === 'MW' || band === 'LW') return 4;
+      if (band === 'SW') return 2.5;
+    }
+
+    if (entry?.type === 'channel') {
+      const categories = new Set(entry.categories || []);
+      return categories.has('cb') ? 4.5 : 1;
+    }
+    if (entry?.type === 'signal' || entry?.type === 'service') return 1;
+    return 0.6;
+  }
+
   function resolveReceiver(identity) {
     const text = String(identity || '').trim();
     const upper = text.toUpperCase();
@@ -178,34 +199,53 @@
   }
 
   function exactMatch(kHz, receiver, now = new Date(), extraEntries = []) {
-    const tolerance = kHz < 2000 ? 0.6 : 0.25;
     const candidates = mergeEntries(extraEntries)
       .filter((entry) => Number.isFinite(Number(entry.frequencyKHz)))
-      .filter((entry) => Math.abs(Number(entry.frequencyKHz) - kHz) <= tolerance)
       .map((entry) => {
+        const nominalFrequencyKHz = Number(entry.frequencyKHz);
+        const frequencyOffsetKHz = kHz - nominalFrequencyKHz;
+        const frequencyErrorKHz = Math.abs(frequencyOffsetKHz);
+        const matchToleranceKHz = frequencyToleranceKHz(entry);
+        if (frequencyErrorKHz > matchToleranceKHz) return null;
         const distance = milesBetween(receiver, entry);
         const schedule = scheduleState(entry, now);
-        return { entry, distance, schedule, rank: exactRank(entry, distance, receiver, now) };
+        return {
+          entry,
+          distance,
+          schedule,
+          rank: exactRank(entry, distance, receiver, now),
+          nominalFrequencyKHz,
+          frequencyOffsetKHz,
+          frequencyErrorKHz,
+          matchToleranceKHz
+        };
       })
+      .filter(Boolean)
       .filter((candidate) => {
         if (candidate.entry.type !== 'station' || candidate.entry.band !== 'MW') return Number.isFinite(candidate.rank);
         return Number.isFinite(candidate.rank) && candidate.rank >= -175;
       })
+      // Frequency proximity is stronger evidence than propagation ranking.
+      // That prevents a high-power adjacent channel from stealing a widened match.
       .sort((a, b) =>
-        b.rank - a.rank
+        a.frequencyErrorKHz - b.frequencyErrorKHz
+        || b.rank - a.rank
         || a.distance - b.distance
         || String(a.entry.name || '').localeCompare(String(b.entry.name || ''))
       );
 
     if (!candidates.length) return null;
     const best = candidates[0];
+    const alternatives = candidates.slice(1).filter((candidate) =>
+      Math.abs(candidate.nominalFrequencyKHz - best.nominalFrequencyKHz) < 0.001
+    );
     let confidence = 'known';
     if (best.entry.type === 'station' && best.entry.band === 'MW') confidence = 'likely';
     if (best.entry.type === 'station' && (best.entry.band === 'SW' || best.entry.band === 'LW')) {
       confidence = best.schedule?.active === true ? 'likely' : best.schedule?.active === false ? 'cataloged' : 'known';
     }
-    if (best.entry.type === 'signal' && candidates.length > 1) confidence = 'likely';
-    return { kind: 'exact', ...best, confidence, alternatives: candidates.slice(1) };
+    if (best.entry.type === 'signal' && alternatives.length > 0) confidence = 'likely';
+    return { kind: 'exact', ...best, confidence, alternatives };
   }
 
   function rangePriority(range) {
@@ -246,10 +286,14 @@
     return identifyFromEntries(kHz, options);
   }
 
-  function shardFor(kHz) {
+  function shardsFor(kHz) {
     const frequencyKHz = Number(kHz);
-    if (!Number.isFinite(frequencyKHz)) return null;
-    return A26_SHARDS.find((shard) => frequencyKHz >= shard.minKHz && frequencyKHz <= shard.maxKHz) || null;
+    if (!Number.isFinite(frequencyKHz)) return [];
+    // A tolerant lookup close to a shard boundary may need the neighbor too.
+    const tolerance = 2.5;
+    return A26_SHARDS.filter((shard) =>
+      frequencyKHz >= shard.minKHz - tolerance && frequencyKHz <= shard.maxKHz + tolerance
+    );
   }
 
   async function loadShard(shard) {
@@ -275,10 +319,10 @@
   }
 
   async function identifyAsync(kHz, options = {}) {
-    const shard = shardFor(kHz);
-    if (!shard) return identify(kHz, options);
+    const shards = shardsFor(kHz);
+    if (!shards.length) return identify(kHz, options);
     try {
-      const entries = await loadShard(shard);
+      const entries = (await Promise.all(shards.map(loadShard))).flat();
       return identifyFromEntries(kHz, options, entries);
     } catch (error) {
       console.warn('FREQBEACON static A26 identification fallback:', error);
@@ -307,6 +351,7 @@
     resolveReceiver,
     milesBetween,
     scheduleState,
+    frequencyToleranceKHz,
     formatFrequency,
     formatRange
   });
