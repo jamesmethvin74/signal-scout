@@ -4,6 +4,7 @@
   const RECEIVER_FEED = '/api/explore/receivers';
   const STATUS_FEED = '/api/explore/status';
   const WORLD_FEED = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+  const ADMIN1_FEED = '/explore-admin1-boundaries.geojson?v=2';
   const RESUME_DELAY_MS = 4200;
   const AUTO_DEGREES_PER_MS = 0.0022;
   const MAX_DPR = 2;
@@ -44,6 +45,7 @@
     graticule: null,
     land: null,
     borders: null,
+    admin1: null,
     receivers: [],
     filteredReceivers: [],
     selected: null,
@@ -299,17 +301,33 @@
     landGradient.addColorStop(1, '#183741');
     ctx.fillStyle = landGradient;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(93,148,158,.42)';
-    ctx.lineWidth = .62;
+    // Keep coastlines crisp so the globe reads cleanly at regional zooms.
+    ctx.strokeStyle = 'rgba(184,216,224,.72)';
+    ctx.lineWidth = .82;
     ctx.stroke();
     ctx.restore();
+
+    if (state.admin1) {
+      // Admin-1 detail is intentionally secondary to national borders.
+      // It remains readable when zoomed in without turning dense regions such
+      // as Europe into one equally weighted boundary grid.
+      const detail = Math.max(0, Math.min(1, Math.log2(Math.max(1, state.zoom)) / 3));
+      ctx.save();
+      ctx.beginPath();
+      state.path(state.admin1);
+      ctx.strokeStyle = `rgba(151,194,202,${(.12 + detail * .18).toFixed(3)})`;
+      ctx.lineWidth = .30 + detail * .18;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     if (state.borders) {
       ctx.save();
       ctx.beginPath();
       state.path(state.borders);
-      ctx.strokeStyle = 'rgba(111,157,165,.22)';
-      ctx.lineWidth = .45;
+      // National borders are the primary geographic hierarchy.
+      ctx.strokeStyle = 'rgba(210,238,244,.90)';
+      ctx.lineWidth = 1.35;
       ctx.stroke();
       ctx.restore();
     }
@@ -711,9 +729,21 @@
     updateZoomControls();
 
     try {
-      const [receiverResponse, worldResponse] = await Promise.all([
+      const admin1Promise = fetch(ADMIN1_FEED, { cache: 'force-cache' })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Admin-1 geography returned ${response.status}`);
+          return response.json();
+        })
+        .then((geometry) => {
+          if (geometry?.type === 'Feature' || geometry?.type === 'MultiLineString') return geometry;
+          throw new Error('Admin-1 geography has an unsupported geometry type');
+        })
+        .catch(() => null);
+
+      const [receiverResponse, worldResponse, admin1] = await Promise.all([
         fetch(RECEIVER_FEED, { headers: { accept: 'application/geo+json,application/json' } }),
-        fetch(WORLD_FEED, { mode: 'cors', cache: 'force-cache' })
+        fetch(WORLD_FEED, { mode: 'cors', cache: 'force-cache' }),
+        admin1Promise
       ]);
       if (!receiverResponse.ok) throw new Error(`Trusted receiver feed returned ${receiverResponse.status}`);
       if (!worldResponse.ok) throw new Error(`World geography returned ${worldResponse.status}`);
@@ -726,6 +756,7 @@
       if (!countries) throw new Error('World geography did not contain country geometry.');
       state.land = window.topojson.feature(world, world.objects.land || countries);
       state.borders = window.topojson.mesh(world, countries, (a, b) => a !== b);
+      state.admin1 = admin1;
       state.receivers = receivers.sort((a, b) => (a.location || a.name).localeCompare(b.location || b.name));
       state.selected = chooseInitialReceiver(state.receivers);
       state.ready = true;
