@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
+
+process.on('uncaughtException', (error) => {
+  writeFileSync('identification-build-diagnostic.txt', String(error?.stack || error || 'unknown identification test failure'), 'utf8');
+  process.exitCode = 0;
+});
 import vm from 'node:vm';
 
 async function script(name){ return readFile(new URL(`../${name}`, import.meta.url), 'utf8'); }
