@@ -47,16 +47,32 @@
     const receiver = options.receiver || base.resolveReceiver(options.receiverIdentity || '');
     const now = options.now instanceof Date ? options.now : new Date();
     const candidates = terrestrial
-      .filter((e) => Math.abs(Number(e.frequencyKHz) - Number(kHz)) <= 0.6)
-      .map((e) => rank(e, receiver, now))
+      .map((e) => {
+        const nominalFrequencyKHz = Number(e.frequencyKHz);
+        const frequencyOffsetKHz = Number(kHz) - nominalFrequencyKHz;
+        const frequencyErrorKHz = Math.abs(frequencyOffsetKHz);
+        const matchToleranceKHz = base.frequencyToleranceKHz(e);
+        if (!Number.isFinite(nominalFrequencyKHz) || frequencyErrorKHz > matchToleranceKHz) return null;
+        const scored = rank(e, receiver, now);
+        return scored ? { ...scored, nominalFrequencyKHz, frequencyOffsetKHz, frequencyErrorKHz, matchToleranceKHz } : null;
+      })
       .filter(Boolean)
       .filter((c) => c.score >= (sourceTier(c.entry) === 1 ? -50 : 80))
-      .sort((a, b) => b.score - a.score || a.distance - b.distance || sourceTier(a.entry) - sourceTier(b.entry));
+      .sort((a, b) =>
+        a.frequencyErrorKHz - b.frequencyErrorKHz
+        || b.score - a.score
+        || a.distance - b.distance
+        || sourceTier(a.entry) - sourceTier(b.entry)
+      );
     if (!candidates.length) return null;
     const best = candidates[0];
     return {
       kind: 'exact', frequencyKHz: Number(kHz), receiver,
       entry: best.entry, distance: best.distance, schedule: best.schedule,
+      nominalFrequencyKHz: best.nominalFrequencyKHz,
+      frequencyOffsetKHz: best.frequencyOffsetKHz,
+      frequencyErrorKHz: best.frequencyErrorKHz,
+      matchToleranceKHz: best.matchToleranceKHz,
       confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
       alternatives: candidates.slice(1).map((c) => c.entry),
       technicalRank: best.score
@@ -67,6 +83,11 @@
     if (!terrestrialResult) return true;
     if (!baseResult || baseResult.kind !== 'exact') return false;
     const entry = baseResult.entry || {};
+    const baseError = Math.abs(Number(baseResult.frequencyOffsetKHz ?? (Number(baseResult.frequencyKHz) - Number(entry.frequencyKHz))));
+    const terrestrialError = Math.abs(Number(terrestrialResult.frequencyOffsetKHz));
+    if (Number.isFinite(baseError) && Number.isFinite(terrestrialError) && Math.abs(baseError - terrestrialError) > 0.05) {
+      return baseError < terrestrialError;
+    }
     if (entry.type === 'signal' || entry.type === 'service' || entry.type === 'channel') return true;
     if (entry.type !== 'station') return false;
 
