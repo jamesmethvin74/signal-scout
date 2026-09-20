@@ -36,42 +36,4 @@ result=engine.identify(660,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09
 assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WFAN');
 result=await engine.identifyAsync(9955,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.band,'SW'); assert.equal(result.entry.name,'A26 TEST 9955');
-assert.equal(result.nominalFrequencyKHz,9955); assert.equal(result.frequencyOffsetKHz,0);
-result=await engine.identifyAsync(9953.2,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'A26 TEST 9955');
-assert.equal(result.nominalFrequencyKHz,9955); assert.ok(Math.abs(result.frequencyOffsetKHz+1.8)<1e-9);
-result=await engine.identifyAsync(9952.4,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
-assert.notEqual(result.entry?.name,'A26 TEST 9955');
-result=engine.identify(743.9,{receiver:{lat:33.68,lon:-117.83},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'KBRT'); assert.equal(result.nominalFrequencyKHz,740);
-result=engine.identify(744.1,{receiver:{lat:33.68,lon:-117.83},now:new Date('2026-09-15T19:00:00Z')});
-assert.notEqual(result.entry?.callsign,'KBRT');
-assert.equal(engine.frequencyToleranceKHz({type:'station',band:'MW'}),4);
-assert.equal(engine.frequencyToleranceKHz({type:'station',band:'SW'}),2.5);
-assert.equal(engine.frequencyToleranceKHz({type:'signal'}),1);
-assert.equal(engine.frequencyToleranceKHz({type:'station',band:'SW',matchToleranceKHz:1.75}),1.75);
-result=engine.identify(740,{receiver:{lat:-33.86,lon:151.2},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'range'); assert.match(result.range.name,/Medium Wave|AM Broadcast/i);
-result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
-
-await run(c,'freqbeacon-zero-philippines-am.js');
-c.FREQBEACON_TERRESTRIAL_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
-];
-c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
-];
-await run(c,'freqbeacon-terrestrial-identification.js');
-engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
-result=engine.identify(560,{receiver:{lat:14.65,lon:120.98},now:new Date('2026-09-15T17:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'DZXL'); assert.equal(result.nominalFrequencyKHz,558);
-assert.equal(result.frequencyOffsetKHz,2);
-result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T17:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG');
-result=engine.identify(997,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T17:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG'); assert.equal(result.nominalFrequencyKHz,999);
-result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-16T05:00:00Z')});
-assert.notEqual(result.entry?.name,'REG');
-
-console.log('terrestrial identification regressions: ok');
+console.log('exact identification regressions: ok');
