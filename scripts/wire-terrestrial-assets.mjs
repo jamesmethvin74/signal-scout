@@ -2,10 +2,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const files = ['freqbeacon-zero.html', 'lookup.html'];
 const dataTags = [
+  '  <script src="/freqbeacon-zero-philippines-am.js?v=1"></script>',
   '  <script src="/freqbeacon-zero-global-mw-lw.js?v=1"></script>',
   '  <script src="/freqbeacon-zero-global-mw-lw-fallback.js?v=1"></script>'
 ].join('\n');
-const wrapperTag = '  <script src="/freqbeacon-terrestrial-identification.js?v=1"></script>';
+const wrapperTag = '  <script src="/freqbeacon-terrestrial-identification.js?v=2"></script>';
 
 for (const file of files) {
   let html = await readFile(file, 'utf8');
