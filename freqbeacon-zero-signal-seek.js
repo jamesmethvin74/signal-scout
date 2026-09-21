@@ -42,7 +42,7 @@ function candidates(){
   const v=view(),a=spectrum();if(!v||!a)return[];
   const floor=pct(a,.52),top=pct(a,.995);
   const threshold=floor+Math.max(8.5,Math.min(14,(top-floor)*.34));
-  const m=mode(),sepKHz=(m==='am'||m==='sam')?3.2:m==='nbfm'?4.5:m==='cw'?.25:.7;
+  const m=mode(),sepKHz=(m==='am'||m==='sam')?3.2:m==='nbfm'?4.5:m==='cw' ? 0.25 : 0.7;
   const sep=Math.max(8,Math.round(sepKHz/(v.span/1024)));
   const raw=[];
   for(let i=28;i<996;i++){
@@ -64,7 +64,7 @@ function tap(freq){
 function seek(dir){
   if(frames.length<3){flash('WAIT',650);return}
   const now=tuned();if(!Number.isFinite(now))return;
-  const m=mode(),guard=(m==='am'||m==='sam')?2.4:m==='nbfm'?3.5:m==='cw'?.18:.4;
+  const m=mode(),guard=(m==='am'||m==='sam')?2.4:m==='nbfm'?3.5:m==='cw' ? 0.18 : 0.4;
   let list=candidates().filter(c=>dir>0?c.freq>now+guard:c.freq<now-guard);
   if(dir<0)list=list.reverse();
   const target=list[0];if(!target){flash('NONE');return}
