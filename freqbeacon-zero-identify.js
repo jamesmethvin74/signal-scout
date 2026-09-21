@@ -155,13 +155,19 @@
     titleEl.textContent = entry.name;
     metaEl.textContent = exactMeta(entry);
     descriptionEl.textContent = entry.description || entry.format || 'Known cataloged signal.';
-    const details = [engine.formatFrequency(result.frequencyKHz)];
+    const nominal = Number(result.nominalFrequencyKHz ?? entry.frequencyKHz ?? result.frequencyKHz);
+    const offset = Number(result.frequencyOffsetKHz);
+    const details = [engine.formatFrequency(nominal)];
+    if (Number.isFinite(offset) && Math.abs(offset) >= 0.05) {
+      const decimals = Math.abs(offset) < 1 ? 2 : 1;
+      details.push(`tuned ${offset > 0 ? '+' : ''}${offset.toFixed(decimals)} kHz from channel center`);
+    }
     if (Number.isFinite(result.distance)) details.push(`about ${Math.round(result.distance)} mi from receiver`);
     if (entry.classA) details.push('Class A / clear-channel');
     const schedule = scheduleLabel(entry, result.schedule);
     if (schedule) details.push(schedule);
     if (entry.target) details.push(`target: ${entry.target}`);
-    if (result.alternatives?.length) details.push(`${result.alternatives.length} other exact-frequency candidate${result.alternatives.length === 1 ? '' : 's'}`);
+    if (result.alternatives?.length) details.push(`${result.alternatives.length} other candidate on this channel${result.alternatives.length === 1 ? '' : 's'}`);
     noteEl.textContent = details.join(' · ');
   }
 
