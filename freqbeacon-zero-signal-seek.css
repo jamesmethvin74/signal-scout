@@ -1,0 +1,97 @@
+/* FREQBEACON Zero — strong-signal seek preview controls. */
+.tuning-caption.zero-signal-seek {
+  justify-self: center;
+  align-self: center;
+  width: 48px;
+  margin: 0;
+  display: grid;
+  justify-items: stretch;
+  gap: 4px;
+  writing-mode: horizontal-tb;
+  transform: none;
+  text-align: center;
+}
+
+.zero-signal-seek-label {
+  color: #d1d4d5;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  line-height: 1;
+}
+
+.zero-signal-seek-buttons {
+  display: grid;
+  gap: 4px;
+}
+
+.zero-signal-seek-buttons button {
+  width: 44px;
+  min-height: 31px;
+  padding: 0;
+  border: 1px solid #07090a;
+  border-radius: 7px;
+  color: #f5bd69;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 20%, rgba(0,0,0,.16)),
+    #273035;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.10),
+    inset 0 -1px rgba(0,0,0,.72),
+    0 2px 4px rgba(0,0,0,.34);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.zero-signal-seek-buttons button:active:not(:disabled) {
+  color: #fff0c9;
+  border-color: #8a6837;
+  background:
+    linear-gradient(180deg, rgba(255,213,144,.13), rgba(0,0,0,.16)),
+    #342c20;
+  transform: translateY(1px);
+}
+
+.zero-signal-seek-buttons button:disabled {
+  opacity: .30;
+  cursor: default;
+}
+
+.zero-signal-seek small {
+  min-height: 8px;
+  color: #9a875e;
+  font: 700 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .tuning-caption.zero-signal-seek {
+    width: 42px;
+    gap: 3px;
+  }
+
+  .zero-signal-seek-label { font-size: 6px; }
+  .zero-signal-seek-buttons { gap: 3px; }
+  .zero-signal-seek-buttons button {
+    width: 40px;
+    min-height: 27px;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .zero-signal-seek small { font-size: 6px; }
+}
+
+@media (max-width: 370px) {
+  .tuning-caption.zero-signal-seek {
+    width: 36px;
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+  .zero-signal-seek-buttons button {
+    width: 35px;
+    min-height: 26px;
+  }
+}
