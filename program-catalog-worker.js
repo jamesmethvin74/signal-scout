@@ -334,6 +334,22 @@ export function parseCsv(text) {
   return rows;
 }
 
+function wrmiConfidence(title) {
+  const exactPrograms = [
+    /Supreme Master TV/i,
+    /WRMI Legends/i,
+    /Hal Turner/i,
+    /Your UFO Show/i,
+    /Truth2Ponder/i,
+    /Early Jazz/i,
+    /Hello World/i,
+    /Christian America Ministries/i,
+    /We Pluribus/i,
+    /Fifteen Minute Countdown/i
+  ];
+  return exactPrograms.some((pattern) => pattern.test(title)) ? 'official' : 'official-block';
+}
+
 function daysFromWrmiTitle(title) {
   let clean = normalizeTitle(title);
   if (!clean) return null;
@@ -422,7 +438,7 @@ export function parseWrmiScheduleCsv(csv) {
         language:'',
         targetRegion:'',
         sourceRecordId:'grid-' + startText + '-' + frequencyKHz,
-        confidence:'official',
+        confidence:wrmiConfidence(title),
         originalTimeZone:'UTC',
         originalTime:startText + '-' + String(endMinuteUtc === 1440 ? '2400' : String(Math.floor(endMinuteUtc / 60)).padStart(2,'0') + String(endMinuteUtc % 60).padStart(2,'0')) + ' UTC'
       }));
@@ -743,7 +759,7 @@ async function initializeSchema(env) {
       'last_success_at INTEGER,',
       'last_verified_at INTEGER,',
       'next_refresh_at INTEGER,',
-      'status TEXT NOT NULL DEFAULT "never-published",',
+      "status TEXT NOT NULL DEFAULT 'never-published',",
       'record_count INTEGER NOT NULL DEFAULT 0,',
       'active_version TEXT,',
       'active_fetched_at INTEGER,',
@@ -793,7 +809,7 @@ async function initializeSchema(env) {
     await db.prepare([
       'INSERT INTO freqbeacon_program_sources',
       '(source_id,display_name,authority,source_url,source_priority,refresh_interval_ms,freshness_ttl_ms,status)',
-      'VALUES (?,?,?,?,?,?,?,"never-published")',
+      "VALUES (?,?,?,?,?,?,?,'never-published')",
       'ON CONFLICT(source_id) DO UPDATE SET',
       'display_name=excluded.display_name, authority=excluded.authority, source_url=excluded.source_url,',
       'source_priority=excluded.source_priority, refresh_interval_ms=excluded.refresh_interval_ms, freshness_ttl_ms=excluded.freshness_ttl_ms'
@@ -872,7 +888,7 @@ async function refreshSource(env, source, force = false) {
 
     await db.prepare([
       'UPDATE freqbeacon_program_sources SET',
-      'last_success_at=?, last_verified_at=?, next_refresh_at=?, status="healthy", record_count=?,',
+      "last_success_at=?, last_verified_at=?, next_refresh_at=?, status='healthy', record_count=?,",
       'active_version=?, active_fetched_at=?, active_expires_at=?, effective_from=?, effective_to=?, season=?,',
       'last_error=NULL, last_validation=?, consecutive_failures=0',
       'WHERE source_id=?'
@@ -1059,7 +1075,7 @@ async function programGuideResponse(request, env, ctx) {
       station:stationRaw,
       frequency,
       at:at.toISOString(),
-      status:'verified',
+      status:record.confidence === 'official-block' ? 'broadcast' : 'verified',
       verified:true,
       program:record.title,
       description:record.description || null,
