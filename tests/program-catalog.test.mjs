@@ -28,7 +28,7 @@ assert.equal(selected.status, 'verified');
 assert.equal(selected.best.record.title, 'Night Test');
 
 const wrmiCsv = [
-  'WRMI A26 Schedule effective July 13, 2026,,,',
+  '"WRMI A26 Schedule effective July 13, 2026",,,',
   'UTC,,7730 kHz,9955 kHz',
   '0000,,J,B',
   ',,Supreme,',
