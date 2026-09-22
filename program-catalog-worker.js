@@ -8,6 +8,7 @@ const WRMI_SHEET = 'https://docs.google.com/spreadsheets/d/1pcIEX8kisrOPqlXHDAq6
 const WRMI_CSV = 'https://docs.google.com/spreadsheets/d/1pcIEX8kisrOPqlXHDAq6gympKUgDj0SIb96qce2kGGQ/export?format=csv&gid=0';
 const REE_SOURCE = 'https://www.rtve.es/play/radio/radio-exterior/';
 const KARN_SOURCE = 'https://player.sportsanimal920.com/station-information/';
+const RRI_SOURCE = 'https://www.rri.ro/en/frequencies';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -17,6 +18,9 @@ const STATION_ALIASES = new Map([
   ['RADIO MIAMI INTERNATIONAL','WRMI'],
   ['RADIO EXTERIOR DE ESPANA','REE'],
   ['REE','REE'],
+  ['RADIO ROMANIA INTERNATIONAL','RRI'],
+  ['RADIO ROMANIA INTL','RRI'],
+  ['RRI','RRI'],
   ['KARN','KARN'],
   ['KARN AM','KARN'],
   ['SPORTS ANIMAL 920','KARN'],
@@ -62,6 +66,19 @@ const SOURCE_DEFINITIONS = Object.freeze([
     maxRecords:100,
     stationKeys:['REE'],
     refresh:refreshRee
+  },
+  {
+    id:'rri-official-english',
+    displayName:'Radio Romania International official English shortwave schedule',
+    authority:'official-broadcaster',
+    url:RRI_SOURCE,
+    priority:100,
+    refreshMs:24 * HOUR_MS,
+    freshnessMs:8 * DAY_MS,
+    minRecords:10,
+    maxRecords:100,
+    stationKeys:['RRI'],
+    refresh:refreshRri
   },
   {
     id:'karn-official-live',
@@ -521,6 +538,101 @@ export function parseReeSchedule(html, fetchedAt = new Date()) {
   });
 }
 
+
+function monthNumber(name) {
+  return ['january','february','march','april','may','june','july','august','september','october','november','december']
+    .indexOf(String(name || '').toLowerCase()) + 1;
+}
+
+function parseRriEffectiveRange(text) {
+  const match = String(text || '').match(
+    /valid\s+as\s+of\s+([A-Za-z]+)\s+(\d{1,2})\s+to\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/i
+  );
+  if (!match) return { effectiveFrom:null, effectiveTo:null, season:null };
+  const startMonth = monthNumber(match[1]);
+  const endMonth = monthNumber(match[3]);
+  const year = Number(match[5]);
+  if (!startMonth || !endMonth || !Number.isFinite(year)) return { effectiveFrom:null, effectiveTo:null, season:null };
+  const effectiveFrom = new Date(Date.UTC(year, startMonth - 1, Number(match[2]))).toISOString().slice(0,10);
+  const effectiveTo = new Date(Date.UTC(year, endMonth - 1, Number(match[4]))).toISOString().slice(0,10);
+  const season = (startMonth >= 3 && startMonth <= 5 ? 'A' : 'B') + String(year).slice(-2);
+  return { effectiveFrom, effectiveTo, season };
+}
+
+function rriFrequency(value) {
+  const match = String(value || '').replace(/,/g, '').match(/\b(\d{4,5})\b/);
+  return match ? Number(match[1]) : null;
+}
+
+export function parseRriEnglishSchedule(html) {
+  const raw = String(html || '');
+  const text = htmlDecode(raw);
+  const range = parseRriEffectiveRange(text);
+  const records = [];
+  let currentRegion = '';
+
+  for (const rowMatch of raw.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => htmlDecode(match[1]))
+      .filter((cell) => cell !== '');
+    if (cells.length < 2) continue;
+
+    const timeIndex = cells.findIndex((cell) => /\d{1,2}[.:]\d{2}\s*[–—-]\s*\d{1,2}[.:]\d{2}/.test(cell));
+    if (timeIndex < 0) {
+      const possibleRegion = cells.find((cell) => !/frequency|alternative|reception|utc|khz/i.test(cell));
+      if (possibleRegion) currentRegion = possibleRegion;
+      continue;
+    }
+
+    if (timeIndex > 0 && !/\bUTC\b/i.test(cells[timeIndex - 1])) currentRegion = cells[timeIndex - 1] || currentRegion;
+    if (!currentRegion) currentRegion = 'International';
+
+    const timeMatch = cells[timeIndex].match(/(\d{1,2})[.:](\d{2})\s*[–—-]\s*(\d{1,2})[.:](\d{2})/);
+    if (!timeMatch) continue;
+    const startMinuteUtc = parseClock24(timeMatch[1], timeMatch[2]);
+    let endMinuteUtc = parseClock24(timeMatch[3], timeMatch[4]);
+    if (startMinuteUtc == null || endMinuteUtc == null) continue;
+    if (endMinuteUtc === 0 && startMinuteUtc > 0) endMinuteUtc = 1440;
+
+    const frequencyCells = cells.slice(timeIndex + 1);
+    const frequencies = [];
+    for (const frequencyCell of frequencyCells) {
+      const frequencyKHz = rriFrequency(frequencyCell);
+      if (Number.isFinite(frequencyKHz) && frequencyKHz >= 3000 && frequencyKHz <= 30000 && !frequencies.includes(frequencyKHz)) {
+        frequencies.push(frequencyKHz);
+      }
+    }
+
+    for (let index = 0; index < frequencies.length; index += 1) {
+      const frequencyKHz = frequencies[index];
+      records.push(withRecordKey({
+        stationKey:'RRI',
+        stationName:'Radio Romania International',
+        frequencyKHz,
+        days:'0123456',
+        startMinuteUtc,
+        endMinuteUtc,
+        startAt:null,
+        endAt:null,
+        effectiveFrom:range.effectiveFrom,
+        effectiveTo:range.effectiveTo,
+        title:'RRI English-language service',
+        description:index === 0
+          ? 'Official English shortwave transmission block.'
+          : 'Official alternative frequency for the English shortwave transmission block.',
+        language:'English',
+        targetRegion:currentRegion,
+        sourceRecordId:currentRegion + '-' + cells[timeIndex] + '-' + frequencyKHz,
+        confidence:'official-block',
+        originalTimeZone:'UTC',
+        originalTime:cells[timeIndex] + ' UTC'
+      }));
+    }
+  }
+
+  return { records:dedupeRecords(records), ...range };
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -583,6 +695,12 @@ async function refreshWrmi(fetchedAt) {
 async function refreshRee(fetchedAt) {
   const html = await fetchText(REE_SOURCE);
   return { records:parseReeSchedule(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshRri(fetchedAt) {
+  const html = await fetchText(RRI_SOURCE);
+  const parsed = parseRriEnglishSchedule(html);
+  return { ...parsed, fetchedAt };
 }
 
 async function refreshKarn(fetchedAt) {
