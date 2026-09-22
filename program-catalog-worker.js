@@ -715,7 +715,18 @@ export function selectProgramFromRecords(records, atInput, nominalFrequencyKHz, 
   return { status:'verified', best, candidates:peers };
 }
 
+let schemaReady = null;
+
 async function ensureSchema(env) {
+  if (schemaReady) return schemaReady;
+  schemaReady = initializeSchema(env).catch((error) => {
+    schemaReady = null;
+    throw error;
+  });
+  return schemaReady;
+}
+
+async function initializeSchema(env) {
   const db = env?.RECEIVER_HEALTH_DB;
   if (!db) throw new Error('Program catalog database binding is unavailable');
   const statements = [
@@ -1084,6 +1095,19 @@ async function programGuideResponse(request, env, ctx) {
       status:'stale',
       verified:false,
       message:'Station identified — current program schedule unavailable because all integrated schedules for this station are stale or expired.'
+    });
+  }
+
+  if (stationKey === 'WBCQ') {
+    return json({
+      station:stationRaw,
+      frequency,
+      at:at.toISOString(),
+      status:'unverified',
+      verified:false,
+      message:'WBCQ’s official schedule has no current listing for this frequency and time.',
+      sourceUrl:WBCQ_BASE + encodeURIComponent(Math.round(frequency)),
+      sourceLabel:'WBCQ official program guide'
     });
   }
 
