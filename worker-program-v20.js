@@ -261,8 +261,8 @@ function decorateExploreHtml(html) {
   }
   if (!output.includes('/explore-launchpad.js')) {
     output = output.replace(
-      '<script src="/explore-page.js?v=4" defer></script>',
-      '<script src="/explore-page.js?v=4" defer></script>\n  <script src="/explore-launchpad.js?v=1" defer></script>'
+      /(<script src="\/explore-page\.js\?v=\d+" defer><\/script>)/,
+      '$1\n  <script src="/explore-launchpad.js?v=1" defer></script>'
     );
   }
   output = output.replace('<title>Explore — FREQBEACON Zero</title>', '<title>FREQBEACON — Explore the airwaves.</title>');
