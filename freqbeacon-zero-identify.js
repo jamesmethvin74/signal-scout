@@ -28,9 +28,11 @@
   let eyebrowEl = null;
   let metaEl = null;
   let descriptionEl = null;
+  let programEl = null;
   let noteEl = null;
   let closeButton = null;
   let lookupToken = 0;
+  let programKey = '';
 
   function tunedKHz() {
     const value = Number(String(frequencyDisplay.textContent || '').replace(/,/g, '').trim());
@@ -134,6 +136,7 @@
         <h2 class="zero-identify-title" id="zeroIdentifyTitle"></h2>
         <p class="zero-identify-meta"></p>
         <p class="zero-identify-description"></p>
+        <div class="zero-identify-program" hidden></div>
         <div class="zero-identify-note"></div>
       </section>`;
     document.body.appendChild(backdrop);
@@ -141,12 +144,123 @@
     eyebrowEl = backdrop.querySelector('.zero-identify-eyebrow');
     metaEl = backdrop.querySelector('.zero-identify-meta');
     descriptionEl = backdrop.querySelector('.zero-identify-description');
+    programEl = backdrop.querySelector('.zero-identify-program');
     noteEl = backdrop.querySelector('.zero-identify-note');
     closeButton = backdrop.querySelector('.zero-identify-close');
     closeButton.addEventListener('click', close);
     backdrop.addEventListener('click', (event) => {
       if (event.target === backdrop) close();
     });
+  }
+
+  function programStation(entry) {
+    const text = [entry?.callsign, entry?.name].filter(Boolean).join(' ');
+    if (/WBCQ/i.test(text)) return 'WBCQ';
+    if (/WRMI|Radio Miami International/i.test(text)) return 'WRMI';
+    if (/Radio Exterior/i.test(text)) return 'REE';
+    if (/Radio Romania|\\bRRI\\b/i.test(text)) return 'RRI';
+    if (/KARN|Sports Animal 920/i.test(text)) return 'KARN';
+    return entry?.callsign || entry?.name || '';
+  }
+
+  function clearProgram() {
+    programKey = '';
+    if (!programEl) return;
+    programEl.hidden = true;
+    programEl.className = 'zero-identify-program';
+    programEl.innerHTML = '';
+  }
+
+  function renderProgram(data) {
+    if (!programEl) return;
+    const status = String(data?.status || '');
+    if (status === 'unsupported') {
+      clearProgram();
+      return;
+    }
+
+    const verified = status === 'verified';
+    const broadcast = status === 'broadcast';
+    const conflict = status === 'ambiguous';
+    const currentUnavailable = ['stale','expired','unavailable','unverified'].includes(status);
+    programEl.hidden = false;
+    programEl.className = 'zero-identify-program'
+      + (verified || broadcast ? ' is-verified' : '')
+      + (currentUnavailable || conflict ? ' is-warning' : '');
+
+    const kicker = verified
+      ? 'ON NOW · VERIFIED'
+      : broadcast
+        ? 'ON NOW · VERIFIED BROADCAST'
+        : conflict
+          ? 'PROGRAM GUIDE · PUBLISHED LISTINGS CONFLICT'
+          : 'PROGRAM GUIDE · CURRENT DATA UNAVAILABLE';
+
+    const title = verified || broadcast
+      ? (data.program || 'Verified broadcast')
+      : conflict
+        ? 'Exact program not verified'
+        : 'Station identified — current program schedule unavailable';
+
+    const detail = verified || broadcast
+      ? [data.window, data.sourceLabel].filter(Boolean).join(' · ')
+      : conflict
+        ? (data.candidates || []).join(' · ')
+        : (data.message || 'No trustworthy current program listing is available for this station and time.');
+
+    programEl.innerHTML = `
+      <div class="zero-identify-program-kicker">${escapeHtml(kicker)}</div>
+      <div class="zero-identify-program-title">${escapeHtml(title)}</div>
+      ${detail ? `<div class="zero-identify-program-detail">${escapeHtml(detail)}</div>` : ''}`;
+  }
+
+  function loadProgramGuide(result) {
+    if (!programEl || result?.kind !== 'exact' || result.entry?.type !== 'station') {
+      clearProgram();
+      return;
+    }
+
+    const station = programStation(result.entry);
+    const nominal = Number(result.nominalFrequencyKHz ?? result.entry.frequencyKHz ?? result.frequencyKHz);
+    if (!station || !Number.isFinite(nominal)) {
+      clearProgram();
+      return;
+    }
+
+    const token = lookupToken;
+    const key = `${token}|${station}|${nominal.toFixed(3)}`;
+    if (programKey === key) return;
+    programKey = key;
+
+    programEl.hidden = false;
+    programEl.className = 'zero-identify-program is-loading';
+    programEl.innerHTML = `
+      <div class="zero-identify-program-kicker">PROGRAM GUIDE</div>
+      <div class="zero-identify-program-title">Checking current program…</div>`;
+
+    const params = new URLSearchParams({
+      station,
+      frequency:String(nominal),
+      at:new Date().toISOString(),
+      tz:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    });
+
+    fetch('/api/program-guide?' + params.toString(), { cache:'no-store' })
+      .then((response) => {
+        if (!response.ok) throw new Error('program guide HTTP ' + response.status);
+        return response.json();
+      })
+      .then((data) => {
+        if (token !== lookupToken || !backdrop || backdrop.hidden || programKey !== key) return;
+        renderProgram(data);
+      })
+      .catch(() => {
+        if (token !== lookupToken || !backdrop || backdrop.hidden || programKey !== key) return;
+        renderProgram({
+          status:'unavailable',
+          message:'The current program guide could not be reached. Station identification is still valid.'
+        });
+      });
   }
 
   function renderExact(result) {
@@ -169,9 +283,11 @@
     if (entry.target) details.push(`target: ${entry.target}`);
     if (result.alternatives?.length) details.push(`${result.alternatives.length} other candidate on this channel${result.alternatives.length === 1 ? '' : 's'}`);
     noteEl.textContent = details.join(' · ');
+    loadProgramGuide(result);
   }
 
   function renderRange(result) {
+    clearProgram();
     const range = result.range;
     eyebrowEl.textContent = range.type === 'band' || range.type === 'broadcast-band' ? 'BAND' : 'SERVICE';
     titleEl.textContent = range.name;
@@ -181,6 +297,7 @@
   }
 
   function renderUnknown(result) {
+    clearProgram();
     eyebrowEl.textContent = 'FREQUENCY';
     titleEl.textContent = engine.formatFrequency(result.frequencyKHz);
     metaEl.textContent = 'No catalog match yet';
@@ -219,6 +336,7 @@
 
   function close() {
     lookupToken += 1;
+    programKey = '';
     if (!backdrop || backdrop.hidden) return;
     backdrop.hidden = true;
     identifyButton.focus({ preventScroll: true });
