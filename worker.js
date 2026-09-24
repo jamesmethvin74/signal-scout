@@ -269,7 +269,7 @@ function applyProgramGuideRuntime(html) {
   if (html.includes('program-guide.js')) return html;
   return html.replace(
     '</body>',
-    '  <script src="program-guide.js?v=3"></script>\n</body>'
+    '  <script src="program-guide.js?v=4"></script>\n</body>'
   );
 }
 
@@ -369,7 +369,7 @@ export default {
       headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('x-signal-scout-sdr-runtime', 'origin-host-fix-v1');
       headers.set('x-freqbeacon-brand', 'v14');
-      headers.set('x-freqbeacon-program-guide', 'v3');
+      headers.set('x-freqbeacon-program-guide', 'v4-global-catalog');
       headers.set('x-freqbeacon-explore', 'tuner-first-v4');
       headers.set('x-freqbeacon-guide', 'v1');
       headers.set('x-freqbeacon-sdr-reliability-order', 'server-ranking-known-good-control-v1');
