@@ -2,7 +2,7 @@ import baseWorker from './worker-program-v21.js';
 
 const ACCOUNT_API = '/api/account';
 const FAVORITES_API = '/api/account/favorites';
-const HTML_ROUTES = new Set(['/', '/index.html', '/explore', '/explore/']);
+const HTML_ROUTES = new Set(['/', '/index.html', '/explore', '/explore/', '/zero', '/zero/', '/freqbeacon-zero.html', '/lookup.html']);
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -19,17 +19,21 @@ function normalizeEmail(value) {
   return email && email.includes('@') && email.length <= 254 ? email : '';
 }
 
-function previewIdentity(url) {
-  if (!url.hostname.endsWith('.workers.dev')) return '';
-  if (url.searchParams.get('preview') !== '1') return '';
-  return 'preview@freqbeacon.local';
+function previewEnabled(request) {
+  const url = new URL(request.url);
+  if (!url.hostname.endsWith('.workers.dev')) return false;
+  if (url.searchParams.get('preview') === '1' || url.searchParams.get('accountPreview') === '1') return true;
+  return /(?:^|;\\s*)fb_account_preview=1(?:;|$)/.test(request.headers.get('cookie') || '');
+}
+
+function previewIdentity(request) {
+  return previewEnabled(request) ? 'preview@freqbeacon.local' : '';
 }
 
 function identityEmail(request) {
-  const url = new URL(request.url);
   return normalizeEmail(
     request.headers.get('Cf-Access-Authenticated-User-Email')
-    || previewIdentity(url)
+    || previewIdentity(request)
   );
 }
 
@@ -184,7 +188,10 @@ export default {
       headers.delete('etag');
       headers.set('cache-control', 'no-store, max-age=0');
       headers.set('x-freqbeacon-account', 'private-beta-v1');
-      const preview = url.hostname.endsWith('.workers.dev') && url.searchParams.get('accountPreview') === '1';
+      const preview = previewEnabled(request);
+      if (url.hostname.endsWith('.workers.dev') && url.searchParams.get('accountPreview') === '1') {
+        headers.append('set-cookie', 'fb_account_preview=1; Path=/; Max-Age=86400; Secure; SameSite=Lax');
+      }
       return new Response(decorateHtml(await response.text(), preview), {
         status: response.status,
         statusText: response.statusText,
