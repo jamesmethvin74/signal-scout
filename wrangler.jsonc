@@ -2,8 +2,11 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v21.js",
+  "main": "worker-program-v22.js",
   "preview_urls": true,
+  "vars": {
+    "FREQBEACON_AUTH_REQUIRED": "0"
+  },
   "routes": [
     { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
   ],
@@ -27,6 +30,7 @@
       "/api/zero/*",
       "/zero",
       "/zero/",
+      "/freqbeacon-zero.html",
       "/zero-bench",
       "/zero-bench/",
       "/explore",
@@ -37,6 +41,8 @@
       "/api/sdr/*",
       "/api/program-guide",
       "/api/program-guide/*",
+      "/api/account",
+      "/api/account/*",
       "/api/ham-activity",
       "/",
       "/index.html",
@@ -45,7 +51,10 @@
       "/sdr-health.js",
       "/sdr-tuning-v3.js",
       "/sdr-player.js",
-      "/lookup.js"
+      "/lookup.html",
+      "/lookup.js",
+      "/freqbeacon-account.js",
+      "/freqbeacon-account.css"
     ]
   }
 }
