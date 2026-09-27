@@ -29,7 +29,15 @@
     ['VOICE OF AMERICA', 'Voice of America'],
     ['VOA', 'Voice of America'],
     ['RADIO TAIWAN INTERNATIONAL', 'Radio Taiwan International'],
-    ['RTI', 'Radio Taiwan International']
+    ['RTI', 'Radio Taiwan International'],
+    ['ALL INDIA RADIO', 'Akashvani / All India Radio'],
+    ['AKASHVANI', 'Akashvani / All India Radio'],
+    ['CJOB', '680 CJOB'],
+    ['680 CJOB', '680 CJOB'],
+    ['CHED', '880 CHED'],
+    ['880 CHED', '880 CHED'],
+    ['CHQR', 'QR Calgary 770'],
+    ['QR CALGARY', 'QR Calgary 770']
   ]);
 
   function esc(value) {
