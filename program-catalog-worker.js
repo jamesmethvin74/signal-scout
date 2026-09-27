@@ -760,7 +760,7 @@ export function parseKbsWorldEnglishNow(html, fetchedAt = new Date()) {
   if (onAirIndex < 0) return [];
   const before = segment.slice(0, onAirIndex);
   const after = segment.slice(onAirIndex + 'ON AIR'.length);
-  const starts = [...before.matchAll(/(\d{1,2}):(\d{2})\s+([^0-9]{2,120}?)(?=\s+\d{1,2}:\d{2}|$)/g)];
+  const starts = [...before.matchAll(/(\d{1,2}):(\d{2})\s+(.{2,120}?)(?=\s+\d{1,2}:\d{2}|$)/g)];
   const current = starts.at(-1);
   const next = after.match(/\s*(\d{1,2}):(\d{2})\b/);
   if (!current || !next) return [];
