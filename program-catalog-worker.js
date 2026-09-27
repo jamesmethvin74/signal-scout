@@ -15,6 +15,7 @@ const CHANNEL_AFRICA_SOURCE = 'https://www.channelafrica.co.za/channelafrica/prg
 const RADIO_NACIONAL_AMAZONIA_SOURCE = 'https://radionacional.ebc.com.br/';
 const VATICAN_ENGLISH_EPG_SOURCE = 'https://www.vaticannews.va/en/epg.html';
 const VOA_GLOBAL_ENGLISH_SOURCE = 'https://www.voanews.com/radio/schedule/60';
+const RTI_ENGLISH_SOURCE = 'https://www.rti.org.tw/en/programschedule?uid=4';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -47,7 +48,9 @@ const STATION_ALIASES = new Map([
   ['VATICAN RADIO','VATICAN_RADIO'],
   ['RADIO VATICANA','VATICAN_RADIO'],
   ['VOICE OF AMERICA','VOA'],
-  ['VOA','VOA']
+  ['VOA','VOA'],
+  ['RADIO TAIWAN INTERNATIONAL','RTI'],
+  ['RTI','RTI']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -197,6 +200,20 @@ const SOURCE_DEFINITIONS = Object.freeze([
     stationKeys:['VOA_GLOBAL_ENGLISH'],
     scope:'Global English service',
     refresh:refreshVoaGlobalEnglish
+  },
+  {
+    id:'rti-english-official-live',
+    displayName:'Radio Taiwan International official English on-air schedule',
+    authority:'official-broadcaster',
+    url:RTI_ENGLISH_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['RTI_ENGLISH'],
+    scope:'English service',
+    refresh:refreshRtiEnglish
   }
 ]);
 
@@ -237,6 +254,7 @@ export function resolveProgramStationKey(value, language = '') {
   if (stationKey === 'KBS_WORLD' && /\bEnglish\b/i.test(String(language || ''))) return 'KBS_WORLD_ENGLISH';
   if (stationKey === 'VATICAN_RADIO' && /\bEnglish\b/i.test(String(language || ''))) return 'VATICAN_RADIO_ENGLISH';
   if (stationKey === 'VOA' && /\bEnglish\b/i.test(String(language || ''))) return 'VOA_GLOBAL_ENGLISH';
+  if (stationKey === 'RTI' && /\bEnglish\b/i.test(String(language || ''))) return 'RTI_ENGLISH';
   return stationKey;
 }
 
@@ -921,6 +939,29 @@ export function parseVoaGlobalEnglishNow(html, fetchedAt = new Date()) {
   })];
 }
 
+
+export function parseRtiEnglishNow(html, fetchedAt = new Date()) {
+  const raw = String(html || '');
+  const markerIndex = raw.search(/alt=["'][^"']*ON\s*AIR[^"']*["']/i);
+  if (markerIndex < 0) return [];
+  const segment = htmlDecode(raw.slice(markerIndex, markerIndex + 2200));
+  const title = normalizeTitle(
+    segment
+      .replace(/^ON\s*AIR\s*/i, '')
+      .split(/\s+Hosts?\s*[:：]|\s+Listen\b|\s+Every\b|\s+Tune in\b/i)[0]
+  );
+  if (!title || title.length < 2 || title.length > 120 || /^(image|english program)$/i.test(title)) return [];
+  return [liveWindowRecord({
+    stationKey:'RTI_ENGLISH',
+    stationName:'Radio Taiwan International English',
+    title,
+    fetchedAt,
+    language:'English',
+    targetRegion:'International',
+    sourceRecordId:'english-on-air'
+  })];
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -1024,6 +1065,11 @@ async function refreshVaticanEnglish(fetchedAt) {
 async function refreshVoaGlobalEnglish(fetchedAt) {
   const html = await fetchText(VOA_GLOBAL_ENGLISH_SOURCE);
   return { records:parseVoaGlobalEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshRtiEnglish(fetchedAt) {
+  const html = await fetchText(RTI_ENGLISH_SOURCE);
+  return { records:parseRtiEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
