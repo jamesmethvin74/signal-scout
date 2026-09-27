@@ -18,7 +18,18 @@
     ['WWCR', 'WWCR'],
     ['SOLOMON ISLANDS BROADCASTING', 'Solomon Islands Broadcasting / SIBC'],
     ['WRMI', 'WRMI'],
-    ['WBCQ', 'WBCQ']
+    ['WBCQ', 'WBCQ'],
+    ['ABC RADIO NATIONAL', 'ABC Radio National'],
+    ['KBS WORLD RADIO', 'KBS WORLD Radio'],
+    ['KBS WORLD', 'KBS WORLD Radio'],
+    ['CHANNEL AFRICA', 'Channel Africa'],
+    ['RADIO NACIONAL DA AMAZÔNIA', 'Rádio Nacional da Amazônia'],
+    ['RADIO NACIONAL DA AMAZONIA', 'Rádio Nacional da Amazônia'],
+    ['VATICAN RADIO', 'Vatican Radio'],
+    ['VOICE OF AMERICA', 'Voice of America'],
+    ['VOA', 'Voice of America'],
+    ['RADIO TAIWAN INTERNATIONAL', 'Radio Taiwan International'],
+    ['RTI', 'Radio Taiwan International']
   ]);
 
   function esc(value) {
