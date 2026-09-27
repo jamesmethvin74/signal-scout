@@ -13,6 +13,7 @@ import {
   parseRadioNacionalAmazoniaNow,
   parseVaticanEnglishNow,
   parseVoaGlobalEnglishNow,
+  parseRtiEnglishNow,
   selectProgramFromRecords,
   validateCandidateRecords
 } from '../program-catalog-worker.js';
@@ -26,7 +27,9 @@ assert.equal(resolveProgramStationKey('Vatican Radio', 'English'), 'VATICAN_RADI
 assert.equal(resolveProgramStationKey('Vatican Radio', 'Italian'), 'VATICAN_RADIO');
 assert.equal(resolveProgramStationKey('Voice of America', 'English'), 'VOA_GLOBAL_ENGLISH');
 assert.equal(resolveProgramStationKey('Voice of America', 'Hausa'), 'VOA');
-assert.ok(SOURCE_DEFINITIONS.length >= 11);
+assert.equal(resolveProgramStationKey('Radio Taiwan International', 'English'), 'RTI_ENGLISH');
+assert.equal(resolveProgramStationKey('Radio Taiwan International', 'Mandarin'), 'RTI');
+assert.ok(SOURCE_DEFINITIONS.length >= 12);
 assert.equal(SOURCE_DEFINITIONS.find((source) => source.id === 'rri-official-english')?.coverageLevel, 'service-only');
 
 const wbcq = parseWbcqRows(
@@ -156,6 +159,15 @@ const voaGlobal = parseVoaGlobalEnglishNow(
 assert.equal(voaGlobal.length, 1);
 assert.equal(voaGlobal[0].stationKey, 'VOA_GLOBAL_ENGLISH');
 assert.equal(voaGlobal[0].title, 'VOA 1 - The Hits');
+
+
+const rtiEnglish = parseRtiEnglishNow(
+  '<section><img alt="ON AIR"><h3>Status Update</h3><div>Hosts： Fil Leskovsky</div><p>Status Update is RTI\'s most interactive program.</p></section>',
+  new Date('2026-09-27T21:00:00Z')
+);
+assert.equal(rtiEnglish.length, 1);
+assert.equal(rtiEnglish[0].stationKey, 'RTI_ENGLISH');
+assert.equal(rtiEnglish[0].title, 'Status Update');
 
 const frequencyRecords = [
   {stationKey:'WRMI',frequencyKHz:9955,days:'1',startMinuteUtc:600,endMinuteUtc:660,title:'9955 Show',sourcePriority:100,activeExpiresAt:Date.parse('2026-09-22T00:00:00Z')},
