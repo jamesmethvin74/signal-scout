@@ -15,6 +15,7 @@ import {
   parseVoaGlobalEnglishNow,
   parseRtiEnglishNow,
   parseAkashvaniExternalNews,
+  parseCorusStationNow,
   selectProgramFromRecords,
   validateCandidateRecords
 } from '../program-catalog-worker.js';
@@ -33,7 +34,7 @@ assert.equal(resolveProgramStationKey('Radio Taiwan International', 'Mandarin'),
 assert.equal(resolveProgramStationKey('All India Radio', 'French'), 'AKASHVANI_FRENCH');
 assert.equal(resolveProgramStationKey('Akashvani External Services', 'Baluchi'), 'AKASHVANI_BALUCHI');
 assert.equal(resolveProgramStationKey('All India Radio', 'English'), 'AKASHVANI');
-assert.ok(SOURCE_DEFINITIONS.length >= 13);
+assert.ok(SOURCE_DEFINITIONS.length >= 16);
 assert.equal(SOURCE_DEFINITIONS.find((source) => source.id === 'rri-official-english')?.coverageLevel, 'service-only');
 
 const wbcq = parseWbcqRows(
@@ -188,6 +189,32 @@ assert.ok(akashvaniNews.some((row) => row.stationKey === 'AKASHVANI_BALUCHI'));
 const frenchNews = akashvaniNews.find((row) => row.stationKey === 'AKASHVANI_FRENCH');
 assert.equal(frenchNews.startMinuteUtc, 1175);
 assert.equal(frenchNews.endMinuteUtc, 1185);
+
+
+const cjobNow = parseCorusStationNow(
+  '<main>Listen Live The Start with Mackling &amp; Megarry 6:00 AM - 10:00 AM Up Next Connecting Winnipeg</main>',
+  new Date('2026-09-28T13:00:00Z'),
+  { stationKey:'CJOB', stationName:'680 CJOB', frequencyKHz:680, timeZone:'America/Winnipeg', targetRegion:'Winnipeg / Manitoba' }
+);
+assert.equal(cjobNow.length, 1);
+assert.equal(cjobNow[0].stationKey, 'CJOB');
+assert.equal(cjobNow[0].frequencyKHz, 680);
+assert.equal(cjobNow[0].title, 'The Start with Mackling & Megarry');
+
+const chedNow = parseCorusStationNow(
+  '<main>Listen Live Oilers Now with Bob Stauffer 4:00 PM - 6:00 PM Up Next Inside Sports</main>',
+  new Date('2026-09-28T23:00:00Z'),
+  { stationKey:'CHED', stationName:'880 CHED', frequencyKHz:880, timeZone:'America/Edmonton', targetRegion:'Edmonton / Alberta' }
+);
+assert.equal(chedNow[0].title, 'Oilers Now with Bob Stauffer');
+
+const chqrNow = parseCorusStationNow(
+  '<main>Listen Live Flames Now with Pat Steinberg 4:00 PM - 6:00 PM Up Next The Ben Mulroney Show</main>',
+  new Date('2026-09-28T23:00:00Z'),
+  { stationKey:'CHQR', stationName:'QR Calgary / CHQR', frequencyKHz:770, timeZone:'America/Edmonton', targetRegion:'Calgary / Alberta' }
+);
+assert.equal(chqrNow[0].stationKey, 'CHQR');
+assert.equal(chqrNow[0].frequencyKHz, 770);
 
 const frequencyRecords = [
   {stationKey:'WRMI',frequencyKHz:9955,days:'1',startMinuteUtc:600,endMinuteUtc:660,title:'9955 Show',sourcePriority:100,activeExpiresAt:Date.parse('2026-09-22T00:00:00Z')},
