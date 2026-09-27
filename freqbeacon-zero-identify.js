@@ -249,7 +249,8 @@
       station,
       frequency:String(nominal),
       at:new Date().toISOString(),
-      tz:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      tz:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      language:String(result.entry?.language || '')
     });
 
     fetch('/api/program-guide?' + params.toString(), { cache:'no-store' })
