@@ -2,17 +2,25 @@ import assert from 'node:assert/strict';
 import {
   SOURCE_DEFINITIONS,
   normalizeStationKey,
+  resolveProgramStationKey,
   parseWbcqRows,
   parseWrmiScheduleCsv,
   parseReeSchedule,
   parseKarnNow,
+  parseAbcRadioNationalNow,
+  parseKbsWorldEnglishNow,
+  parseChannelAfricaNow,
   selectProgramFromRecords,
   validateCandidateRecords
 } from '../program-catalog-worker.js';
 
 assert.equal(normalizeStationKey('Radio Exterior de España'), 'REE');
 assert.equal(normalizeStationKey('Radio Miami International'), 'WRMI');
-assert.ok(SOURCE_DEFINITIONS.length >= 4);
+assert.equal(normalizeStationKey('2RN'), 'ABC_RN');
+assert.equal(resolveProgramStationKey('KBS World Radio', 'English'), 'KBS_WORLD_ENGLISH');
+assert.equal(resolveProgramStationKey('KBS World Radio', 'Spanish'), 'KBS_WORLD');
+assert.ok(SOURCE_DEFINITIONS.length >= 8);
+assert.equal(SOURCE_DEFINITIONS.find((source) => source.id === 'rri-official-english')?.coverageLevel, 'service-only');
 
 const wbcq = parseWbcqRows(
   '<table><tr><td>7490</td><td>Mon</td><td>2300</td><td>0100</td><td>Night Test</td></tr></table>'
@@ -82,6 +90,38 @@ selected = selectProgramFromRecords(
 );
 assert.equal(selected.status, 'verified');
 assert.equal(selected.best.record.title, 'The Rich Eisen Show');
+
+
+const abcRn = parseAbcRadioNationalNow(
+  '<main><h1>Radio National live player</h1><div>ABC Radio National</div><button>Play Live</button><h2>Saturday Extra</h2><span>on</span><a>Radio National</a><h2>Up Next</h2></main>',
+  new Date('2026-09-26T08:00:00Z')
+);
+assert.equal(abcRn.length, 1);
+assert.equal(abcRn[0].stationKey, 'ABC_RN');
+assert.equal(abcRn[0].title, 'Saturday Extra');
+
+const kbs = parseKbsWorldEnglishNow(
+  '<section>KBS WORLD Radio Ch2 English More 16:00 K-POP Connection 17:00 Weekend Playlist Part1 ON AIR 19:00 Weekend Playlist Part2</section>',
+  new Date('2026-09-26T08:10:00Z')
+);
+assert.equal(kbs.length, 1);
+assert.equal(kbs[0].stationKey, 'KBS_WORLD_ENGLISH');
+assert.equal(kbs[0].title, 'Weekend Playlist Part1');
+selected = selectProgramFromRecords(
+  kbs.map((row) => ({...row, sourcePriority:100, activeExpiresAt:Date.parse('2026-09-26T09:00:00Z')})),
+  new Date('2026-09-26T08:30:00Z'),
+  9770,
+  new Date('2026-09-26T08:30:00Z')
+);
+assert.equal(selected.status, 'verified');
+
+const channelAfrica = parseChannelAfricaNow(
+  '<div>Live Radio</div><h4>Malonje (Chinyanja)</h4><div>19:00 - 20:00</div><button>Listen Live</button><h2>Programme Schedule</h2>',
+  new Date('2026-09-26T17:30:00Z')
+);
+assert.equal(channelAfrica.length, 1);
+assert.equal(channelAfrica[0].stationKey, 'CHANNEL_AFRICA');
+assert.equal(channelAfrica[0].title, 'Malonje (Chinyanja)');
 
 const frequencyRecords = [
   {stationKey:'WRMI',frequencyKHz:9955,days:'1',startMinuteUtc:600,endMinuteUtc:660,title:'9955 Show',sourcePriority:100,activeExpiresAt:Date.parse('2026-09-22T00:00:00Z')},
