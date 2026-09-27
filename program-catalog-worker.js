@@ -232,7 +232,7 @@ const SOURCE_DEFINITIONS = Object.freeze([
     freshnessMs:7 * DAY_MS,
     minRecords:10,
     maxRecords:100,
-    stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_CHINESE","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_URDU"],
+    stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_CHINESE","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_BALUCHI","AKASHVANI_URDU"],
     scope:'External Services named news bulletins',
     refresh:refreshAkashvaniExternalNews
   }
@@ -278,7 +278,7 @@ export function resolveProgramStationKey(value, language = '') {
   if (stationKey === 'RTI' && /\bEnglish\b/i.test(String(language || ''))) return 'RTI_ENGLISH';
   if (stationKey === 'AKASHVANI') {
     const languageKey = normalizeStationKey(language).replace(/\s+/g, '_');
-    const supported = new Set(['FRENCH','INDONESIAN','BURMESE','PERSIAN','DARI','PASHTO','ARABIC','CHINESE','TIBETAN','SWAHILI','URDU']);
+    const supported = new Set(['FRENCH','INDONESIAN','BURMESE','PERSIAN','DARI','PASHTO','ARABIC','CHINESE','TIBETAN','SWAHILI','BALUCHI','URDU']);
     if (supported.has(languageKey)) return 'AKASHVANI_' + languageKey;
   }
   return stationKey;
@@ -1007,7 +1007,7 @@ function kolkataMinutesToUtc(minute) {
 export function parseAkashvaniExternalNews(html) {
   const languageMap = new Map([
     ['FRENCH','French'],['INDONESIAN','Indonesian'],['BURMESE','Burmese'],['PERSIAN','Persian'],
-    ['DARI','Dari'],['PASHTO','Pashto'],['SWahili'.toUpperCase(),'Swahili'],['ARABIC','Arabic'],
+    ['DARI','Dari'],['PASHTO','Pashto'],['SWAHILI','Swahili'],['BALUCHI','Baluchi'],['ARABIC','Arabic'],
     ['CHINESE','Chinese'],['TIBETAN','Tibetan'],['URDU','Urdu']
   ]);
   const records = [];
@@ -1022,7 +1022,7 @@ export function parseAkashvaniExternalNews(html) {
     const language = languageMap.get(languageCell);
     if (!language) continue;
 
-    const bulletinCell = cells.find((cell, index) => index > 0 && /\d{4}\s*[-–—]\s*\d{4}/.test(cell));
+    const bulletinCell = [...cells.slice(1)].reverse().find((cell) => /\d{4}\s*[-–—]\s*\d{4}/.test(cell));
     if (!bulletinCell) continue;
 
     const ranges = parseTimeRanges(bulletinCell);
