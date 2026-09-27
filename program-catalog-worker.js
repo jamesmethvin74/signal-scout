@@ -17,6 +17,9 @@ const VATICAN_ENGLISH_EPG_SOURCE = 'https://www.vaticannews.va/en/epg.html';
 const VOA_GLOBAL_ENGLISH_SOURCE = 'https://www.voanews.com/radio/schedule/60';
 const RTI_ENGLISH_SOURCE = 'https://www.rti.org.tw/en/programschedule?uid=4';
 const AKASHVANI_NEWS_SOURCE = 'https://newsonair.gov.in/news-services-division/?lang=en';
+const CJOB_SOURCE = 'https://globalnews.ca/radio/cjob/shows/';
+const CHED_SOURCE = 'https://globalnews.ca/radio/880ched/shows/';
+const CHQR_SOURCE = 'https://globalnews.ca/radio/qrcalgary/player/770chqr/';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -57,7 +60,14 @@ const STATION_ALIASES = new Map([
   ['AKASHVANI','AKASHVANI'],
   ['AKASHVANI EXTERNAL SERVICES','AKASHVANI'],
   ['ALL INDIA RADIO EXTERNAL SERVICES','AKASHVANI'],
-  ['AIR EXTERNAL SERVICES','AKASHVANI']
+  ['AIR EXTERNAL SERVICES','AKASHVANI'],
+  ['680 CJOB','CJOB'],
+  ['CJOB 680','CJOB'],
+  ['880 CHED','CHED'],
+  ['CHED 880','CHED'],
+  ['QR CALGARY','CHQR'],
+  ['770 CHQR','CHQR'],
+  ['CHQR 770','CHQR']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -235,6 +245,45 @@ const SOURCE_DEFINITIONS = Object.freeze([
     stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_CHINESE","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_BALUCHI","AKASHVANI_URDU"],
     scope:'External Services named news bulletins',
     refresh:refreshAkashvaniExternalNews
+  },
+  {
+    id:'cjob-official-live',
+    displayName:'680 CJOB official live schedule',
+    authority:'official-broadcaster',
+    url:CJOB_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['CJOB'],
+    refresh:refreshCjob
+  },
+  {
+    id:'ched-official-live',
+    displayName:'880 CHED official live schedule',
+    authority:'official-broadcaster',
+    url:CHED_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['CHED'],
+    refresh:refreshChed
+  },
+  {
+    id:'chqr-official-live',
+    displayName:'QR Calgary / CHQR official live schedule',
+    authority:'official-broadcaster',
+    url:CHQR_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['CHQR'],
+    refresh:refreshChqr
   }
 ]);
 
@@ -1058,6 +1107,30 @@ export function parseAkashvaniExternalNews(html) {
   return dedupeRecords(records);
 }
 
+
+export function parseCorusStationNow(html, fetchedAt = new Date(), config = {}) {
+  const text = htmlDecode(html);
+  const match = text.match(/Listen\s+Live\s+(.{2,160}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
+  if (!match) return [];
+  const title = normalizeTitle(match[1]);
+  const startMinute = parseClock12(match[2]);
+  const endMinute = parseClock12(match[3]);
+  if (!title || startMinute == null || endMinute == null || /^(listen live|radio)$/i.test(title)) return [];
+  return [liveWindowRecord({
+    stationKey:config.stationKey,
+    stationName:config.stationName || config.stationKey,
+    frequencyKHz:Number(config.frequencyKHz),
+    title,
+    fetchedAt,
+    startMinute,
+    endMinute,
+    timeZone:config.timeZone,
+    language:'English',
+    targetRegion:config.targetRegion || 'Canada',
+    sourceRecordId:'listen-live'
+  })];
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -1171,6 +1244,27 @@ async function refreshRtiEnglish(fetchedAt) {
 async function refreshAkashvaniExternalNews(fetchedAt) {
   const html = await fetchText(AKASHVANI_NEWS_SOURCE);
   return { records:parseAkashvaniExternalNews(html), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshCjob(fetchedAt) {
+  const html = await fetchText(CJOB_SOURCE);
+  return { records:parseCorusStationNow(html, fetchedAt, {
+    stationKey:'CJOB', stationName:'680 CJOB', frequencyKHz:680, timeZone:'America/Winnipeg', targetRegion:'Winnipeg / Manitoba'
+  }), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshChed(fetchedAt) {
+  const html = await fetchText(CHED_SOURCE);
+  return { records:parseCorusStationNow(html, fetchedAt, {
+    stationKey:'CHED', stationName:'880 CHED', frequencyKHz:880, timeZone:'America/Edmonton', targetRegion:'Edmonton / Alberta'
+  }), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshChqr(fetchedAt) {
+  const html = await fetchText(CHQR_SOURCE);
+  return { records:parseCorusStationNow(html, fetchedAt, {
+    stationKey:'CHQR', stationName:'QR Calgary / CHQR', frequencyKHz:770, timeZone:'America/Edmonton', targetRegion:'Calgary / Alberta'
+  }), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
