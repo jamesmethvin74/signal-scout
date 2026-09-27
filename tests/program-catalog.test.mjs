@@ -14,6 +14,7 @@ import {
   parseVaticanEnglishNow,
   parseVoaGlobalEnglishNow,
   parseRtiEnglishNow,
+  parseAkashvaniExternalNews,
   selectProgramFromRecords,
   validateCandidateRecords
 } from '../program-catalog-worker.js';
@@ -29,7 +30,10 @@ assert.equal(resolveProgramStationKey('Voice of America', 'English'), 'VOA_GLOBA
 assert.equal(resolveProgramStationKey('Voice of America', 'Hausa'), 'VOA');
 assert.equal(resolveProgramStationKey('Radio Taiwan International', 'English'), 'RTI_ENGLISH');
 assert.equal(resolveProgramStationKey('Radio Taiwan International', 'Mandarin'), 'RTI');
-assert.ok(SOURCE_DEFINITIONS.length >= 12);
+assert.equal(resolveProgramStationKey('All India Radio', 'French'), 'AKASHVANI_FRENCH');
+assert.equal(resolveProgramStationKey('Akashvani External Services', 'Baluchi'), 'AKASHVANI_BALUCHI');
+assert.equal(resolveProgramStationKey('All India Radio', 'English'), 'AKASHVANI');
+assert.ok(SOURCE_DEFINITIONS.length >= 13);
 assert.equal(SOURCE_DEFINITIONS.find((source) => source.id === 'rri-official-english')?.coverageLevel, 'service-only');
 
 const wbcq = parseWbcqRows(
@@ -168,6 +172,22 @@ const rtiEnglish = parseRtiEnglishNow(
 assert.equal(rtiEnglish.length, 1);
 assert.equal(rtiEnglish[0].stationKey, 'RTI_ENGLISH');
 assert.equal(rtiEnglish[0].title, 'Status Update');
+
+
+const akashvaniNews = parseAkashvaniExternalNews([
+  '<table>',
+  '<tr><td>FRENCH</td><td>0100-0200</td><td>0105-0115</td></tr>',
+  '<tr><td>PERSIAN-I</td><td>0930-1100</td><td>0935-0945 &amp; 1050-1055</td></tr>',
+  '<tr><td>BALUCHI-II</td><td>1800-1900</td><td>1805-1815</td></tr>',
+  '<tr><td>CHINESE-I</td><td>0515-0645</td><td>-</td></tr>',
+  '</table>'
+].join(''));
+assert.equal(akashvaniNews.length, 4);
+assert.ok(akashvaniNews.some((row) => row.stationKey === 'AKASHVANI_FRENCH' && row.title === 'French News Bulletin'));
+assert.ok(akashvaniNews.some((row) => row.stationKey === 'AKASHVANI_BALUCHI'));
+const frenchNews = akashvaniNews.find((row) => row.stationKey === 'AKASHVANI_FRENCH');
+assert.equal(frenchNews.startMinuteUtc, 1175);
+assert.equal(frenchNews.endMinuteUtc, 1185);
 
 const frequencyRecords = [
   {stationKey:'WRMI',frequencyKHz:9955,days:'1',startMinuteUtc:600,endMinuteUtc:660,title:'9955 Show',sourcePriority:100,activeExpiresAt:Date.parse('2026-09-22T00:00:00Z')},
