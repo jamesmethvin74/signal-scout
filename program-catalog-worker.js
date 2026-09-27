@@ -9,6 +9,9 @@ const WRMI_CSV = 'https://docs.google.com/spreadsheets/d/1pcIEX8kisrOPqlXHDAq6gy
 const REE_SOURCE = 'https://www.rtve.es/play/radio/radio-exterior/';
 const KARN_SOURCE = 'https://player.sportsanimal920.com/station-information/';
 const RRI_SOURCE = 'https://www.rri.ro/en/frequencies';
+const ABC_RN_SOURCE = 'https://www.abc.net.au/listen/live/radionational';
+const KBS_WORLD_SOURCE = 'https://world.kbs.co.kr/service/';
+const CHANNEL_AFRICA_SOURCE = 'https://www.channelafrica.co.za/channelafrica/prgramme-schedule/';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -24,7 +27,18 @@ const STATION_ALIASES = new Map([
   ['KARN','KARN'],
   ['KARN AM','KARN'],
   ['SPORTS ANIMAL 920','KARN'],
-  ['SPORTSANIMAL 920','KARN']
+  ['SPORTSANIMAL 920','KARN'],
+  ['ABC RADIO NATIONAL','ABC_RN'],
+  ['RADIO NATIONAL','ABC_RN'],
+  ['2RN','ABC_RN'],
+  ['3RN','ABC_RN'],
+  ['4RN','ABC_RN'],
+  ['5RN','ABC_RN'],
+  ['6RN','ABC_RN'],
+  ['7RN','ABC_RN'],
+  ['KBS WORLD RADIO','KBS_WORLD'],
+  ['KBS WORLD','KBS_WORLD'],
+  ['CHANNEL AFRICA','CHANNEL_AFRICA']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -93,6 +107,46 @@ const SOURCE_DEFINITIONS = Object.freeze([
     maxRecords:10,
     stationKeys:['KARN'],
     refresh:refreshKarn
+  },
+  {
+    id:'abc-rn-official-live',
+    displayName:'ABC Radio National official live player',
+    authority:'official-broadcaster',
+    url:ABC_RN_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:3,
+    stationKeys:['ABC_RN'],
+    refresh:refreshAbcRn
+  },
+  {
+    id:'kbs-world-english-official-live',
+    displayName:'KBS WORLD Radio official English live schedule',
+    authority:'official-broadcaster',
+    url:KBS_WORLD_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:3,
+    stationKeys:['KBS_WORLD_ENGLISH'],
+    scope:'English service',
+    refresh:refreshKbsWorldEnglish
+  },
+  {
+    id:'channel-africa-official-live',
+    displayName:'Channel Africa official live schedule',
+    authority:'official-broadcaster',
+    url:CHANNEL_AFRICA_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:3,
+    stationKeys:['CHANNEL_AFRICA'],
+    refresh:refreshChannelAfrica
   }
 ]);
 
@@ -126,6 +180,12 @@ export function normalizeStationKey(value) {
     .replace(/\s+/g, ' ')
     .trim();
   return STATION_ALIASES.get(normalized) || normalized;
+}
+
+export function resolveProgramStationKey(value, language = '') {
+  const stationKey = normalizeStationKey(value);
+  if (stationKey === 'KBS_WORLD' && /\bEnglish\b/i.test(String(language || ''))) return 'KBS_WORLD_ENGLISH';
+  return stationKey;
 }
 
 function htmlDecode(value) {
@@ -634,6 +694,111 @@ export function parseRriEnglishSchedule(html) {
   return { records:dedupeRecords(records), ...range };
 }
 
+
+function liveWindowRecord({ stationKey, stationName, frequencyKHz = null, title, fetchedAt, startMinute = null, endMinute = null, timeZone, language = '', targetRegion = '', sourceRecordId }) {
+  const reference = fetchedAt instanceof Date ? fetchedAt : new Date(fetchedAt);
+  let start;
+  let end;
+  let originalTime = 'live at ' + reference.toISOString();
+
+  if (Number.isFinite(startMinute) && Number.isFinite(endMinute) && timeZone) {
+    const interval = nearestLocalInterval(reference, startMinute, endMinute, timeZone);
+    start = interval.start;
+    end = interval.end;
+    originalTime = String(Math.floor(startMinute / 60)).padStart(2,'0') + ':' + String(startMinute % 60).padStart(2,'0')
+      + '-' + String(Math.floor(endMinute / 60)).padStart(2,'0') + ':' + String(endMinute % 60).padStart(2,'0')
+      + ' ' + timeZone;
+  } else {
+    start = new Date(reference.getTime() - 5 * 60 * 1000);
+    end = new Date(reference.getTime() + 20 * 60 * 1000);
+  }
+
+  return withRecordKey({
+    stationKey,
+    stationName,
+    frequencyKHz,
+    days:'',
+    startMinuteUtc:null,
+    endMinuteUtc:null,
+    startAt:start.toISOString(),
+    endAt:end.toISOString(),
+    effectiveFrom:isoDate(start),
+    effectiveTo:isoDate(end),
+    title:normalizeTitle(title),
+    description:'Current program published by the broadcaster.',
+    language,
+    targetRegion,
+    sourceRecordId,
+    confidence:'official-live',
+    originalTimeZone:timeZone || 'UTC',
+    originalTime
+  });
+}
+
+export function parseAbcRadioNationalNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const match = text.match(/Play Live\s+(.{2,120}?)\s+on\s+Radio National\b/i);
+  const title = normalizeTitle(match?.[1] || '');
+  if (!title || /select station|loading/i.test(title)) return [];
+  return [liveWindowRecord({
+    stationKey:'ABC_RN',
+    stationName:'ABC Radio National',
+    title,
+    fetchedAt,
+    timeZone:'Australia/Sydney',
+    language:'English',
+    targetRegion:'Australia',
+    sourceRecordId:'live-player'
+  })];
+}
+
+export function parseKbsWorldEnglishNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const startIndex = text.search(/KBS WORLD Radio\s+Ch2 English/i);
+  if (startIndex < 0) return [];
+  const segment = text.slice(startIndex, startIndex + 1200);
+  const match = segment.match(/(\d{1,2}):(\d{2})\s+(.{2,120}?)\s+ON AIR\s+(\d{1,2}):(\d{2})/i);
+  if (!match) return [];
+  const startMinute = parseClock24(match[1], match[2]);
+  const endMinute = parseClock24(match[4], match[5]);
+  const title = normalizeTitle(match[3]);
+  if (!title || startMinute == null || endMinute == null) return [];
+  return [liveWindowRecord({
+    stationKey:'KBS_WORLD_ENGLISH',
+    stationName:'KBS WORLD Radio English',
+    title,
+    fetchedAt,
+    startMinute,
+    endMinute,
+    timeZone:'Asia/Seoul',
+    language:'English',
+    targetRegion:'International',
+    sourceRecordId:'ch2-live'
+  })];
+}
+
+export function parseChannelAfricaNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const head = text.split(/Programme Schedule/i)[0] || text.slice(0, 1800);
+  const match = head.match(/Live Radio\s+(.{2,120}?)\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s+Listen Live/i);
+  if (!match) return [];
+  const startMinute = parseClock24(match[2], match[3]);
+  const endMinute = parseClock24(match[4], match[5]);
+  const title = normalizeTitle(match[1]);
+  if (!title || startMinute == null || endMinute == null) return [];
+  return [liveWindowRecord({
+    stationKey:'CHANNEL_AFRICA',
+    stationName:'Channel Africa',
+    title,
+    fetchedAt,
+    startMinute,
+    endMinute,
+    timeZone:'Africa/Johannesburg',
+    targetRegion:'Africa',
+    sourceRecordId:'live-radio'
+  })];
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -707,6 +872,21 @@ async function refreshRri(fetchedAt) {
 async function refreshKarn(fetchedAt) {
   const html = await fetchText(KARN_SOURCE);
   return { records:parseKarnNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshAbcRn(fetchedAt) {
+  const html = await fetchText(ABC_RN_SOURCE);
+  return { records:parseAbcRadioNationalNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshKbsWorldEnglish(fetchedAt) {
+  const html = await fetchText(KBS_WORLD_SOURCE);
+  return { records:parseKbsWorldEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshChannelAfrica(fetchedAt) {
+  const html = await fetchText(CHANNEL_AFRICA_SOURCE);
+  return { records:parseChannelAfricaNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
@@ -1132,7 +1312,8 @@ async function programGuideResponse(request, env, ctx) {
   await ensureSchema(env);
   const url = new URL(request.url);
   const stationRaw = String(url.searchParams.get('station') || '').trim();
-  const stationKey = normalizeStationKey(stationRaw);
+  const language = String(url.searchParams.get('language') || '').trim();
+  const stationKey = resolveProgramStationKey(stationRaw, language);
   const frequency = Number(url.searchParams.get('frequency'));
   const at = url.searchParams.get('at') ? new Date(url.searchParams.get('at')) : new Date();
   const displayTimeZone = url.searchParams.get('tz') || 'UTC';
@@ -1341,13 +1522,16 @@ async function coverageResponse(request, env) {
 
   const now = new Date();
   const matrix = (inventory.identities || []).map((identity) => {
-    const stationKey = normalizeStationKey(identity.stationServiceKey || identity.displayName);
-    const sourceIds = SOURCES_BY_STATION.get(stationKey) || [];
+    const stationKeys = new Set([normalizeStationKey(identity.stationServiceKey || identity.displayName)]);
+    for (const language of identity.languages || []) {
+      stationKeys.add(resolveProgramStationKey(identity.stationServiceKey || identity.displayName, language));
+    }
+    const sourceIds = [...new Set([...stationKeys].flatMap((key) => SOURCES_BY_STATION.get(key) || []))];
     const sources = sourceIds.map((id) => statusById.get(id)).filter(Boolean);
     const programSources = sources.filter((source) => source.coverageLevel !== 'service-only');
     const hasProgramSource = programSources.length > 0;
     const hasFreshProgramSource = programSources.some((source) => source.freshness === 'fresh' || source.freshness === 'degraded');
-    const stationRows = rowsByStation.get(stationKey) || [];
+    const stationRows = [...stationKeys].flatMap((key) => rowsByStation.get(key) || []);
     const exactRows = stationRows.filter((row) => row.confidence !== 'official-block');
     let onNowCanBeDetermined = false;
     let onNowStatus = hasFreshProgramSource ? 'no-current-program-record' : (hasProgramSource ? 'stale-or-unpublished' : 'no-program-source');
@@ -1466,7 +1650,7 @@ export async function runProgramCatalogScheduled(event, env) {
   if (cron === RECEIVER_HEALTH_CRON) {
     const scheduledTime = Number(event?.scheduledTime);
     const minute = new Date(Number.isFinite(scheduledTime) ? scheduledTime : Date.now()).getUTCMinutes();
-    if (minute === 15) return refreshDueSources(env);
+    if (minute % 15 === 0) return refreshDueSources(env);
   }
   return [];
 }
