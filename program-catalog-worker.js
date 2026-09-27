@@ -14,6 +14,7 @@ const KBS_WORLD_SOURCE = 'https://world.kbs.co.kr/service/';
 const CHANNEL_AFRICA_SOURCE = 'https://www.channelafrica.co.za/channelafrica/prgramme-schedule/';
 const RADIO_NACIONAL_AMAZONIA_SOURCE = 'https://radionacional.ebc.com.br/';
 const VATICAN_ENGLISH_EPG_SOURCE = 'https://www.vaticannews.va/en/epg.html';
+const VOA_GLOBAL_ENGLISH_SOURCE = 'https://www.voanews.com/radio/schedule/60';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -44,7 +45,9 @@ const STATION_ALIASES = new Map([
   ['RADIO NACIONAL AMAZONIA','RADIO_NACIONAL_AMAZONIA'],
   ['RADIO NACIONAL DA AMAZÔNIA','RADIO_NACIONAL_AMAZONIA'],
   ['VATICAN RADIO','VATICAN_RADIO'],
-  ['RADIO VATICANA','VATICAN_RADIO']
+  ['RADIO VATICANA','VATICAN_RADIO'],
+  ['VOICE OF AMERICA','VOA'],
+  ['VOA','VOA']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -180,6 +183,20 @@ const SOURCE_DEFINITIONS = Object.freeze([
     stationKeys:['VATICAN_RADIO_ENGLISH'],
     scope:'English service',
     refresh:refreshVaticanEnglish
+  },
+  {
+    id:'voa-global-english-official-live',
+    displayName:'Voice of America Global English official live schedule',
+    authority:'official-broadcaster',
+    url:VOA_GLOBAL_ENGLISH_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['VOA_GLOBAL_ENGLISH'],
+    scope:'Global English service',
+    refresh:refreshVoaGlobalEnglish
   }
 ]);
 
@@ -219,6 +236,7 @@ export function resolveProgramStationKey(value, language = '') {
   const stationKey = normalizeStationKey(value);
   if (stationKey === 'KBS_WORLD' && /\bEnglish\b/i.test(String(language || ''))) return 'KBS_WORLD_ENGLISH';
   if (stationKey === 'VATICAN_RADIO' && /\bEnglish\b/i.test(String(language || ''))) return 'VATICAN_RADIO_ENGLISH';
+  if (stationKey === 'VOA' && /\bEnglish\b/i.test(String(language || ''))) return 'VOA_GLOBAL_ENGLISH';
   return stationKey;
 }
 
@@ -882,6 +900,27 @@ export function parseVaticanEnglishNow(html, fetchedAt = new Date()) {
   })];
 }
 
+
+export function parseVoaGlobalEnglishNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const liveIndex = text.search(/\bLIVE\b/i);
+  if (liveIndex < 0) return [];
+  const segment = text.slice(Math.max(0, liveIndex - 220), liveIndex + 420);
+  const afterLive = normalizeTitle(segment.slice(segment.search(/\bLIVE\b/i) + 4));
+  const titleMatch = afterLive.match(/^(.{2,120}?)(?=\s+(?:VOA1|VOA’s|Voice of America|International Edition|Worldwide in Five|The Issue|Border Crossings|[A-Z][a-z]+\s+\d{1,2}\b)|$)/);
+  const title = normalizeTitle(titleMatch?.[1] || afterLive.split(/\s{2,}/)[0] || '');
+  if (!title || title.length > 120 || /^(radio|schedule|programs)$/i.test(title)) return [];
+  return [liveWindowRecord({
+    stationKey:'VOA_GLOBAL_ENGLISH',
+    stationName:'Voice of America Global English',
+    title,
+    fetchedAt,
+    language:'English',
+    targetRegion:'International',
+    sourceRecordId:'global-english-live'
+  })];
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -980,6 +1019,11 @@ async function refreshRadioNacionalAmazonia(fetchedAt) {
 async function refreshVaticanEnglish(fetchedAt) {
   const html = await fetchText(VATICAN_ENGLISH_EPG_SOURCE);
   return { records:parseVaticanEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshVoaGlobalEnglish(fetchedAt) {
+  const html = await fetchText(VOA_GLOBAL_ENGLISH_SOURCE);
+  return { records:parseVoaGlobalEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
