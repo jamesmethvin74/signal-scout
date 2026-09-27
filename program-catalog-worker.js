@@ -78,6 +78,7 @@ const SOURCE_DEFINITIONS = Object.freeze([
     minRecords:10,
     maxRecords:100,
     stationKeys:['RRI'],
+    coverageLevel:'service-only',
     refresh:refreshRri
   },
   {
@@ -1074,6 +1075,7 @@ async function sourceStatus(env) {
     sourceId:row.source_id,
     sourceName:row.display_name,
     authority:row.authority,
+    coverageLevel:SOURCE_DEFINITIONS.find((definition) => definition.id === row.source_id)?.coverageLevel || 'program',
     sourceUrl:row.source_url,
     priority:row.source_priority,
     status:row.status,
@@ -1193,8 +1195,8 @@ async function programGuideResponse(request, env, ctx) {
       station:stationRaw,
       frequency,
       at:at.toISOString(),
-      status:record.confidence === 'official-block' ? 'broadcast' : 'verified',
-      verified:true,
+      status:record.confidence === 'official-block' ? 'service' : 'verified',
+      verified:record.confidence !== 'official-block',
       program:record.title,
       description:record.description || null,
       language:record.language || null,
@@ -1204,6 +1206,9 @@ async function programGuideResponse(request, env, ctx) {
       end:occurrence.endDate.toISOString(),
       sourceUrl:record.source_url,
       sourceLabel:record.source_label,
+      message:record.confidence === 'official-block'
+        ? 'Station identified — the official source confirms this broadcast/service block, but does not identify the exact show airing at this minute.'
+        : null,
       provenance:{
         sourceId:record.source_id,
         authority:record.source_authority,
@@ -1255,6 +1260,158 @@ async function programGuideResponse(request, env, ctx) {
   });
 }
 
+
+async function loadCoverageInventory(request, env) {
+  if (!env?.ASSETS?.fetch) throw new Error('Coverage identity asset binding is unavailable');
+  const assetUrl = new URL('/data/program-guide/coverage-identities.json', request.url);
+  const response = await env.ASSETS.fetch(new Request(assetUrl.toString(), { method:'GET' }));
+  if (!response.ok) throw new Error('Coverage identity inventory unavailable: HTTP ' + response.status);
+  const payload = await response.json();
+  if (!Array.isArray(payload?.identities) || !Number.isFinite(Number(payload?.recognizedIdentityCount))) {
+    throw new Error('Coverage identity inventory is invalid');
+  }
+  return payload;
+}
+
+async function activeProgramRows(env) {
+  const result = await env.RECEIVER_HEALTH_DB.prepare([
+    'SELECT e.*,',
+    's.display_name AS source_label, s.authority AS source_authority, s.source_url, s.source_priority,',
+    's.active_expires_at, s.last_verified_at, s.active_fetched_at, s.season AS source_season, s.status AS source_status',
+    'FROM freqbeacon_program_entries e',
+    'JOIN freqbeacon_program_sources s ON s.source_id=e.source_id AND s.active_version=e.version'
+  ].join(' ')).all();
+  return result?.results || [];
+}
+
+function summarizeCoverage(rows, keyName) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const values = Array.isArray(row[keyName]) ? row[keyName] : [row[keyName] || 'Unknown'];
+    for (const value of values) {
+      const key = String(value || 'Unknown');
+      if (!grouped.has(key)) grouped.set(key, { key, recognized:0, programCovered:0, freshProgramSource:0, onNowDetermined:0 });
+      const group = grouped.get(key);
+      group.recognized += 1;
+      if (row.hasProgramSource) group.programCovered += 1;
+      if (row.hasFreshProgramSource) group.freshProgramSource += 1;
+      if (row.onNowCanBeDetermined) group.onNowDetermined += 1;
+    }
+  }
+  return [...grouped.values()]
+    .map((group) => ({
+      ...group,
+      coveragePct:group.recognized ? Number((100 * group.programCovered / group.recognized).toFixed(1)) : 0,
+      onNowPct:group.recognized ? Number((100 * group.onNowDetermined / group.recognized).toFixed(1)) : 0
+    }))
+    .sort((a,b) => b.recognized - a.recognized || a.key.localeCompare(b.key));
+}
+
+function publicCoverageSource(source) {
+  if (!source) return null;
+  return {
+    sourceId:source.sourceId,
+    sourceName:source.sourceName,
+    authority:source.authority,
+    coverageLevel:source.coverageLevel,
+    freshness:source.freshness,
+    status:source.status,
+    currentRecordCount:Number(source.recordCount || 0),
+    activeVersion:source.activeVersion,
+    lastSuccessfulRefresh:source.lastSuccessfulFetch,
+    freshUntil:source.freshUntil
+  };
+}
+
+async function coverageResponse(request, env) {
+  await ensureSchema(env);
+  const [inventory, statuses, activeRows] = await Promise.all([
+    loadCoverageInventory(request, env),
+    sourceStatus(env),
+    activeProgramRows(env)
+  ]);
+  const statusById = new Map(statuses.map((source) => [source.sourceId, source]));
+  const rowsByStation = new Map();
+  for (const row of activeRows) {
+    const key = String(row.station_key || '');
+    const list = rowsByStation.get(key) || [];
+    list.push(row);
+    rowsByStation.set(key, list);
+  }
+
+  const now = new Date();
+  const matrix = (inventory.identities || []).map((identity) => {
+    const stationKey = normalizeStationKey(identity.stationServiceKey || identity.displayName);
+    const sourceIds = SOURCES_BY_STATION.get(stationKey) || [];
+    const sources = sourceIds.map((id) => statusById.get(id)).filter(Boolean);
+    const programSources = sources.filter((source) => source.coverageLevel !== 'service-only');
+    const hasProgramSource = programSources.length > 0;
+    const hasFreshProgramSource = programSources.some((source) => source.freshness === 'fresh' || source.freshness === 'degraded');
+    const stationRows = rowsByStation.get(stationKey) || [];
+    const exactRows = stationRows.filter((row) => row.confidence !== 'official-block');
+    let onNowCanBeDetermined = false;
+    let onNowStatus = hasFreshProgramSource ? 'no-current-program-record' : (hasProgramSource ? 'stale-or-unpublished' : 'no-program-source');
+
+    if (hasFreshProgramSource && exactRows.length) {
+      for (const frequency of identity.frequenciesKHz || []) {
+        const selection = selectProgramFromRecords(exactRows, now, frequency, now);
+        if (selection.status === 'verified') {
+          onNowCanBeDetermined = true;
+          onNowStatus = 'verified';
+          break;
+        }
+        if (selection.status === 'ambiguous') onNowStatus = 'ambiguous';
+      }
+    }
+
+    return {
+      stationServiceKey:identity.stationServiceKey,
+      country:identity.country,
+      region:identity.region,
+      bands:identity.bands || [],
+      knownFrequencyCount:Number(identity.knownFrequencyCount || 0),
+      hasProgramSource,
+      sourceAuthority:programSources.map((source) => source.authority).filter(Boolean),
+      sourceFreshness:programSources.map((source) => source.freshness).filter(Boolean),
+      currentRecordCount:programSources.reduce((sum, source) => sum + Number(source.recordCount || 0), 0),
+      activeCatalogVersion:programSources.map((source) => source.activeVersion).filter(Boolean),
+      lastSuccessfulRefresh:programSources.map((source) => source.lastSuccessfulFetch).filter(Boolean),
+      onNowCanBeDetermined,
+      onNowStatus,
+      programSources:programSources.map(publicCoverageSource),
+      serviceOnlySources:sources.filter((source) => source.coverageLevel === 'service-only').map(publicCoverageSource)
+    };
+  });
+
+  const recognized = matrix.length;
+  const programCovered = matrix.filter((row) => row.hasProgramSource).length;
+  const freshProgramSource = matrix.filter((row) => row.hasFreshProgramSource).length;
+  const onNowDetermined = matrix.filter((row) => row.onNowCanBeDetermined).length;
+  const url = new URL(request.url);
+  const detail = url.searchParams.get('detail') === '1' || url.searchParams.get('detail') === 'full';
+
+  const body = {
+    generatedAt:new Date().toISOString(),
+    inventoryGeneratedAt:inventory.generatedAt || null,
+    summary:{
+      recognizedBroadcasterServices:recognized,
+      programCoveredBroadcasterServices:programCovered,
+      freshProgramCoveredBroadcasterServices:freshProgramSource,
+      onNowDeterminedBroadcasterServices:onNowDetermined,
+      programCoveragePct:recognized ? Number((100 * programCovered / recognized).toFixed(1)) : 0,
+      onNowCoveragePct:recognized ? Number((100 * onNowDetermined / recognized).toFixed(1)) : 0
+    },
+    byBand:summarizeCoverage(matrix, 'bands'),
+    byRegion:summarizeCoverage(matrix, 'region'),
+    byCountry:summarizeCoverage(matrix, 'country'),
+    sourceHealth:statuses.map(publicCoverageSource),
+    inventoryInputs:inventory.inputs || null,
+    detailAvailable:'Append ?detail=1 for the full broadcaster/service matrix.'
+  };
+  if (detail) body.identities = matrix;
+  return json(body);
+}
+
 async function statusResponse(request, env) {
   const url = new URL(request.url);
   let refresh = null;
@@ -1284,12 +1441,16 @@ async function statusResponse(request, env) {
 export async function handleProgramCatalogRequest(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    if (url.pathname === '/api/program-guide' || url.pathname === '/api/program-guide/status') return json({ error:'Method not allowed' }, 405);
+    if (url.pathname === '/api/program-guide' || url.pathname === '/api/program-guide/status' || url.pathname === '/api/program-guide/coverage') return json({ error:'Method not allowed' }, 405);
     return null;
   }
 
   if (url.pathname === '/api/program-guide/status') {
     const response = await statusResponse(request, env);
+    return request.method === 'HEAD' ? new Response(null, { status:response.status, headers:response.headers }) : response;
+  }
+  if (url.pathname === '/api/program-guide/coverage') {
+    const response = await coverageResponse(request, env);
     return request.method === 'HEAD' ? new Response(null, { status:response.status, headers:response.headers }) : response;
   }
   if (url.pathname === '/api/program-guide') {
