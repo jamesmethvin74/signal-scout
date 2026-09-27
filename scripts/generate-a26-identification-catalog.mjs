@@ -259,9 +259,21 @@ function buildEntries(rows, countries) {
 }
 
 async function fetchText(url, label) {
-  const response = await fetch(url, { headers: { 'user-agent': 'FREQBEACON-static-catalog-builder/1.0' } });
-  if (!response.ok) throw new Error(`${label} fetch failed: ${response.status} ${response.statusText}`);
-  return response.text();
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'user-agent': 'FREQBEACON-static-catalog-builder/1.0' },
+        signal: AbortSignal.timeout(45000)
+      });
+      if (!response.ok) throw new Error(`${label} fetch failed: ${response.status} ${response.statusText}`);
+      return response.text();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+    }
+  }
+  throw lastError || new Error(label + ' fetch failed');
 }
 
 async function main() {
