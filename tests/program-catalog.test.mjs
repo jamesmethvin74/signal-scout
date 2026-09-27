@@ -12,6 +12,7 @@ import {
   parseChannelAfricaNow,
   parseRadioNacionalAmazoniaNow,
   parseVaticanEnglishNow,
+  parseVoaGlobalEnglishNow,
   selectProgramFromRecords,
   validateCandidateRecords
 } from '../program-catalog-worker.js';
@@ -23,7 +24,9 @@ assert.equal(resolveProgramStationKey('KBS World Radio', 'English'), 'KBS_WORLD_
 assert.equal(resolveProgramStationKey('KBS World Radio', 'Spanish'), 'KBS_WORLD');
 assert.equal(resolveProgramStationKey('Vatican Radio', 'English'), 'VATICAN_RADIO_ENGLISH');
 assert.equal(resolveProgramStationKey('Vatican Radio', 'Italian'), 'VATICAN_RADIO');
-assert.ok(SOURCE_DEFINITIONS.length >= 10);
+assert.equal(resolveProgramStationKey('Voice of America', 'English'), 'VOA_GLOBAL_ENGLISH');
+assert.equal(resolveProgramStationKey('Voice of America', 'Hausa'), 'VOA');
+assert.ok(SOURCE_DEFINITIONS.length >= 11);
 assert.equal(SOURCE_DEFINITIONS.find((source) => source.id === 'rri-official-english')?.coverageLevel, 'service-only');
 
 const wbcq = parseWbcqRows(
@@ -144,6 +147,15 @@ const vatican = parseVaticanEnglishNow(
 assert.equal(vatican.length, 1);
 assert.equal(vatican[0].stationKey, 'VATICAN_RADIO_ENGLISH');
 assert.equal(vatican[0].title, 'ENGLISH FOR AFRICA');
+
+
+const voaGlobal = parseVoaGlobalEnglishNow(
+  '<main>20:05 - 21:00 LIVE VOA 1 - The Hits VOA1 is the Voice of America’s 24/7 English language music network.</main>',
+  new Date('2026-09-27T20:20:00Z')
+);
+assert.equal(voaGlobal.length, 1);
+assert.equal(voaGlobal[0].stationKey, 'VOA_GLOBAL_ENGLISH');
+assert.equal(voaGlobal[0].title, 'VOA 1 - The Hits');
 
 const frequencyRecords = [
   {stationKey:'WRMI',frequencyKHz:9955,days:'1',startMinuteUtc:600,endMinuteUtc:660,title:'9955 Show',sourcePriority:100,activeExpiresAt:Date.parse('2026-09-22T00:00:00Z')},
