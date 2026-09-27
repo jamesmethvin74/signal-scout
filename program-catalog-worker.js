@@ -242,7 +242,7 @@ const SOURCE_DEFINITIONS = Object.freeze([
     freshnessMs:7 * DAY_MS,
     minRecords:10,
     maxRecords:100,
-    stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_CHINESE","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_BALUCHI","AKASHVANI_URDU"],
+    stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_BALUCHI","AKASHVANI_URDU"],
     scope:'External Services named news bulletins',
     refresh:refreshAkashvaniExternalNews
   },
@@ -1067,7 +1067,9 @@ export function parseAkashvaniExternalNews(html) {
       .filter(Boolean);
     if (cells.length < 3) continue;
 
-    const languageCell = normalizeStationKey(cells[0]).replace(/[-–—]\s*[IVX]+$/i, '').replace(/\s+[IVX]+$/i, '').trim();
+    const languageCell = cells
+      .map((cell) => normalizeStationKey(cell).replace(/[-–—]\s*[IVX]+$/i, '').replace(/\s+[IVX]+$/i, '').trim())
+      .find((cell) => languageMap.has(cell));
     const language = languageMap.get(languageCell);
     if (!language) continue;
 
