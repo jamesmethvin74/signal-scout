@@ -1435,30 +1435,41 @@ async function sourceStatus(env) {
   await ensureSchema(env);
   const result = await env.RECEIVER_HEALTH_DB.prepare('SELECT * FROM freqbeacon_program_sources ORDER BY source_priority DESC, display_name').all();
   const now = Date.now();
-  return (result?.results || []).map((row) => ({
-    sourceId:row.source_id,
-    sourceName:row.display_name,
-    authority:row.authority,
-    coverageLevel:SOURCE_DEFINITIONS.find((definition) => definition.id === row.source_id)?.coverageLevel || 'program',
-    sourceUrl:row.source_url,
-    priority:row.source_priority,
-    status:row.status,
-    freshness:sourceFreshness(row, now),
-    recordCount:row.record_count,
-    season:row.season || null,
-    effectiveFrom:row.effective_from || null,
-    effectiveTo:row.effective_to || null,
-    lastAttemptAt:row.last_attempt_at ? new Date(Number(row.last_attempt_at)).toISOString() : null,
-    lastSuccessfulFetch:row.last_success_at ? new Date(Number(row.last_success_at)).toISOString() : null,
-    lastVerifiedAt:row.last_verified_at ? new Date(Number(row.last_verified_at)).toISOString() : null,
-    freshUntil:row.active_expires_at ? new Date(Number(row.active_expires_at)).toISOString() : null,
-    nextExpectedRefresh:row.next_refresh_at ? new Date(Number(row.next_refresh_at)).toISOString() : null,
-    servingLastKnownGood:Boolean(row.active_version && row.last_attempt_at && row.last_success_at && Number(row.last_attempt_at) > Number(row.last_success_at) && Number(row.active_expires_at || 0) > now),
-    activeVersion:row.active_version || null,
-    validation:row.last_validation ? safeJson(row.last_validation) : null,
-    lastError:row.last_error || null,
-    consecutiveFailures:Number(row.consecutive_failures || 0)
-  }));
+  return (result?.results || []).map((row) => {
+    const definition = SOURCE_DEFINITIONS.find((candidate) => candidate.id === row.source_id);
+    const lastSuccess = Number(row.last_success_at || 0);
+    const nextRefresh = Number(row.next_refresh_at || 0);
+    const expiresAt = Number(row.active_expires_at || 0);
+    return {
+      sourceId:row.source_id,
+      sourceName:row.display_name,
+      authority:row.authority,
+      coverageLevel:definition?.coverageLevel || 'program',
+      scope:definition?.scope || null,
+      sourceUrl:row.source_url,
+      priority:row.source_priority,
+      status:row.status,
+      freshness:sourceFreshness(row, now),
+      recordCount:row.record_count,
+      season:row.season || null,
+      effectiveFrom:row.effective_from || null,
+      effectiveTo:row.effective_to || null,
+      lastAttemptAt:row.last_attempt_at ? new Date(Number(row.last_attempt_at)).toISOString() : null,
+      lastSuccessfulFetch:lastSuccess ? new Date(lastSuccess).toISOString() : null,
+      lastVerifiedAt:row.last_verified_at ? new Date(Number(row.last_verified_at)).toISOString() : null,
+      freshUntil:expiresAt ? new Date(expiresAt).toISOString() : null,
+      nextExpectedRefresh:nextRefresh ? new Date(nextRefresh).toISOString() : null,
+      ageMs:lastSuccess ? Math.max(0, now - lastSuccess) : null,
+      freshnessRemainingMs:expiresAt ? expiresAt - now : null,
+      refreshDue:Boolean(!nextRefresh || nextRefresh <= now),
+      refreshOverdueMs:nextRefresh && nextRefresh < now ? now - nextRefresh : 0,
+      servingLastKnownGood:Boolean(row.active_version && row.last_attempt_at && row.last_success_at && Number(row.last_attempt_at) > Number(row.last_success_at) && expiresAt > now),
+      activeVersion:row.active_version || null,
+      validation:row.last_validation ? safeJson(row.last_validation) : null,
+      lastError:row.last_error || null,
+      consecutiveFailures:Number(row.consecutive_failures || 0)
+    };
+  });
 }
 
 function formatWindow(startDate, endDate, timeZone) {
@@ -1792,9 +1803,14 @@ async function statusResponse(request, env) {
     sources,
     summary:{
       sourceCount:sources.length,
+      exactProgramSources:sources.filter((source) => source.coverageLevel !== 'service-only').length,
+      serviceOnlySources:sources.filter((source) => source.coverageLevel === 'service-only').length,
       usableSources:usable,
+      refreshDue:sources.filter((source) => source.refreshDue).length,
+      refreshOverdue:sources.filter((source) => source.refreshOverdueMs > 0).length,
       staleOrExpired:sources.filter((source) => source.freshness === 'expired').length,
       neverPublished:sources.filter((source) => source.freshness === 'never-published').length,
+      servingLastKnownGood:sources.filter((source) => source.servingLastKnownGood).length,
       records:sources.reduce((sum, source) => sum + Number(source.recordCount || 0), 0)
     },
     refresh,
