@@ -1022,8 +1022,8 @@ export function parseAkashvaniExternalNews(html) {
     const language = languageMap.get(languageCell);
     if (!language) continue;
 
-    const bulletinCell = [...cells.slice(1)].reverse().find((cell) => /\d{4}\s*[-–—]\s*\d{4}/.test(cell));
-    if (!bulletinCell) continue;
+    const bulletinCell = String(cells[cells.length - 1] || '');
+    if (!/\d{4}\s*[-–—]\s*\d{4}/.test(bulletinCell)) continue;
 
     const ranges = parseTimeRanges(bulletinCell);
     for (let index = 0; index < ranges.length; index += 1) {
