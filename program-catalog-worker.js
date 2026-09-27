@@ -944,7 +944,8 @@ export function parseRtiEnglishNow(html, fetchedAt = new Date()) {
   const raw = String(html || '');
   const markerIndex = raw.search(/alt=["'][^"']*ON\s*AIR[^"']*["']/i);
   if (markerIndex < 0) return [];
-  const segment = htmlDecode(raw.slice(markerIndex, markerIndex + 2200));
+  const tagStart = Math.max(0, raw.lastIndexOf('<', markerIndex));
+  const segment = htmlDecode(raw.slice(tagStart, tagStart + 2200));
   const title = normalizeTitle(
     segment
       .replace(/^ON\s*AIR\s*/i, '')
