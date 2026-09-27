@@ -16,6 +16,7 @@ const RADIO_NACIONAL_AMAZONIA_SOURCE = 'https://radionacional.ebc.com.br/';
 const VATICAN_ENGLISH_EPG_SOURCE = 'https://www.vaticannews.va/en/epg.html';
 const VOA_GLOBAL_ENGLISH_SOURCE = 'https://www.voanews.com/radio/schedule/60';
 const RTI_ENGLISH_SOURCE = 'https://www.rti.org.tw/en/programschedule?uid=4';
+const AKASHVANI_NEWS_SOURCE = 'https://newsonair.gov.in/news-services-division/?lang=en';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -50,7 +51,13 @@ const STATION_ALIASES = new Map([
   ['VOICE OF AMERICA','VOA'],
   ['VOA','VOA'],
   ['RADIO TAIWAN INTERNATIONAL','RTI'],
-  ['RTI','RTI']
+  ['RTI','RTI'],
+  ['ALL INDIA RADIO','AKASHVANI'],
+  ['AIR','AKASHVANI'],
+  ['AKASHVANI','AKASHVANI'],
+  ['AKASHVANI EXTERNAL SERVICES','AKASHVANI'],
+  ['ALL INDIA RADIO EXTERNAL SERVICES','AKASHVANI'],
+  ['AIR EXTERNAL SERVICES','AKASHVANI']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -214,6 +221,20 @@ const SOURCE_DEFINITIONS = Object.freeze([
     stationKeys:['RTI_ENGLISH'],
     scope:'English service',
     refresh:refreshRtiEnglish
+  },
+  {
+    id:'akashvani-external-news-official',
+    displayName:'Akashvani News official External Services bulletin schedule',
+    authority:'official-broadcaster',
+    url:AKASHVANI_NEWS_SOURCE,
+    priority:100,
+    refreshMs:24 * HOUR_MS,
+    freshnessMs:7 * DAY_MS,
+    minRecords:10,
+    maxRecords:100,
+    stationKeys:["AKASHVANI_FRENCH","AKASHVANI_INDONESIAN","AKASHVANI_BURMESE","AKASHVANI_PERSIAN","AKASHVANI_DARI","AKASHVANI_PASHTO","AKASHVANI_ARABIC","AKASHVANI_CHINESE","AKASHVANI_TIBETAN","AKASHVANI_SWAHILI","AKASHVANI_URDU"],
+    scope:'External Services named news bulletins',
+    refresh:refreshAkashvaniExternalNews
   }
 ]);
 
@@ -255,6 +276,11 @@ export function resolveProgramStationKey(value, language = '') {
   if (stationKey === 'VATICAN_RADIO' && /\bEnglish\b/i.test(String(language || ''))) return 'VATICAN_RADIO_ENGLISH';
   if (stationKey === 'VOA' && /\bEnglish\b/i.test(String(language || ''))) return 'VOA_GLOBAL_ENGLISH';
   if (stationKey === 'RTI' && /\bEnglish\b/i.test(String(language || ''))) return 'RTI_ENGLISH';
+  if (stationKey === 'AKASHVANI') {
+    const languageKey = normalizeStationKey(language).replace(/\s+/g, '_');
+    const supported = new Set(['FRENCH','INDONESIAN','BURMESE','PERSIAN','DARI','PASHTO','ARABIC','CHINESE','TIBETAN','SWAHILI','URDU']);
+    if (supported.has(languageKey)) return 'AKASHVANI_' + languageKey;
+  }
   return stationKey;
 }
 
@@ -963,6 +989,75 @@ export function parseRtiEnglishNow(html, fetchedAt = new Date()) {
   })];
 }
 
+
+function parseTimeRanges(value) {
+  const out = [];
+  for (const match of String(value || '').matchAll(/(\d{4})\s*[-–—]\s*(\d{4})/g)) {
+    const start = parseHHMM(match[1]);
+    const end = parseHHMM(match[2]);
+    if (start != null && end != null && start !== end) out.push({ start, end });
+  }
+  return out;
+}
+
+function kolkataMinutesToUtc(minute) {
+  return ((Number(minute) - 330) % 1440 + 1440) % 1440;
+}
+
+export function parseAkashvaniExternalNews(html) {
+  const languageMap = new Map([
+    ['FRENCH','French'],['INDONESIAN','Indonesian'],['BURMESE','Burmese'],['PERSIAN','Persian'],
+    ['DARI','Dari'],['PASHTO','Pashto'],['SWahili'.toUpperCase(),'Swahili'],['ARABIC','Arabic'],
+    ['CHINESE','Chinese'],['TIBETAN','Tibetan'],['URDU','Urdu']
+  ]);
+  const records = [];
+
+  for (const rowMatch of String(html || '').matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => htmlDecode(match[1]))
+      .filter(Boolean);
+    if (cells.length < 3) continue;
+
+    const languageCell = normalizeStationKey(cells[0]).replace(/[-–—]\s*[IVX]+$/i, '').replace(/\s+[IVX]+$/i, '').trim();
+    const language = languageMap.get(languageCell);
+    if (!language) continue;
+
+    const bulletinCell = cells.find((cell, index) => index > 0 && /\d{4}\s*[-–—]\s*\d{4}/.test(cell));
+    if (!bulletinCell) continue;
+
+    const ranges = parseTimeRanges(bulletinCell);
+    for (let index = 0; index < ranges.length; index += 1) {
+      const localStart = ranges[index].start;
+      const localEnd = ranges[index].end;
+      const startMinuteUtc = kolkataMinutesToUtc(localStart);
+      const endMinuteUtc = kolkataMinutesToUtc(localEnd);
+      records.push(withRecordKey({
+        stationKey:'AKASHVANI_' + language.toUpperCase(),
+        stationName:'Akashvani External Services ' + language,
+        frequencyKHz:null,
+        days:'0123456',
+        startMinuteUtc,
+        endMinuteUtc,
+        startAt:null,
+        endAt:null,
+        effectiveFrom:null,
+        effectiveTo:null,
+        title:language + ' News Bulletin',
+        description:'Official Akashvani News bulletin carried within the External Services ' + language + ' transmission.',
+        language,
+        targetRegion:'International',
+        sourceRecordId:language.toLowerCase() + '-news-' + index + '-' + localStart + '-' + localEnd,
+        confidence:'official',
+        originalTimeZone:'Asia/Kolkata',
+        originalTime:String(Math.floor(localStart / 60)).padStart(2,'0') + ':' + String(localStart % 60).padStart(2,'0')
+          + '-' + String(Math.floor(localEnd / 60)).padStart(2,'0') + ':' + String(localEnd % 60).padStart(2,'0') + ' Asia/Kolkata'
+      }));
+    }
+  }
+
+  return dedupeRecords(records);
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -1071,6 +1166,11 @@ async function refreshVoaGlobalEnglish(fetchedAt) {
 async function refreshRtiEnglish(fetchedAt) {
   const html = await fetchText(RTI_ENGLISH_SOURCE);
   return { records:parseRtiEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshAkashvaniExternalNews(fetchedAt) {
+  const html = await fetchText(AKASHVANI_NEWS_SOURCE);
+  return { records:parseAkashvaniExternalNews(html), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
