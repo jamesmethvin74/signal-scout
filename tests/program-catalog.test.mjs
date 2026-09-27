@@ -177,10 +177,10 @@ assert.equal(rtiEnglish[0].title, 'Status Update');
 
 const akashvaniNews = parseAkashvaniExternalNews([
   '<table>',
-  '<tr><td>FRENCH</td><td>0100-0200</td><td>0105-0115</td></tr>',
-  '<tr><td>PERSIAN-I</td><td>0930-1100</td><td>0935-0945 &amp; 1050-1055</td></tr>',
-  '<tr><td>BALUCHI-II</td><td>1800-1900</td><td>1805-1815</td></tr>',
-  '<tr><td>CHINESE-I</td><td>0515-0645</td><td>-</td></tr>',
+  '<tr><td>1</td><td>FRENCH</td><td>0100-0200</td><td>0105-0115</td></tr>',
+  '<tr><td>8</td><td>PERSIAN-I</td><td>0930-1100</td><td>0935-0945 &amp; 1050-1055</td></tr>',
+  '<tr><td>15</td><td>BALUCHI-II</td><td>1800-1900</td><td>1805-1815</td></tr>',
+  '<tr><td>2</td><td>CHINESE-I</td><td>0515-0645</td><td>-</td></tr>',
   '</table>'
 ].join(''));
 assert.equal(akashvaniNews.length, 4);
