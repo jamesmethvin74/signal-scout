@@ -12,6 +12,8 @@ const RRI_SOURCE = 'https://www.rri.ro/en/frequencies';
 const ABC_RN_SOURCE = 'https://www.abc.net.au/listen/live/radionational';
 const KBS_WORLD_SOURCE = 'https://world.kbs.co.kr/service/';
 const CHANNEL_AFRICA_SOURCE = 'https://www.channelafrica.co.za/channelafrica/prgramme-schedule/';
+const RADIO_NACIONAL_AMAZONIA_SOURCE = 'https://radionacional.ebc.com.br/';
+const VATICAN_ENGLISH_EPG_SOURCE = 'https://www.vaticannews.va/en/epg.html';
 
 const DAY_INDEX = Object.freeze({ Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Su:0, Mo:1, Tu:2, We:3, Th:4, Fr:5, Sa:6 });
 
@@ -37,7 +39,12 @@ const STATION_ALIASES = new Map([
   ['7RN','ABC_RN'],
   ['KBS WORLD RADIO','KBS_WORLD'],
   ['KBS WORLD','KBS_WORLD'],
-  ['CHANNEL AFRICA','CHANNEL_AFRICA']
+  ['CHANNEL AFRICA','CHANNEL_AFRICA'],
+  ['RADIO NACIONAL DA AMAZONIA','RADIO_NACIONAL_AMAZONIA'],
+  ['RADIO NACIONAL AMAZONIA','RADIO_NACIONAL_AMAZONIA'],
+  ['RADIO NACIONAL DA AMAZÔNIA','RADIO_NACIONAL_AMAZONIA'],
+  ['VATICAN RADIO','VATICAN_RADIO'],
+  ['RADIO VATICANA','VATICAN_RADIO']
 ]);
 
 const SOURCE_DEFINITIONS = Object.freeze([
@@ -146,6 +153,33 @@ const SOURCE_DEFINITIONS = Object.freeze([
     maxRecords:3,
     stationKeys:['CHANNEL_AFRICA'],
     refresh:refreshChannelAfrica
+  },
+  {
+    id:'radio-nacional-amazonia-official-live',
+    displayName:'Rádio Nacional da Amazônia official live schedule',
+    authority:'official-broadcaster',
+    url:RADIO_NACIONAL_AMAZONIA_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:2,
+    maxRecords:4,
+    stationKeys:['RADIO_NACIONAL_AMAZONIA'],
+    refresh:refreshRadioNacionalAmazonia
+  },
+  {
+    id:'vatican-radio-english-official-live',
+    displayName:'Vatican Radio official English-channel live EPG',
+    authority:'official-broadcaster',
+    url:VATICAN_ENGLISH_EPG_SOURCE,
+    priority:100,
+    refreshMs:15 * 60 * 1000,
+    freshnessMs:45 * 60 * 1000,
+    minRecords:1,
+    maxRecords:2,
+    stationKeys:['VATICAN_RADIO_ENGLISH'],
+    scope:'English service',
+    refresh:refreshVaticanEnglish
   }
 ]);
 
@@ -184,6 +218,7 @@ export function normalizeStationKey(value) {
 export function resolveProgramStationKey(value, language = '') {
   const stationKey = normalizeStationKey(value);
   if (stationKey === 'KBS_WORLD' && /\bEnglish\b/i.test(String(language || ''))) return 'KBS_WORLD_ENGLISH';
+  if (stationKey === 'VATICAN_RADIO' && /\bEnglish\b/i.test(String(language || ''))) return 'VATICAN_RADIO_ENGLISH';
   return stationKey;
 }
 
@@ -804,6 +839,49 @@ export function parseChannelAfricaNow(html, fetchedAt = new Date()) {
   })];
 }
 
+
+export function parseRadioNacionalAmazoniaNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const schedule = (text.split(/Podcast/i)[0] || text).slice(0, 12000);
+  const match = schedule.match(/(?:\d{1,2}\s*h\s+)?Amaz[oô]nia\s+(.{2,120}?)\s+ouvir\s+A seguir\s*\|\s*(.{2,120}?)(?=\s+\d{1,2}\s*h\b|\s+Ver programa[cç][aã]o completa|$)/i);
+  const title = normalizeTitle(match?.[1] || '');
+  if (!title || /ao vivo|programa[cç][aã]o das r[aá]dios/i.test(title)) return [];
+  return [6180,11780].map((frequencyKHz) => liveWindowRecord({
+    stationKey:'RADIO_NACIONAL_AMAZONIA',
+    stationName:'Rádio Nacional da Amazônia',
+    frequencyKHz,
+    title,
+    fetchedAt,
+    timeZone:'America/Sao_Paulo',
+    language:'Portuguese',
+    targetRegion:'Brazil / Amazonia',
+    sourceRecordId:'live-' + frequencyKHz
+  }));
+}
+
+export function parseVaticanEnglishNow(html, fetchedAt = new Date()) {
+  const text = htmlDecode(html);
+  const liveHead = text.slice(0, 1800);
+  const match = liveHead.match(/Live now[\s\S]{0,500}?(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})\s+(.{2,100}?)(?=\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b)/i);
+  if (!match) return [];
+  const startMinute = parseClock24(match[1], match[2]);
+  const endMinute = parseClock24(match[3], match[4]);
+  const title = normalizeTitle(match[5]);
+  if (!title || startMinute == null || endMinute == null || /select\s*$/i.test(title)) return [];
+  return [liveWindowRecord({
+    stationKey:'VATICAN_RADIO_ENGLISH',
+    stationName:'Vatican Radio English',
+    title,
+    fetchedAt,
+    startMinute,
+    endMinute,
+    timeZone:'Europe/Rome',
+    language:'English',
+    targetRegion:'International',
+    sourceRecordId:'english-epg-live'
+  })];
+}
+
 export function parseKarnNow(html, fetchedAt = new Date()) {
   const text = htmlDecode(html);
   const match = text.match(/On Air Now\s+(.{2,140}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
@@ -892,6 +970,16 @@ async function refreshKbsWorldEnglish(fetchedAt) {
 async function refreshChannelAfrica(fetchedAt) {
   const html = await fetchText(CHANNEL_AFRICA_SOURCE);
   return { records:parseChannelAfricaNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshRadioNacionalAmazonia(fetchedAt) {
+  const html = await fetchText(RADIO_NACIONAL_AMAZONIA_SOURCE);
+  return { records:parseRadioNacionalAmazoniaNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
+}
+
+async function refreshVaticanEnglish(fetchedAt) {
+  const html = await fetchText(VATICAN_ENGLISH_EPG_SOURCE);
+  return { records:parseVaticanEnglishNow(html, fetchedAt), season:null, effectiveFrom:null, effectiveTo:null, fetchedAt };
 }
 
 export function validateCandidateRecords(records, definition, previousCount = 0) {
