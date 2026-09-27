@@ -29,7 +29,6 @@ const STATION_ALIASES = new Map([
   ['SPORTS ANIMAL 920','KARN'],
   ['SPORTSANIMAL 920','KARN'],
   ['ABC RADIO NATIONAL','ABC_RN'],
-  ['RADIO NATIONAL','ABC_RN'],
   ['2RN','ABC_RN'],
   ['3RN','ABC_RN'],
   ['4RN','ABC_RN'],
@@ -757,11 +756,17 @@ export function parseKbsWorldEnglishNow(html, fetchedAt = new Date()) {
   const startIndex = text.search(/KBS WORLD Radio\s+Ch2 English/i);
   if (startIndex < 0) return [];
   const segment = text.slice(startIndex, startIndex + 1200);
-  const match = segment.match(/(\d{1,2}):(\d{2})\s+(.{2,120}?)\s+ON AIR\s+(\d{1,2}):(\d{2})/i);
-  if (!match) return [];
-  const startMinute = parseClock24(match[1], match[2]);
-  const endMinute = parseClock24(match[4], match[5]);
-  const title = normalizeTitle(match[3]);
+  const onAirIndex = segment.search(/\bON AIR\b/i);
+  if (onAirIndex < 0) return [];
+  const before = segment.slice(0, onAirIndex);
+  const after = segment.slice(onAirIndex + 'ON AIR'.length);
+  const starts = [...before.matchAll(/(\d{1,2}):(\d{2})\s+([^0-9]{2,120}?)(?=\s+\d{1,2}:\d{2}|$)/g)];
+  const current = starts.at(-1);
+  const next = after.match(/\s*(\d{1,2}):(\d{2})\b/);
+  if (!current || !next) return [];
+  const startMinute = parseClock24(current[1], current[2]);
+  const endMinute = parseClock24(next[1], next[2]);
+  const title = normalizeTitle(current[3]);
   if (!title || startMinute == null || endMinute == null) return [];
   return [liveWindowRecord({
     stationKey:'KBS_WORLD_ENGLISH',
@@ -1555,6 +1560,7 @@ async function coverageResponse(request, env) {
       bands:identity.bands || [],
       knownFrequencyCount:Number(identity.knownFrequencyCount || 0),
       hasProgramSource,
+      hasFreshProgramSource,
       sourceAuthority:programSources.map((source) => source.authority).filter(Boolean),
       sourceFreshness:programSources.map((source) => source.freshness).filter(Boolean),
       currentRecordCount:programSources.reduce((sum, source) => sum + Number(source.recordCount || 0), 0),
