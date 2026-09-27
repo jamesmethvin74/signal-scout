@@ -181,32 +181,39 @@
 
     const verified = status === 'verified';
     const broadcast = status === 'broadcast';
+    const service = status === 'service';
     const conflict = status === 'ambiguous';
     const currentUnavailable = ['stale','expired','unavailable','unverified'].includes(status);
     programEl.hidden = false;
     programEl.className = 'zero-identify-program'
       + (verified || broadcast ? ' is-verified' : '')
-      + (currentUnavailable || conflict ? ' is-warning' : '');
+      + (currentUnavailable || conflict || service ? ' is-warning' : '');
 
     const kicker = verified
       ? 'ON NOW · VERIFIED'
       : broadcast
         ? 'ON NOW · VERIFIED BROADCAST'
-        : conflict
-          ? 'PROGRAM GUIDE · PUBLISHED LISTINGS CONFLICT'
-          : 'PROGRAM GUIDE · CURRENT DATA UNAVAILABLE';
+        : service
+          ? 'ON NOW · SERVICE IDENTIFIED'
+          : conflict
+            ? 'PROGRAM GUIDE · PUBLISHED LISTINGS CONFLICT'
+            : 'PROGRAM GUIDE · CURRENT DATA UNAVAILABLE';
 
     const title = verified || broadcast
       ? (data.program || 'Verified broadcast')
-      : conflict
-        ? 'Exact program not verified'
-        : 'Station identified — current program schedule unavailable';
+      : service
+        ? (data.program || 'Broadcast service identified')
+        : conflict
+          ? 'Exact program not verified'
+          : 'Station identified — current program schedule unavailable';
 
     const detail = verified || broadcast
       ? [data.window, data.sourceLabel].filter(Boolean).join(' · ')
-      : conflict
-        ? (data.candidates || []).join(' · ')
-        : (data.message || 'No trustworthy current program listing is available for this station and time.');
+      : service
+        ? (data.message || 'Station identified — current program schedule unavailable.')
+        : conflict
+          ? (data.candidates || []).join(' · ')
+          : (data.message || 'No trustworthy current program listing is available for this station and time.');
 
     programEl.innerHTML = `
       <div class="zero-identify-program-kicker">${escapeHtml(kicker)}</div>
