@@ -63,6 +63,7 @@ c.FREQBEACON_TERRESTRIAL_CATALOG=[
 c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
   {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']},
   {type:'station',band:'MW',frequencyKHz:864,name:'Egypt 864 test service',country:'Egypt',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:26.8,lon:30.8,locationApproximate:true,start:'0000',end:'2400',days:'1234567',language:'Arabic',categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:864,name:'Active alternate 864 test service',country:'Far Away',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:10,lon:100,locationApproximate:true,start:'0000',end:'2400',days:'1234567',language:'English',categories:['broadcast','MW']},
   {type:'station',band:'MW',frequencyKHz:864,name:'Inactive 864 test service',country:'Far Away',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:10,lon:100,locationApproximate:true,start:'0100',end:'0200',days:'1234567',language:'English',categories:['broadcast','MW']}
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
@@ -84,6 +85,7 @@ assert.equal(result.kind,'exact');
 assert.equal(result.entry.name,'Egypt 864 test service');
 assert.equal(result.entry.country,'Egypt');
 assert.equal(result.schedule?.active,true);
-assert.ok(!result.alternatives.some((entry)=>/Inactive/.test(entry.name)));
+assert.ok(result.alternatives.some((candidate)=>candidate.entry?.name === 'Active alternate 864 test service'));
+assert.ok(!result.alternatives.some((candidate)=>/Inactive/.test(candidate.entry?.name || '')));
 
 console.log('terrestrial identification regressions: ok');
