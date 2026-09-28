@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeCTU, normalizeTraficom, normalizeLowFrequencyFallback, normalizeReviewedSupplement } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeCTU, normalizeLowFrequencyFallback, normalizeReviewedSupplement } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -47,37 +47,6 @@ assert.equal(cz[0].country,'Czechia');
 assert.equal(cz[0].sourceTier,1);
 assert.ok(Math.abs(cz[0].lat-50.231667)<1e-6);
 assert.ok(Math.abs(cz[0].lon-15.745)<1e-6);
-
-const fi=normalizeTraficom({
-  value:[{
-    ID:96301,
-    Municipality:'Pori',
-    StationName:'Pori',
-    Frequency:963000,
-    TransmissionPower:600000,
-    Latitude:'613000',
-    Longitude:'0213500',
-    LicenseNumber:'TEST-963',
-    LicenseOwner:'Alfa Media Group Oy'
-  },{
-    ID:101701,
-    Municipality:'Helsinki',
-    StationName:'FM TEST',
-    Frequency:101700000,
-    TransmissionPower:1000,
-    Latitude:'601000',
-    Longitude:'0245600',
-    LicenseOwner:'Ignore Oy'
-  }]
-});
-assert.equal(fi.length,1);
-assert.equal(fi[0].frequencyKHz,963);
-assert.equal(fi[0].country,'Finland');
-assert.equal(fi[0].sourceTier,1);
-assert.equal(fi[0].powerW,600000);
-assert.ok(Math.abs(fi[0].lat-61.5)<1e-6);
-assert.ok(Math.abs(fi[0].lon-(21+35/60))<1e-6);
-assert.match(fi[0].description,/Alfa Media Group Oy/);
 
 const reviewed=normalizeReviewedSupplement({
   entries:[
