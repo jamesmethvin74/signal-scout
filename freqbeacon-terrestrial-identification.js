@@ -12,7 +12,10 @@
     return (now.getUTCHours() + now.getUTCMinutes() / 60 + Number(receiver.lon) / 15 + 24) % 24;
   };
   const isNight = (receiver, now) => { const h = localHour(receiver, now); return h < 6 || h >= 18; };
-  const sourceTier = (entry) => Number(entry?.sourceTier) === 1 ? 1 : 3;
+  const sourceTier = (entry) => {
+    const tier = Number(entry?.sourceTier);
+    return tier === 1 || tier === 2 ? tier : 3;
+  };
   const activeTechnical = (entry, receiver, now) => {
     const night = isNight(receiver, now);
     const lat = Number(night ? entry.nightLat : entry.dayLat);
@@ -32,19 +35,21 @@
     const distance = base.milesBetween(receiver, active);
     const schedule = base.scheduleState(entry, now);
     const p = Number.isFinite(powerW) && powerW > 0 ? powerW : 1000;
+    const tier = sourceTier(entry);
 
-    // Tier-1 regulator rows have transmitter coordinates, so straight-line
-    // distance is meaningful. The global EiBi fallback often has only a
-    // country centroid; treating that centroid like a transmitter location
-    // was discarding valid exact-channel, currently scheduled broadcasts.
-    const distancePenalty = regulatorBonus
-      ? (Number.isFinite(distance) ? distance : 5000)
-      : (Number.isFinite(distance) ? Math.log10(Math.max(1, distance)) * 90 : 320);
+    // MW skywave routinely travels well beyond local ground-wave range after
+    // dark. Raw miles were overwhelming every other signal and filtering out
+    // legitimate 800-1500 mile European catches. Keep precise coordinates
+    // valuable for ordering, but compress distance logarithmically.
+    const distancePenalty = Number.isFinite(distance)
+      ? Math.log10(Math.max(1, distance)) * (tier === 1 ? 150 : tier === 2 ? 120 : 90)
+      : (tier === 1 ? 480 : tier === 2 ? 360 : 320);
 
     let score = Math.log10(Math.max(1, p)) * 90 - distancePenalty;
-    if (regulatorBonus) score += 500;
+    if (tier === 1) score += 500;
+    else if (tier === 2) score += 250;
     else score -= 50;
-    if (entry.locationApproximate) score -= 55;
+    if (entry.locationApproximate) score -= tier === 2 ? 40 : 55;
     if (entry.band === 'LW') score += 80;
     if (schedule?.active === true) score += 180;
     if (schedule?.active === false) score -= 320;
@@ -52,12 +57,15 @@
   };
 
   const candidateIsUsable = (candidate) => {
-    if (sourceTier(candidate.entry) === 1) return candidate.score >= -50;
+    const tier = sourceTier(candidate.entry);
+    if (tier === 1) return candidate.score >= -120;
 
-    // Reference/fallback entries are allowed to identify an international
-    // MW/LW service only while their own schedule says they are active.
-    // This keeps broad catalog coverage without presenting stale/off-air
-    // entries as the station the listener is hearing.
+    // Tier 2 is a reviewed station-identity supplement. It may not publish a
+    // schedule, so it can identify the station/origin but never outranks a
+    // regulator row solely because of source authority.
+    if (tier === 2) return candidate.score >= -180;
+
+    // Tier 3 reference/fallback rows must be currently scheduled.
     if (candidate.schedule?.active !== true) return false;
     return candidate.score >= -220;
   };
@@ -93,7 +101,11 @@
       frequencyOffsetKHz: best.frequencyOffsetKHz,
       frequencyErrorKHz: best.frequencyErrorKHz,
       matchToleranceKHz: best.matchToleranceKHz,
-      confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
+      confidence: sourceTier(best.entry) === 1
+        ? 'likely'
+        : sourceTier(best.entry) === 2
+          ? 'cataloged'
+          : (best.schedule?.active === false ? 'cataloged' : 'known'),
       alternatives: candidates.slice(1)
         .filter((c) => Math.abs(c.nominalFrequencyKHz - best.nominalFrequencyKHz) < 0.001)
         .map((c) => ({
