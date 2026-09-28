@@ -17,7 +17,7 @@ const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spect
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
-const CTU_URL = 'https://ctu.gov.cz/en/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/filtry?export=1&format=csv&order=Frequency%5BMHz%5D&show_all=0&sort=asc&use_pager=0';
+const CTU_URL = 'https://ctu.gov.cz/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/opravneni?export=1&format=csv&show_all=0&use_pager=0';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -201,8 +201,8 @@ export function normalizeCTU(csvText){
     if(type!=='AM'||!Number.isFinite(frequencyKHz)||frequencyKHz<500||frequencyKHz>1800) continue;
     const name=clean(pick(r,['Program','Program name','Název programu'])), site=clean(pick(r,['Vysílač','Vysilac','Transmitter']));
     if(!name||!site) continue;
-    let lon=decimalNumber(pick(r,['Zeměpisná délka','Zemepisna delka','Longitude']));
-    let lat=decimalNumber(pick(r,['Zeměpisná šířka','Zemepisna sirka','Latitude']));
+    let lon=coordinateValue(pick(r,['Východní délka','Vychodni delka','Eastern length','Zeměpisná délka','Zemepisna delka','Longitude']),true);
+    let lat=coordinateValue(pick(r,['Severní šířka','Severni sirka','North latitude','Zeměpisná šířka','Zemepisna sirka','Latitude']),false);
     if(!validCoord(lat,lon)){
       lon=dmsParts(
         pick(r,['Zem. délka stupně','Zem delka stupne']),
