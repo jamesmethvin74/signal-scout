@@ -110,9 +110,13 @@
 
   function exactMeta(entry) {
     if (entry.type === 'station') {
+      const location = String(entry.transmitter || entry.location || '').trim();
+      const country = String(entry.country || '').trim();
+      const countryAlreadyShown = country && location.toLowerCase().includes(country.toLowerCase());
       return [
         entry.callsign && entry.callsign !== entry.name ? entry.callsign : '',
-        entry.transmitter || entry.location,
+        location,
+        countryAlreadyShown ? '' : country,
         entry.language,
         entry.mode
       ].filter(Boolean).join(' · ');
@@ -289,7 +293,18 @@
     const schedule = scheduleLabel(entry, result.schedule);
     if (schedule) details.push(schedule);
     if (entry.target) details.push(`target: ${entry.target}`);
-    if (result.alternatives?.length) details.push(`${result.alternatives.length} other candidate on this channel${result.alternatives.length === 1 ? '' : 's'}`);
+    if (result.alternatives?.length) {
+      const labels = result.alternatives.slice(0, 3).map((candidate) => {
+        const alternative = candidate?.entry || candidate || {};
+        return [alternative.name || alternative.callsign, alternative.country].filter(Boolean).join(' — ');
+      }).filter(Boolean);
+      const remaining = Math.max(0, result.alternatives.length - labels.length);
+      if (labels.length) {
+        details.push(`also on channel: ${labels.join('; ')}${remaining ? `; +${remaining} more` : ''}`);
+      } else {
+        details.push(`${result.alternatives.length} other candidate on this channel${result.alternatives.length === 1 ? '' : 's'}`);
+      }
+    }
     noteEl.textContent = details.join(' · ');
     loadProgramGuide(result);
   }
