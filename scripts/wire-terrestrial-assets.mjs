@@ -5,7 +5,7 @@ const dataTags = [
   '  <script src="/freqbeacon-zero-global-mw-lw.js?v=1"></script>',
   '  <script src="/freqbeacon-zero-global-mw-lw-fallback.js?v=1"></script>'
 ].join('\n');
-const wrapperTag = '  <script src="/freqbeacon-terrestrial-identification.js?v=2"></script>';
+const wrapperTag = '  <script src="/freqbeacon-terrestrial-identification.js?v=3"></script>';
 
 for (const file of files) {
   let html = await readFile(file, 'utf8');
