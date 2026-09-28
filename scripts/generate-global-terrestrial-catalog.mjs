@@ -17,7 +17,9 @@ const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spect
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
-const CTU_URL = 'https://ctu.gov.cz/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/opravneni?export=1&format=csv&show_all=0&use_pager=0';
+const CTU_URL = 'https://ctu.gov.cz/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/opravneni';
+const CTU_SNAPSHOT = path.resolve('data/ctu/mw-2026-09-25.csv');
+const CTU_SNAPSHOT_SHA256 = 'd52988e2abcf2e7ce4de2b226b24410aaf7b42d64117c35605c11abd337c60be';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -57,6 +59,13 @@ async function readOfcomSnapshot(){
   catch(error){ throw new Error(`Pinned Ofcom MF snapshot is not valid gzip: ${error?.message||error}`); }
   const sha256=createHash('sha256').update(raw).digest('hex');
   if(sha256!==OFCOM_SNAPSHOT_SHA256) throw new Error(`Pinned Ofcom MF snapshot SHA-256 mismatch: expected ${OFCOM_SNAPSHOT_SHA256}, got ${sha256}`);
+  return raw.toString('utf8').replace(/^\uFEFF/,'');
+}
+
+async function readCtuSnapshot(){
+  const raw=await readFile(CTU_SNAPSHOT);
+  const sha256=createHash('sha256').update(raw).digest('hex');
+  if(sha256!==CTU_SNAPSHOT_SHA256) throw new Error(`Pinned CTU MW snapshot SHA-256 mismatch: expected ${CTU_SNAPSHOT_SHA256}, got ${sha256}`);
   return raw.toString('utf8').replace(/^\uFEFF/,'');
 }
 function validCoord(lat,lon){ return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180; }
@@ -323,7 +332,7 @@ async function main(){
   const ofcomText=await readOfcomSnapshot();
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
-  const ctuText=await fetchText(CTU_URL,'CTU open radio-transmitter CSV');
+  const ctuText=await readCtuSnapshot();
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
@@ -335,7 +344,7 @@ async function main(){
   marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(cz,792,'Dechovka','CTU');
   marker(reviewed,558,'Radio Iran','reviewed supplement'); marker(reviewed,864,'Quran','reviewed supplement');
   const regulatorEntries=stableDedupe([...ca,...uk,...au,...cz]), fallbackEntries=stableDedupe([...reviewed,...fallback]), builtAt=new Date().toISOString();
-  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},CTU:{authority:'Czech Telecommunication Office',tier:1,url:CTU_URL,records:cz.length,format:'open CSV',attribution:'CTU open data'}}};
+  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},CTU:{authority:'Czech Telecommunication Office',tier:1,url:CTU_URL,records:cz.length,format:'pinned open-data CSV',sourceDate:'2026-09-25',snapshot:'data/ctu/mw-2026-09-25.csv',snapshotSha256:CTU_SNAPSHOT_SHA256,attribution:'CTU open data'}}};
   const fallbackMeta={version:2,builtAt,recordCount:fallbackEntries.length,sources:{reviewedSupplement:{authority:'FREQBEACON reviewed MW identity supplement',tier:2,path:'data/terrestrial/verified-mw-supplement.json',records:reviewed.length},EiBi:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT,records:fallback.length}}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
