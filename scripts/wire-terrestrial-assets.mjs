@@ -2,8 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const files = ['freqbeacon-zero.html', 'lookup.html'];
 const dataTags = [
-  '  <script src="/freqbeacon-zero-global-mw-lw.js?v=2"></script>',
-  '  <script src="/freqbeacon-zero-global-mw-lw-fallback.js?v=2"></script>'
+  '  <script src="/freqbeacon-zero-global-mw-lw.js?v=3"></script>',
+  '  <script src="/freqbeacon-zero-global-mw-lw-fallback.js?v=3"></script>'
 ].join('\n');
 const wrapperTag = '  <script src="/freqbeacon-terrestrial-identification.js?v=4"></script>';
 
