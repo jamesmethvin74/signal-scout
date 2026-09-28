@@ -50,6 +50,8 @@
     else if (tier === 2) score += 250;
     else score -= 50;
     if (entry.locationApproximate) score -= tier === 2 ? 40 : 55;
+    const confidencePenalty = Number(entry.confidencePenalty || 0);
+    if (Number.isFinite(confidencePenalty) && confidencePenalty > 0) score -= Math.min(500, confidencePenalty);
     if (entry.band === 'LW') score += 80;
     if (schedule?.active === true) score += 180;
     if (schedule?.active === false) score -= 320;
@@ -63,7 +65,10 @@
     // Tier 2 is a reviewed station-identity supplement. It may not publish a
     // schedule, so it can identify the station/origin but never outranks a
     // regulator row solely because of source authority.
-    if (tier === 2) return candidate.score >= -180;
+    if (tier === 2) {
+      if (candidate.schedule?.active === false) return false;
+      return candidate.score >= -180;
+    }
 
     // Tier 3 reference/fallback rows must be currently scheduled.
     if (candidate.schedule?.active !== true) return false;
