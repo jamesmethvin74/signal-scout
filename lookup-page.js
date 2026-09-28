@@ -157,7 +157,7 @@
         </div>
         <div class="lookup-result-frequency" hidden>${esc(Number(frequencyKHz).toFixed(3))} kHz</div>
         <div class="lookup-card-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>
-        ${place ? `<div class="lookup-card-location">${esc(place)}</div>` : ''}
+        ${place ? `<div class="lookup-card-location">${entry.locationApproximate ? 'Country-level origin: ' : 'Transmitter / origin: '}${esc(place)}</div>` : ''}
         <div class="lookup-card-divider"></div>
         <div class="lookup-card-program-label">${candidate.schedule?.active === true ? 'Now Playing' : 'Identification'}</div>
         <p class="lookup-card-description">${esc(description)}</p>
