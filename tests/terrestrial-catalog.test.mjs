@@ -34,8 +34,8 @@ const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCa
 const fb=normalizeLowFrequencyFallback(schedule,countries); assert.equal(fb.length,2); assert.ok(fb.every(e=>e.sourceTier==='reference/fallback')); assert.ok(!fb.some(e=>/NDB/.test(e.name)));
 
 const ctuCsv=[
-  'Typ;Vysílač;Program;ERP W;Kmitočet MHz;Zeměpisná délka;Zeměpisná šířka;ANT_ID',
-  'AM;HRADEC KRALOVE;Rádio Dechovka;5011;0,792;15,745;50,231667;320498',
+  'Typ;Vysílač;Název programu;Erp[W];Kmitočet[MHz];Východní délka;Severní šířka;ANT_ID',
+  'AM;HRADEC KRALOVE;Rádio Dechovka;5011;0,792;15° 44\' 42";50° 13\' 54";3251561',
   'FM;TEST FM;Ignore Me;1000;101,7;15,1;50,1;123'
 ].join('\n');
 const cz=normalizeCTU(ctuCsv);
@@ -45,8 +45,8 @@ assert.equal(cz[0].name,'Rádio Dechovka');
 assert.equal(cz[0].powerW,5011);
 assert.equal(cz[0].country,'Czechia');
 assert.equal(cz[0].sourceTier,1);
-assert.ok(Math.abs(cz[0].lat-50.231667)<1e-6);
-assert.ok(Math.abs(cz[0].lon-15.745)<1e-6);
+assert.ok(Math.abs(cz[0].lat-(50+13/60+54/3600))<1e-6);
+assert.ok(Math.abs(cz[0].lon-(15+44/60+42/3600))<1e-6);
 
 const reviewed=normalizeReviewedSupplement({
   entries:[
