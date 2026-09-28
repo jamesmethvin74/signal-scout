@@ -11,6 +11,7 @@ import {
 
 const OUT = path.resolve('freqbeacon-zero-global-mw-lw.js');
 const FALLBACK_OUT = path.resolve('freqbeacon-zero-global-mw-lw-fallback.js');
+const VERIFIED_SUPPLEMENT = path.resolve('data/terrestrial/verified-mw-supplement.json');
 const ISED_URL = 'https://www.ic.gc.ca/engineering/BC_DBF_FILES/baserad.zip';
 const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471';
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
@@ -176,6 +177,51 @@ export function normalizeLowFrequencyFallback(scheduleText,countryText){
   return out;
 }
 
+export function normalizeReviewedSupplement(payload, now = new Date()) {
+  if (!payload || !Array.isArray(payload.entries)) throw new Error('Reviewed MW supplement must contain entries[]');
+  const out=[];
+  for (const row of payload.entries) {
+    const frequencyKHz=num(row.frequencyKHz);
+    const country=clean(row.country), name=clean(row.name), location=clean(row.location);
+    const tier=Number(row.sourceTier);
+    const expiresAt=Date.parse(String(row.reviewExpiresAt||''));
+    if(!Number.isFinite(frequencyKHz)||frequencyKHz<148.5||frequencyKHz>1710) throw new Error('Reviewed MW supplement contains invalid frequency');
+    if(!country||!name||!location) throw new Error(`Reviewed MW supplement missing identity fields at ${frequencyKHz} kHz`);
+    if(tier!==2) throw new Error(`Reviewed MW supplement only accepts tier 2 entries; got ${row.sourceTier}`);
+    if(!clean(row.sourceAuthority)||!clean(row.sourceUrl)||!clean(row.sourceDate)||!Number.isFinite(expiresAt)) throw new Error(`Reviewed MW supplement missing provenance/freshness at ${frequencyKHz} kHz`);
+    if(expiresAt < now.getTime()) continue;
+    const lat=num(row.lat), lon=num(row.lon), powerW=num(row.powerW);
+    out.push({
+      ...stationBase(clean(row.sourceAuthority),2,country),
+      id:`reviewed:${Math.round(frequencyKHz*1000)}:${headerKey(name)}:${headerKey(location)}`,
+      sourceId:`${frequencyKHz}:${name}:${location}`,
+      band:clean(row.band)|| (frequencyKHz<300?'LW':'MW'),
+      frequencyKHz,name,location,country,
+      ...(validCoord(lat,lon)?{lat,lon}:{}),
+      ...(Number.isFinite(powerW)&&powerW>0?{powerW}:{}),
+      mode:clean(row.mode)||'AM',
+      language:clean(row.language),
+      categories:['broadcast',clean(row.band)|| (frequencyKHz<300?'LW':'MW')],
+      description:clean(row.description)||`Reviewed station identity for ${name}.`,
+      ...(clean(row.start)?{start:clean(row.start).padStart(4,'0')}:{}),
+      ...(clean(row.end)?{end:clean(row.end).padStart(4,'0')}:{}),
+      ...(clean(row.days)?{days:clean(row.days)}:{}),
+      source:clean(row.sourceAuthority),
+      sourceUrl:clean(row.sourceUrl),
+      sourceDate:clean(row.sourceDate),
+      reviewExpiresAt:new Date(expiresAt).toISOString(),
+      locationApproximate:Boolean(row.locationApproximate),
+      confidencePenalty:Number.isFinite(Number(row.confidencePenalty))?Number(row.confidencePenalty):0
+    });
+  }
+  return out;
+}
+
+async function readReviewedSupplement(now = new Date()) {
+  const payload=JSON.parse(await readFile(VERIFIED_SUPPLEMENT,'utf8'));
+  return normalizeReviewedSupplement(payload,now);
+}
+
 function validate(name,entries,min){
   if(entries.length<min) throw new Error(`Refusing suspicious ${name} catalog: ${entries.length} records (<${min})`);
   for(const e of entries){
@@ -202,14 +248,16 @@ async function main(){
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
   const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30);
+  const reviewed=await readReviewedSupplement();
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30); validate('reviewed MW supplement',reviewed,4);
   marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
+  marker(reviewed,792,'Dechovka','reviewed supplement'); marker(reviewed,864,'Quran','reviewed supplement');
+  const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe([...reviewed,...fallback]), builtAt=new Date().toISOString();
   const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
-  const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
+  const fallbackMeta={version:2,builtAt,recordCount:fallbackEntries.length,sources:{reviewedSupplement:{authority:'FREQBEACON reviewed MW identity supplement',tier:2,path:'data/terrestrial/verified-mw-supplement.json',records:reviewed.length},EiBi:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT,records:fallback.length}}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), reviewed ${reviewed.length}, fallback total ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
