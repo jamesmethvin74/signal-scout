@@ -288,7 +288,11 @@
       const decimals = Math.abs(offset) < 1 ? 2 : 1;
       details.push(`tuned ${offset > 0 ? '+' : ''}${offset.toFixed(decimals)} kHz from channel center`);
     }
-    if (Number.isFinite(result.distance)) details.push(`about ${Math.round(result.distance)} mi from receiver`);
+    if (Number.isFinite(result.distance) && !entry.locationApproximate) {
+      details.push(`about ${Math.round(result.distance)} mi from receiver`);
+    } else if (entry.locationApproximate) {
+      details.push('country-level origin · exact transmitter location not published in this catalog');
+    }
     if (entry.classA) details.push('Class A / clear-channel');
     const schedule = scheduleLabel(entry, result.schedule);
     if (schedule) details.push(schedule);
