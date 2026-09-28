@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeLowFrequencyFallback, normalizeReviewedSupplement } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeCTU, normalizeTraficom, normalizeLowFrequencyFallback, normalizeReviewedSupplement } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -32,6 +32,52 @@ const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
 const fb=normalizeLowFrequencyFallback(schedule,countries); assert.equal(fb.length,2); assert.ok(fb.every(e=>e.sourceTier==='reference/fallback')); assert.ok(!fb.some(e=>/NDB/.test(e.name)));
+
+const ctuCsv=[
+  'Typ;Vysílač;Program;ERP W;Kmitočet MHz;Zeměpisná délka;Zeměpisná šířka;ANT_ID',
+  'AM;HRADEC KRALOVE;Rádio Dechovka;5011;0,792;15,745;50,231667;320498',
+  'FM;TEST FM;Ignore Me;1000;101,7;15,1;50,1;123'
+].join('\n');
+const cz=normalizeCTU(ctuCsv);
+assert.equal(cz.length,1);
+assert.equal(cz[0].frequencyKHz,792);
+assert.equal(cz[0].name,'Rádio Dechovka');
+assert.equal(cz[0].powerW,5011);
+assert.equal(cz[0].country,'Czechia');
+assert.equal(cz[0].sourceTier,1);
+assert.ok(Math.abs(cz[0].lat-50.231667)<1e-6);
+assert.ok(Math.abs(cz[0].lon-15.745)<1e-6);
+
+const fi=normalizeTraficom({
+  value:[{
+    ID:96301,
+    Municipality:'Pori',
+    StationName:'Pori',
+    Frequency:963000,
+    TransmissionPower:600000,
+    Latitude:'613000',
+    Longitude:'0213500',
+    LicenseNumber:'TEST-963',
+    LicenseOwner:'Alfa Media Group Oy'
+  },{
+    ID:101701,
+    Municipality:'Helsinki',
+    StationName:'FM TEST',
+    Frequency:101700000,
+    TransmissionPower:1000,
+    Latitude:'601000',
+    Longitude:'0245600',
+    LicenseOwner:'Ignore Oy'
+  }]
+});
+assert.equal(fi.length,1);
+assert.equal(fi[0].frequencyKHz,963);
+assert.equal(fi[0].country,'Finland');
+assert.equal(fi[0].sourceTier,1);
+assert.equal(fi[0].powerW,600000);
+assert.ok(Math.abs(fi[0].lat-61.5)<1e-6);
+assert.ok(Math.abs(fi[0].lon-(21+35/60))<1e-6);
+assert.match(fi[0].description,/Alfa Media Group Oy/);
 
 const reviewed=normalizeReviewedSupplement({
   entries:[
