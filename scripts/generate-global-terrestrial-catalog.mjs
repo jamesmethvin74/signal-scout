@@ -238,20 +238,24 @@ export function normalizeTraficom(payload){
   for(const r of rows){
     const hz=Number(r?.Frequency), frequencyKHz=Number.isFinite(hz)?hz/1000:null;
     if(!Number.isFinite(frequencyKHz)||frequencyKHz<148.5||frequencyKHz>1710) continue;
-    const name=clean(r?.StationName), municipality=clean(r?.Municipality);
+    const stationName=clean(r?.StationName), municipality=clean(r?.Municipality), owner=clean(r?.LicenseOwner);
+    const name=stationName||owner;
     if(!name) continue;
     const powerW=Number(r?.TransmissionPower);
+    const lat=ddmmssToDecimal(r?.Latitude), lon=ddmmssToDecimal(r?.Longitude);
+    const precise=validCoord(lat,lon);
     out.push({
       ...stationBase('Traficom',1,'Finland'),
       id:`traficom:${clean(r?.ID)||headerKey(name)}:${Math.round(frequencyKHz*1000)}`,
       sourceId:clean(r?.ID)||`${name}:${frequencyKHz}`,
       band:frequencyKHz<300?'LW':'MW',frequencyKHz,name,
-      location:municipality||'Finland',country:'Finland',
+      location:[stationName!==name?stationName:'',municipality].filter(Boolean).join(', ')||municipality||'Finland',country:'Finland',
+      ...(precise?{lat,lon}:{}),
       ...(Number.isFinite(powerW)&&powerW>0?{powerW}:{}),
       mode:'AM',status:'Licensed',categories:['broadcast',frequencyKHz<300?'LW':'MW'],
-      description:`Traficom radio-station licence record${municipality?` for ${municipality}`:''}.`,
+      description:`Traficom radio-station licence record${owner?` held by ${owner}`:''}${municipality?` in ${municipality}`:''}.`,
       source:'Finnish Transport and Communications Agency Traficom open data',
-      sourceUrl:TRAFICOM_URL,locationApproximate:true
+      sourceUrl:TRAFICOM_URL,locationApproximate:!precise
     });
   }
   return out;
