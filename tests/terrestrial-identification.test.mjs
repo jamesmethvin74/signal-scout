@@ -57,10 +57,13 @@ result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:0
 assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:693,name:'BBC Radio 5 Live',country:'United Kingdom',sourceAuthority:'Ofcom',sourceTier:1,lat:52.7,lon:-1.5,powerW:150000,categories:['broadcast','MW']}
 ];
 c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:864,name:'Egypt 864 test service',country:'Egypt',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:26.8,lon:30.8,locationApproximate:true,start:'0000',end:'2400',days:'1234567',language:'Arabic',categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:864,name:'Inactive 864 test service',country:'Far Away',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:10,lon:100,locationApproximate:true,start:'0100',end:'0200',days:'1234567',language:'English',categories:['broadcast','MW']}
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
 engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
@@ -70,5 +73,17 @@ result=engine.identify(997,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T1
 assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG'); assert.equal(result.nominalFrequencyKHz,999);
 result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-16T05:00:00Z')});
 assert.notEqual(result.entry?.name,'REG');
+
+result=engine.identify(693,{receiver:{lat:58.6,lon:17.9},now:new Date('2026-09-27T23:49:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'BBC Radio 5 Live');
+assert.equal(result.entry.country,'United Kingdom');
+
+result=engine.identify(864,{receiver:{lat:35.1,lon:33.4},now:new Date('2026-09-27T23:47:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'Egypt 864 test service');
+assert.equal(result.entry.country,'Egypt');
+assert.equal(result.schedule?.active,true);
+assert.ok(!result.alternatives.some((entry)=>/Inactive/.test(entry.name)));
 
 console.log('terrestrial identification regressions: ok');
