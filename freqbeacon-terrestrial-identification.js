@@ -32,14 +32,34 @@
     const distance = base.milesBetween(receiver, active);
     const schedule = base.scheduleState(entry, now);
     const p = Number.isFinite(powerW) && powerW > 0 ? powerW : 1000;
-    let score = Math.log10(Math.max(1, p)) * 90 - (Number.isFinite(distance) ? distance : 5000);
+
+    // Tier-1 regulator rows have transmitter coordinates, so straight-line
+    // distance is meaningful. The global EiBi fallback often has only a
+    // country centroid; treating that centroid like a transmitter location
+    // was discarding valid exact-channel, currently scheduled broadcasts.
+    const distancePenalty = regulatorBonus
+      ? (Number.isFinite(distance) ? distance : 5000)
+      : (Number.isFinite(distance) ? Math.log10(Math.max(1, distance)) * 90 : 320);
+
+    let score = Math.log10(Math.max(1, p)) * 90 - distancePenalty;
     if (regulatorBonus) score += 500;
-    else score -= 80;
-    if (entry.locationApproximate) score -= 120;
+    else score -= 50;
+    if (entry.locationApproximate) score -= 55;
     if (entry.band === 'LW') score += 80;
-    if (schedule?.active === true) score += 140;
-    if (schedule?.active === false) score -= 260;
+    if (schedule?.active === true) score += 180;
+    if (schedule?.active === false) score -= 320;
     return { entry, active, distance, schedule, score };
+  };
+
+  const candidateIsUsable = (candidate) => {
+    if (sourceTier(candidate.entry) === 1) return candidate.score >= -50;
+
+    // Reference/fallback entries are allowed to identify an international
+    // MW/LW service only while their own schedule says they are active.
+    // This keeps broad catalog coverage without presenting stale/off-air
+    // entries as the station the listener is hearing.
+    if (candidate.schedule?.active !== true) return false;
+    return candidate.score >= -220;
   };
 
   function terrestrialExact(kHz, options = {}) {
@@ -57,7 +77,7 @@
         return scored ? { ...scored, nominalFrequencyKHz, frequencyOffsetKHz, frequencyErrorKHz, matchToleranceKHz } : null;
       })
       .filter(Boolean)
-      .filter((c) => c.score >= (sourceTier(c.entry) === 1 ? -50 : 80))
+      .filter(candidateIsUsable)
       .sort((a, b) =>
         a.frequencyErrorKHz - b.frequencyErrorKHz
         || b.score - a.score
