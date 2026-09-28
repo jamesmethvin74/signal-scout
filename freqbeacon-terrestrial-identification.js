@@ -96,7 +96,16 @@
       confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
       alternatives: candidates.slice(1)
         .filter((c) => Math.abs(c.nominalFrequencyKHz - best.nominalFrequencyKHz) < 0.001)
-        .map((c) => c.entry),
+        .map((c) => ({
+          entry:c.entry,
+          distance:c.distance,
+          schedule:c.schedule,
+          rank:c.score,
+          nominalFrequencyKHz:c.nominalFrequencyKHz,
+          frequencyOffsetKHz:c.frequencyOffsetKHz,
+          frequencyErrorKHz:c.frequencyErrorKHz,
+          matchToleranceKHz:c.matchToleranceKHz
+        })),
       technicalRank: best.score
     };
   }
