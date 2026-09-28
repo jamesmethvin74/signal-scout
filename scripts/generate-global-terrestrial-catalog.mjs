@@ -18,7 +18,6 @@ const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
 const CTU_URL = 'https://ctu.gov.cz/en/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/filtry?export=1&format=csv&order=Frequency%5BMHz%5D&show_all=0&sort=asc&use_pager=0';
-const TRAFICOM_URL = 'https://opendata.traficom.fi/api/v13/Radioasematiedot?$filter=Frequency%20ge%20148500%20and%20Frequency%20le%2017100000&$top=5000';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -233,33 +232,6 @@ export function normalizeCTU(csvText){
   }
   return out;
 }
-export function normalizeTraficom(payload){
-  const rows=Array.isArray(payload?.value)?payload.value:Array.isArray(payload)?payload:[], out=[];
-  for(const r of rows){
-    const hz=Number(r?.Frequency), frequencyKHz=Number.isFinite(hz)?hz/1000:null;
-    if(!Number.isFinite(frequencyKHz)||frequencyKHz<148.5||frequencyKHz>1710) continue;
-    const stationName=clean(r?.StationName), municipality=clean(r?.Municipality), owner=clean(r?.LicenseOwner);
-    const name=stationName||owner;
-    if(!name) continue;
-    const powerW=Number(r?.TransmissionPower);
-    const lat=ddmmssToDecimal(r?.Latitude), lon=ddmmssToDecimal(r?.Longitude);
-    const precise=validCoord(lat,lon);
-    out.push({
-      ...stationBase('Traficom',1,'Finland'),
-      id:`traficom:${clean(r?.ID)||headerKey(name)}:${Math.round(frequencyKHz*1000)}`,
-      sourceId:clean(r?.ID)||`${name}:${frequencyKHz}`,
-      band:frequencyKHz<300?'LW':'MW',frequencyKHz,name,
-      location:[stationName!==name?stationName:'',municipality].filter(Boolean).join(', ')||municipality||'Finland',country:'Finland',
-      ...(precise?{lat,lon}:{}),
-      ...(Number.isFinite(powerW)&&powerW>0?{powerW}:{}),
-      mode:'AM',status:'Licensed',categories:['broadcast',frequencyKHz<300?'LW':'MW'],
-      description:`Traficom radio-station licence record${owner?` held by ${owner}`:''}${municipality?` in ${municipality}`:''}.`,
-      source:'Finnish Transport and Communications Agency Traficom open data',
-      sourceUrl:TRAFICOM_URL,locationApproximate:!precise
-    });
-  }
-  return out;
-}
 
 function countryCentroids(text){ const rows=parseCsv(text); const objs=rowsToObjects(rows), m=new Map(); for(const r of objs){const name=clean(r.name),lat=num(r.latitude),lon=num(r.longitude); if(name&&validCoord(lat,lon))m.set(headerKey(name),{lat,lon});} return m; }
 function countryKey(name){const k=headerKey(name); const a={uk:'unitedkingdom',greatbritain:'unitedkingdom',usa:'unitedstates',unitedstatesofamerica:'unitedstates',russianfederation:'russia'}; return a[k]||k;}
@@ -341,24 +313,22 @@ async function main(){
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
   const ctuText=await fetchText(CTU_URL,'CTU open radio-transmitter CSV');
-  const traficomText=await fetchText(TRAFICOM_URL,'Traficom open radio-station API');
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-  let traficomPayload; try{traficomPayload=JSON.parse(traficomText);}catch(error){throw new Error(`Traficom API returned invalid JSON: ${error?.message||error}`);}
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), cz=normalizeCTU(ctuText), fi=normalizeTraficom(traficomPayload), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
+  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), cz=normalizeCTU(ctuText), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
   const reviewed=await readReviewedSupplement();
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Czechia/CTU',cz,3); validate('Finland/Traficom',fi,1); validate('global EiBi fallback',fallback,30); validate('reviewed MW supplement',reviewed,2);
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Czechia/CTU',cz,3); validate('global EiBi fallback',fallback,30); validate('reviewed MW supplement',reviewed,2);
   marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(cz,792,'Dechovka','CTU');
   marker(reviewed,558,'Radio Iran','reviewed supplement'); marker(reviewed,864,'Quran','reviewed supplement');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au,...cz,...fi]), fallbackEntries=stableDedupe([...reviewed,...fallback]), builtAt=new Date().toISOString();
-  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},CTU:{authority:'Czech Telecommunication Office',tier:1,url:CTU_URL,records:cz.length,format:'open CSV',attribution:'CTU open data'},Traficom:{authority:'Finnish Transport and Communications Agency Traficom',tier:1,url:TRAFICOM_URL,records:fi.length,format:'OData JSON',attribution:'CC BY 4.0'}}};
+  const regulatorEntries=stableDedupe([...ca,...uk,...au,...cz]), fallbackEntries=stableDedupe([...reviewed,...fallback]), builtAt=new Date().toISOString();
+  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},CTU:{authority:'Czech Telecommunication Office',tier:1,url:CTU_URL,records:cz.length,format:'open CSV',attribution:'CTU open data'}}};
   const fallbackMeta={version:2,builtAt,recordCount:fallbackEntries.length,sources:{reviewedSupplement:{authority:'FREQBEACON reviewed MW identity supplement',tier:2,path:'data/terrestrial/verified-mw-supplement.json',records:reviewed.length},EiBi:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT,records:fallback.length}}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, CZ ${cz.length}, FI ${fi.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), reviewed ${reviewed.length}, fallback total ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, CZ ${cz.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), reviewed ${reviewed.length}, fallback total ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
