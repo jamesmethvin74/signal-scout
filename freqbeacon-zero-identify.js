@@ -96,7 +96,11 @@
 
   function exactEyebrow(result) {
     const entry = result.entry;
-    if (entry.type === 'station' && entry.band === 'MW') return 'LIKELY STATION';
+    if (entry.type === 'station' && entry.band === 'MW') {
+      if (result.confidence === 'likely') return 'LIKELY STATION';
+      if (result.confidence === 'cataloged') return 'CATALOGED STATION';
+      return 'POSSIBLE STATION';
+    }
     if (entry.type === 'station' && (entry.band === 'SW' || entry.band === 'LW')) {
       if (result.confidence === 'likely') return 'LIKELY BROADCAST';
       if (result.confidence === 'cataloged') return 'CATALOGED BROADCAST';
