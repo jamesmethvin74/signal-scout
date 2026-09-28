@@ -57,10 +57,17 @@ result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:0
 assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:693,name:'BBC Radio 5 Live',country:'United Kingdom',sourceAuthority:'Ofcom',sourceTier:1,lat:52.7,lon:-1.5,powerW:150000,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:810,name:'BBC Radio Scotland',country:'United Kingdom',sourceAuthority:'Ofcom',sourceTier:1,lat:55.975,lon:-3.818,powerW:100000,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:792,name:'Rádio Dechovka',country:'Czechia',sourceAuthority:'Czech Telecommunication Office',sourceTier:1,lat:50.231667,lon:15.745,powerW:5011,locationApproximate:false,categories:['broadcast','MW']}
 ];
 c.FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG=[
-  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']}
+  {type:'station',band:'MW',frequencyKHz:999,name:'FALLBACK',country:'Canada',sourceAuthority:'EiBi',sourceTier:'reference/fallback',lat:45,lon:-75,powerW:50000,locationApproximate:true,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:558,name:'IRIB Radio Iran',country:'Iran',sourceAuthority:'Recent independent reception confirmation',sourceTier:2,locationApproximate:true,language:'Persian',categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:864,name:'NMA Al-Quran al-Karim',country:'Egypt',sourceAuthority:'Recent independent reception confirmation',sourceTier:2,locationApproximate:true,language:'Arabic',categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:900,name:'Generic active alternate A',country:'Country A',sourceAuthority:'Test reviewed reference',sourceTier:2,lat:35,lon:30,powerW:50000,locationApproximate:false,categories:['broadcast','MW']},
+  {type:'station',band:'MW',frequencyKHz:900,name:'Generic active alternate B',country:'Country B',sourceAuthority:'Test reviewed reference',sourceTier:2,lat:37,lon:31,powerW:40000,locationApproximate:false,categories:['broadcast','MW']}
 ];
 await run(c,'freqbeacon-terrestrial-identification.js');
 engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
@@ -70,5 +77,46 @@ result=engine.identify(997,{receiver:{lat:45,lon:-75},now:new Date('2026-09-15T1
 assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'REG'); assert.equal(result.nominalFrequencyKHz,999);
 result=engine.identify(999,{receiver:{lat:45,lon:-75},now:new Date('2026-09-16T05:00:00Z')});
 assert.notEqual(result.entry?.name,'REG');
+
+result=engine.identify(693,{receiver:{lat:58.6,lon:17.9},now:new Date('2026-09-27T23:49:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'BBC Radio 5 Live');
+assert.equal(result.entry.country,'United Kingdom');
+
+result=engine.identify(864,{receiver:{lat:35.1,lon:33.4},now:new Date('2026-09-27T23:47:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'NMA Al-Quran al-Karim');
+assert.equal(result.entry.country,'Egypt');
+assert.equal(result.confidence,'cataloged');
+
+result=engine.identify(900,{receiver:{lat:35.1,lon:33.4},now:new Date('2026-09-27T23:47:00Z')});
+assert.equal(result.kind,'exact');
+assert.ok(result.alternatives.some((candidate)=>candidate.entry?.name === 'Generic active alternate B'));
+
+const finland={lat:62.89,lon:27.68};
+result=engine.identify(792,{receiver:finland,now:new Date('2026-09-28T02:11:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'Rádio Dechovka');
+assert.equal(result.entry.country,'Czechia');
+assert.equal(result.confidence,'likely');
+
+result=engine.identify(810,{receiver:finland,now:new Date('2026-09-28T02:11:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'BBC Radio Scotland');
+assert.equal(result.entry.country,'United Kingdom');
+assert.equal(result.confidence,'likely');
+
+const cyprus={lat:35.1,lon:33.4};
+result=engine.identify(558,{receiver:cyprus,now:new Date('2026-09-28T02:13:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.entry.name,'IRIB Radio Iran');
+assert.equal(result.entry.country,'Iran');
+assert.equal(result.confidence,'cataloged');
+
+result=engine.identify(865,{receiver:cyprus,now:new Date('2026-09-28T02:14:00Z')});
+assert.equal(result.kind,'exact');
+assert.equal(result.nominalFrequencyKHz,864);
+assert.equal(result.entry.name,'NMA Al-Quran al-Karim');
+assert.equal(result.entry.country,'Egypt');
 
 console.log('terrestrial identification regressions: ok');

@@ -1,5 +1,4 @@
 (() => {
-  const EXACT_GUIDES = /^(?:WRMI|WBCQ|RNZ Pacific|Radio New Zealand International|RNZI|Radio Exterior de España|Radio Exterior de Espana|Radio Romania International)$/i;
   const cache = new Map();
   const pending = new WeakSet();
   const queued = new WeakSet();
@@ -19,7 +18,26 @@
     ['WWCR', 'WWCR'],
     ['SOLOMON ISLANDS BROADCASTING', 'Solomon Islands Broadcasting / SIBC'],
     ['WRMI', 'WRMI'],
-    ['WBCQ', 'WBCQ']
+    ['WBCQ', 'WBCQ'],
+    ['ABC RADIO NATIONAL', 'ABC Radio National'],
+    ['KBS WORLD RADIO', 'KBS WORLD Radio'],
+    ['KBS WORLD', 'KBS WORLD Radio'],
+    ['CHANNEL AFRICA', 'Channel Africa'],
+    ['RADIO NACIONAL DA AMAZÔNIA', 'Rádio Nacional da Amazônia'],
+    ['RADIO NACIONAL DA AMAZONIA', 'Rádio Nacional da Amazônia'],
+    ['VATICAN RADIO', 'Vatican Radio'],
+    ['VOICE OF AMERICA', 'Voice of America'],
+    ['VOA', 'Voice of America'],
+    ['RADIO TAIWAN INTERNATIONAL', 'Radio Taiwan International'],
+    ['RTI', 'Radio Taiwan International'],
+    ['ALL INDIA RADIO', 'Akashvani / All India Radio'],
+    ['AKASHVANI', 'Akashvani / All India Radio'],
+    ['CJOB', '680 CJOB'],
+    ['680 CJOB', '680 CJOB'],
+    ['CHED', '880 CHED'],
+    ['880 CHED', '880 CHED'],
+    ['CHQR', 'QR Calgary 770'],
+    ['QR CALGARY', 'QR Calgary 770']
   ]);
 
   function esc(value) {
@@ -150,6 +168,15 @@
         ${sourceLink(data)}`;
       return;
     }
+    if (data.status === 'stale' || data.status === 'expired' || data.status === 'unavailable' || data.status === 'unverified') {
+      slot.classList.add('is-warning');
+      slot.innerHTML = `
+        <div class="program-guide-kicker">PROGRAM GUIDE · CURRENT DATA UNAVAILABLE</div>
+        <div class="program-guide-title">Station identified — current program schedule unavailable</div>
+        <div class="program-guide-note">${esc(data.message || 'No trustworthy current program listing is available for this station and time.')}</div>
+        ${sourceLink(data)}`;
+      return;
+    }
     if (data.status === 'service') {
       slot.classList.add('is-service');
       slot.innerHTML = `
@@ -181,7 +208,7 @@
     if (container.classList.contains('lookup-result')) return true;
     const frequency = container.querySelector('.frequency');
     const unit = frequency?.querySelector('span')?.textContent?.trim().toLowerCase() || '';
-    return unit.includes('mhz');
+    return unit.includes('mhz') || unit.includes('khz');
   }
 
   function renameSchedule(container) {
@@ -221,12 +248,6 @@
     const details = container.querySelector('.details, .lookup-tags');
     if (details) details.insertAdjacentElement('afterend', slot); else container.appendChild(slot);
 
-    if (!EXACT_GUIDES.test(station)) {
-      const service = serviceIdentity(container, station);
-      render(slot, { status:'service', program:service.title, message:service.note });
-      return;
-    }
-
     const at = targetDate(container);
     const language = languageFrom(container);
     const bucket = Math.floor(at.getTime() / 60000);
@@ -248,7 +269,7 @@
       if (isOfficialWbcqGap(station, result)) {
         setListenAuthority(container, 'unscheduled');
         render(slot, { ...result, status:'unscheduled' });
-      } else if (result.status === 'unverified' || result.status === 'unavailable' || result.status === 'unsupported') {
+      } else if (result.status === 'unsupported') {
         setListenAuthority(container, 'unknown');
         const service = serviceIdentity(container, station);
         render(slot, {
@@ -257,6 +278,7 @@
           message:result.message || service.note
         });
       } else {
+        setListenAuthority(container, 'unknown');
         if (/^WBCQ$/i.test(station) && (result.status === 'verified' || result.status === 'broadcast')) {
           setListenAuthority(container, 'scheduled');
         }

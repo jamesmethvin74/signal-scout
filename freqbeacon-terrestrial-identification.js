@@ -12,7 +12,10 @@
     return (now.getUTCHours() + now.getUTCMinutes() / 60 + Number(receiver.lon) / 15 + 24) % 24;
   };
   const isNight = (receiver, now) => { const h = localHour(receiver, now); return h < 6 || h >= 18; };
-  const sourceTier = (entry) => Number(entry?.sourceTier) === 1 ? 1 : 3;
+  const sourceTier = (entry) => {
+    const tier = Number(entry?.sourceTier);
+    return tier === 1 || tier === 2 ? tier : 3;
+  };
   const activeTechnical = (entry, receiver, now) => {
     const night = isNight(receiver, now);
     const lat = Number(night ? entry.nightLat : entry.dayLat);
@@ -32,14 +35,44 @@
     const distance = base.milesBetween(receiver, active);
     const schedule = base.scheduleState(entry, now);
     const p = Number.isFinite(powerW) && powerW > 0 ? powerW : 1000;
-    let score = Math.log10(Math.max(1, p)) * 90 - (Number.isFinite(distance) ? distance : 5000);
-    if (regulatorBonus) score += 500;
-    else score -= 80;
-    if (entry.locationApproximate) score -= 120;
+    const tier = sourceTier(entry);
+
+    // MW skywave routinely travels well beyond local ground-wave range after
+    // dark. Raw miles were overwhelming every other signal and filtering out
+    // legitimate 800-1500 mile European catches. Keep precise coordinates
+    // valuable for ordering, but compress distance logarithmically.
+    const distancePenalty = Number.isFinite(distance)
+      ? Math.log10(Math.max(1, distance)) * (tier === 1 ? 150 : tier === 2 ? 120 : 90)
+      : (tier === 1 ? 480 : tier === 2 ? 360 : 320);
+
+    let score = Math.log10(Math.max(1, p)) * 90 - distancePenalty;
+    if (tier === 1) score += 500;
+    else if (tier === 2) score += 250;
+    else score -= 50;
+    if (entry.locationApproximate) score -= tier === 2 ? 40 : 55;
+    const confidencePenalty = Number(entry.confidencePenalty || 0);
+    if (Number.isFinite(confidencePenalty) && confidencePenalty > 0) score -= Math.min(500, confidencePenalty);
     if (entry.band === 'LW') score += 80;
-    if (schedule?.active === true) score += 140;
-    if (schedule?.active === false) score -= 260;
+    if (schedule?.active === true) score += 180;
+    if (schedule?.active === false) score -= 320;
     return { entry, active, distance, schedule, score };
+  };
+
+  const candidateIsUsable = (candidate) => {
+    const tier = sourceTier(candidate.entry);
+    if (tier === 1) return candidate.score >= -120;
+
+    // Tier 2 is a reviewed station-identity supplement. It may not publish a
+    // schedule, so it can identify the station/origin but never outranks a
+    // regulator row solely because of source authority.
+    if (tier === 2) {
+      if (candidate.schedule?.active === false) return false;
+      return candidate.score >= -180;
+    }
+
+    // Tier 3 reference/fallback rows must be currently scheduled.
+    if (candidate.schedule?.active !== true) return false;
+    return candidate.score >= -220;
   };
 
   function terrestrialExact(kHz, options = {}) {
@@ -57,7 +90,7 @@
         return scored ? { ...scored, nominalFrequencyKHz, frequencyOffsetKHz, frequencyErrorKHz, matchToleranceKHz } : null;
       })
       .filter(Boolean)
-      .filter((c) => c.score >= (sourceTier(c.entry) === 1 ? -50 : 80))
+      .filter(candidateIsUsable)
       .sort((a, b) =>
         a.frequencyErrorKHz - b.frequencyErrorKHz
         || b.score - a.score
@@ -73,10 +106,23 @@
       frequencyOffsetKHz: best.frequencyOffsetKHz,
       frequencyErrorKHz: best.frequencyErrorKHz,
       matchToleranceKHz: best.matchToleranceKHz,
-      confidence: sourceTier(best.entry) === 1 ? 'likely' : (best.schedule?.active === false ? 'cataloged' : 'known'),
+      confidence: sourceTier(best.entry) === 1
+        ? 'likely'
+        : sourceTier(best.entry) === 2
+          ? 'cataloged'
+          : (best.schedule?.active === false ? 'cataloged' : 'known'),
       alternatives: candidates.slice(1)
         .filter((c) => Math.abs(c.nominalFrequencyKHz - best.nominalFrequencyKHz) < 0.001)
-        .map((c) => c.entry),
+        .map((c) => ({
+          entry:c.entry,
+          distance:c.distance,
+          schedule:c.schedule,
+          rank:c.score,
+          nominalFrequencyKHz:c.nominalFrequencyKHz,
+          frequencyOffsetKHz:c.frequencyOffsetKHz,
+          frequencyErrorKHz:c.frequencyErrorKHz,
+          matchToleranceKHz:c.matchToleranceKHz
+        })),
       technicalRank: best.score
     };
   }

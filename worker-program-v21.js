@@ -1,4 +1,5 @@
 import baseWorker from './worker-program-v20.js';
+import { handleProgramCatalogRequest, runProgramCatalogScheduled } from './program-catalog-worker.js';
 
 const RECOMMENDATION_PATH = '/api/explore/recommendation';
 
@@ -23,10 +24,18 @@ function recommendationRequest(request) {
 
 export default {
   async fetch(request, env, ctx) {
+    const programResponse = await handleProgramCatalogRequest(request, env, ctx);
+    if (programResponse) return programResponse;
     return baseWorker.fetch(recommendationRequest(request), env, ctx);
   },
 
   async scheduled(event, env, ctx) {
+    const programWork = runProgramCatalogScheduled(event, env).catch((error) => {
+      console.warn('FREQBEACON program catalog refresh failed', error?.message || error);
+    });
+    if (ctx?.waitUntil) ctx.waitUntil(programWork);
+    else await programWork;
+
     if (typeof baseWorker.scheduled === 'function') return baseWorker.scheduled(event, env, ctx);
     return undefined;
   }

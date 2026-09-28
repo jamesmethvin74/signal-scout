@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "reviewedAt": "2026-09-27",
+  "description": "Narrow, freshness-bounded MW identity supplement for current stations not yet covered by FREQBEACON open regulator feeds. Facts are independently reviewed; restrictive third-party databases are not redistributed.",
+  "entries": [
+    {
+      "frequencyKHz": 558,
+      "band": "MW",
+      "name": "IRIB Radio Iran",
+      "location": "Iran (country-level origin)",
+      "country": "Iran",
+      "mode": "AM",
+      "language": "Persian",
+      "sourceAuthority": "Recent independent reception confirmation",
+      "sourceTier": 2,
+      "sourceUrl": "https://mediumwave.info/2026/03/02/iran-15/",
+      "sourceDate": "2026-03-02",
+      "reviewExpiresAt": "2026-12-31",
+      "locationApproximate": true,
+      "description": "Recent 2026 reception report confirms Radio Iran active on 558 kHz. Exact transmitter is intentionally not inferred from this source."
+    },
+    {
+      "frequencyKHz": 864,
+      "band": "MW",
+      "name": "NMA Al-Quran al-Karim",
+      "location": "Egypt (country-level origin)",
+      "country": "Egypt",
+      "mode": "AM",
+      "language": "Arabic",
+      "sourceAuthority": "Recent independent reception confirmation",
+      "sourceTier": 2,
+      "sourceUrl": "https://mt-shortwave.blogspot.com/2026/08/qsl-report-20-september-2026.html",
+      "sourceDate": "2026-09-20",
+      "reviewExpiresAt": "2027-03-31",
+      "locationApproximate": true,
+      "description": "Recent 2026 reception/QSL confirmation identifies NMA Al-Quran al-Karim on 864 kHz. Exact transmitter is intentionally not inferred from this source."
+    }
+  ]
+}

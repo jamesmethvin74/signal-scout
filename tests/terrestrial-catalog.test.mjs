@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ddmmssToDecimal, osGridToWgs84, parseXlsxSheets } from '../scripts/lib/terrestrial-catalog-lib.mjs';
-import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeLowFrequencyFallback } from '../scripts/generate-global-terrestrial-catalog.mjs';
+import { normalizeISED, normalizeOfcom, normalizeACMARows, normalizeCTU, normalizeLowFrequencyFallback, normalizeReviewedSupplement } from '../scripts/generate-global-terrestrial-catalog.mjs';
 
 function makeDbf(fields, rows){
   const headerLen=32+fields.length*32+1, recordLen=1+fields.reduce((a,f)=>a+f.len,0), b=Buffer.alloc(headerLen+recordLen*rows.length+1,0x20);
@@ -32,4 +32,32 @@ const auCurrent=normalizeACMARows(parsedSheets[0].rows); assert.equal(auCurrent.
 const schedule='Frequency,M,Station,On,Off,Language,Site,TX Country,Days,Target,Power,Azimuth,Origin,Source\n252000,AM,Radio Test,0000,2400,E,Tipaza,Algeria,1234567,,750,,Algeria,EiBi\n350000,AM,NDB TEST,0000,2400,-,Airport,Canada,1234567,,,,Canada,EiBi\n1000000,AM,MW One,0100,0200,E,Site,United Kingdom,1234567,,10,,United Kingdom,EiBi\n';
 const countries='name,latitude,longitude\nAlgeria,28,2\nUnited Kingdom,54,-2\nCanada,56,-106\n';
 const fb=normalizeLowFrequencyFallback(schedule,countries); assert.equal(fb.length,2); assert.ok(fb.every(e=>e.sourceTier==='reference/fallback')); assert.ok(!fb.some(e=>/NDB/.test(e.name)));
+
+const ctuCsv=[
+  'Typ;Vysílač;Název programu;Erp[W];Kmitočet[MHz];Východní délka;Severní šířka;ANT_ID',
+  'AM;HRADEC KRALOVE;Rádio Dechovka;5011;0,792;15° 44\' 42";50° 13\' 54";3251561',
+  'FM;TEST FM;Ignore Me;1000;101,7;15,1;50,1;123'
+].join('\n');
+const cz=normalizeCTU(ctuCsv);
+assert.equal(cz.length,1);
+assert.equal(cz[0].frequencyKHz,792);
+assert.equal(cz[0].name,'Rádio Dechovka');
+assert.equal(cz[0].powerW,5011);
+assert.equal(cz[0].country,'Czechia');
+assert.equal(cz[0].sourceTier,1);
+assert.ok(Math.abs(cz[0].lat-(50+13/60+54/3600))<1e-6);
+assert.ok(Math.abs(cz[0].lon-(15+44/60+42/3600))<1e-6);
+
+const reviewed=normalizeReviewedSupplement({
+  entries:[
+    {frequencyKHz:792,band:'MW',name:'Radio Test 792',location:'Test Site',country:'Czechia',powerW:5000,mode:'AM',sourceAuthority:'reviewed regulator',sourceTier:2,sourceUrl:'https://example.test/792',sourceDate:'2026-09-25',reviewExpiresAt:'2027-01-31',locationApproximate:false},
+    {frequencyKHz:864,band:'MW',name:'Expired Test',location:'Old Site',country:'Egypt',powerW:500000,mode:'AM',sourceAuthority:'reviewed reference',sourceTier:2,sourceUrl:'https://example.test/864',sourceDate:'2025-01-01',reviewExpiresAt:'2026-01-31',locationApproximate:true}
+  ]
+},new Date('2026-09-28T00:00:00Z'));
+assert.equal(reviewed.length,1);
+assert.equal(reviewed[0].frequencyKHz,792);
+assert.equal(reviewed[0].sourceTier,2);
+assert.equal(reviewed[0].country,'Czechia');
+assert.match(reviewed[0].reviewExpiresAt,/2027-01-31/);
+
 console.log('terrestrial catalog parser tests: ok');

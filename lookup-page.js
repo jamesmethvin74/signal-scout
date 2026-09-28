@@ -138,7 +138,14 @@
     const entry = candidate.entry;
     const statusState = statusLabel(candidate, index === 0);
     const place = entry.transmitter || entry.location || entry.country || '';
-    const meta = [engine.formatFrequency(frequencyKHz), entry.language || '', categoryLabel(entry)].filter(Boolean);
+    const country = String(entry.country || '').trim();
+    const placeAlreadyHasCountry = country && String(place).toLowerCase().includes(country.toLowerCase());
+    const meta = [
+      engine.formatFrequency(frequencyKHz),
+      placeAlreadyHasCountry ? '' : country,
+      entry.language || '',
+      categoryLabel(entry)
+    ].filter(Boolean);
     const description = entry.description || entry.format || 'Known FREQBEACON catalog entry.';
     const guideClass = entry.type === 'station' && String(entry.band || '').toUpperCase() === 'SW' ? ' lookup-result' : '';
     return `<article class="lookup-result-card${guideClass} ${index === 0 ? 'is-best' : ''}">
@@ -150,7 +157,7 @@
         </div>
         <div class="lookup-result-frequency" hidden>${esc(Number(frequencyKHz).toFixed(3))} kHz</div>
         <div class="lookup-card-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>
-        ${place ? `<div class="lookup-card-location">${esc(place)}</div>` : ''}
+        ${place ? `<div class="lookup-card-location">${entry.locationApproximate ? 'Country-level origin: ' : 'Transmitter / origin: '}${esc(place)}</div>` : ''}
         <div class="lookup-card-divider"></div>
         <div class="lookup-card-program-label">${candidate.schedule?.active === true ? 'Now Playing' : 'Identification'}</div>
         <p class="lookup-card-description">${esc(description)}</p>

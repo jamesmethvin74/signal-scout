@@ -1,2 +1,5 @@
 # Generated during install/build from pinned A26 schedule sources.
 /data/identification/a26/*.json
+
+# Generated from the current FREQBEACON station-identification catalogs.
+/data/program-guide/coverage-identities.json

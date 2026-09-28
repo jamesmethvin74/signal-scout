@@ -11,11 +11,15 @@ import {
 
 const OUT = path.resolve('freqbeacon-zero-global-mw-lw.js');
 const FALLBACK_OUT = path.resolve('freqbeacon-zero-global-mw-lw-fallback.js');
+const VERIFIED_SUPPLEMENT = path.resolve('data/terrestrial/verified-mw-supplement.json');
 const ISED_URL = 'https://www.ic.gc.ca/engineering/BC_DBF_FILES/baserad.zip';
 const OFCOM_URL = 'https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsmf.csv?v=423471';
 const OFCOM_SNAPSHOT = path.resolve('data/ofcom/txparamsmf-2026-08-05.csv.gz');
 const OFCOM_SNAPSHOT_SHA256 = '0348c032d137fbc11be6392c93f4e65fa891ecc07d82d847aa1d7605a88bd7e9';
 const ACMA_URL = 'https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip';
+const CTU_URL = 'https://ctu.gov.cz/vyhledavaci-databaze/prehled-rozhlasovych-vysilacu/opravneni';
+const CTU_SNAPSHOT = path.resolve('data/ctu/mw-2026-09-25.csv');
+const CTU_SNAPSHOT_SHA256 = 'd52988e2abcf2e7ce4de2b226b24410aaf7b42d64117c35605c11abd337c60be';
 const A26_COMMIT = '55076d0767a2ba4a6d46a71d98c66db624749797';
 const A26_URL = `https://raw.githubusercontent.com/Roger-Need/StationFinder/${A26_COMMIT}/Frequency%20Lists/Merged/A26%20merged_schedule.csv`;
 const COUNTRY_COMMIT = 'db79dad685276dbf98ca44b875d1481bc240c5c1';
@@ -55,6 +59,13 @@ async function readOfcomSnapshot(){
   catch(error){ throw new Error(`Pinned Ofcom MF snapshot is not valid gzip: ${error?.message||error}`); }
   const sha256=createHash('sha256').update(raw).digest('hex');
   if(sha256!==OFCOM_SNAPSHOT_SHA256) throw new Error(`Pinned Ofcom MF snapshot SHA-256 mismatch: expected ${OFCOM_SNAPSHOT_SHA256}, got ${sha256}`);
+  return raw.toString('utf8').replace(/^\uFEFF/,'');
+}
+
+async function readCtuSnapshot(){
+  const raw=await readFile(CTU_SNAPSHOT);
+  const sha256=createHash('sha256').update(raw).digest('hex');
+  if(sha256!==CTU_SNAPSHOT_SHA256) throw new Error(`Pinned CTU MW snapshot SHA-256 mismatch: expected ${CTU_SNAPSHOT_SHA256}, got ${sha256}`);
   return raw.toString('utf8').replace(/^\uFEFF/,'');
 }
 function validCoord(lat,lon){ return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180; }
@@ -162,6 +173,86 @@ export function normalizeACMA(outerZip){
   return normalizeACMARows(sheet.rows);
 }
 
+
+function decimalNumber(value){
+  const raw=clean(value).replace(/\s+/g,'');
+  if(/^[-+]?\d+,\d+$/.test(raw)) return Number(raw.replace(',','.'));
+  return num(raw);
+}
+function parseDelimited(text){
+  const sample=String(text||'').split(/\r?\n/,1)[0]||'';
+  let comma=0, semi=0, q=false;
+  for(const ch of sample){ if(ch==='"') q=!q; else if(!q&&ch===',') comma+=1; else if(!q&&ch===';') semi+=1; }
+  const delimiter=semi>comma?';':',';
+  if(delimiter===',') return parseCsv(text);
+  const rows=[]; let row=[], cell='', quoted=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(c==='"'){
+      if(quoted){
+        if(text[i+1]==='"'){cell+='"';i++;}
+        else quoted=false;
+      }else if(cell.length===0){
+        quoted=true;
+      }else{
+        // A literal quote inside an unquoted field is data, e.g. CTU DMS
+        // coordinates such as 15° 44' 42".
+        cell+=c;
+      }
+    }
+    else if(c===delimiter&&!quoted){row.push(cell);cell='';}
+    else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(x=>x!==''))rows.push(row);row=[];cell='';}
+    else cell+=c;
+  }
+  if(cell||row.length){row.push(cell);rows.push(row);}
+  return rows;
+}
+function dmsParts(deg,min,sec){
+  const d=decimalNumber(deg), m=decimalNumber(min), s=decimalNumber(sec);
+  if(![d,m,s].every(Number.isFinite)||m<0||m>=60||s<0||s>=60) return null;
+  return Math.sign(d||1)*(Math.abs(d)+m/60+s/3600);
+}
+export function normalizeCTU(csvText){
+  const rows=parseDelimited(csvText), objects=rowsToObjects(rows), out=[];
+  for(const r of objects){
+    const type=clean(pick(r,['Typ','Type'])).toUpperCase();
+    const mhz=decimalNumber(pick(r,['Kmitočet MHz','Kmitocet MHz','Frequency MHz','Frequency[MHz]','Frequency']));
+    const frequencyKHz=Number.isFinite(mhz)?mhz*1000:null;
+    if(type!=='AM'||!Number.isFinite(frequencyKHz)||frequencyKHz<500||frequencyKHz>1800) continue;
+    const name=clean(pick(r,['Program','Program name','Název programu'])), site=clean(pick(r,['Vysílač','Vysilac','Transmitter']));
+    if(!name||!site) continue;
+    let lon=coordinateValue(pick(r,['Východní délka','Vychodni delka','Eastern length','Zeměpisná délka','Zemepisna delka','Longitude']),true);
+    let lat=coordinateValue(pick(r,['Severní šířka','Severni sirka','North latitude','Zeměpisná šířka','Zemepisna sirka','Latitude']),false);
+    if(!validCoord(lat,lon)){
+      lon=dmsParts(
+        pick(r,['Zem. délka stupně','Zem delka stupne']),
+        pick(r,['Zem. délka minuty','Zem delka minuty']),
+        pick(r,['Zem. délka sekundy','Zem delka sekundy'])
+      );
+      lat=dmsParts(
+        pick(r,['Zem. šířka stupně','Zem sirka stupne']),
+        pick(r,['Zem. šířka minuty','Zem sirka minuty']),
+        pick(r,['Zem. šířka sekundy','Zem sirka sekundy'])
+      );
+    }
+    const powerW=decimalNumber(pick(r,['ERP W','Erp[W]','ERP']));
+    const antennaId=clean(pick(r,['ANT_ID','Antenna ID']));
+    out.push({
+      ...stationBase('Czech Telecommunication Office',1,'Czechia'),
+      id:`ctu:${antennaId||headerKey(site)}:${Math.round(frequencyKHz)}`,
+      sourceId:antennaId||`${site}:${frequencyKHz}`,
+      band:'MW',frequencyKHz,name,location:site,country:'Czechia',
+      ...(validCoord(lat,lon)?{lat,lon}:{}),
+      ...(Number.isFinite(powerW)&&powerW>0?{powerW}:{}),
+      mode:'AM',status:'Licensed',categories:['broadcast','MW'],
+      description:`CTU valid radio-transmitter authorization for ${name} from ${site}.`,
+      source:'Czech Telecommunication Office open radio-transmitter data',
+      sourceUrl:CTU_URL,locationApproximate:!validCoord(lat,lon)
+    });
+  }
+  return out;
+}
+
 function countryCentroids(text){ const rows=parseCsv(text); const objs=rowsToObjects(rows), m=new Map(); for(const r of objs){const name=clean(r.name),lat=num(r.latitude),lon=num(r.longitude); if(name&&validCoord(lat,lon))m.set(headerKey(name),{lat,lon});} return m; }
 function countryKey(name){const k=headerKey(name); const a={uk:'unitedkingdom',greatbritain:'unitedkingdom',usa:'unitedstates',unitedstatesofamerica:'unitedstates',russianfederation:'russia'}; return a[k]||k;}
 export function normalizeLowFrequencyFallback(scheduleText,countryText){
@@ -174,6 +265,51 @@ export function normalizeLowFrequencyFallback(scheduleText,countryText){
     out.push({...stationBase('EiBi','reference/fallback',country),id:`eibi:${Math.round(hz)}:${headerKey(station)}:${clean(r.On)}:${clean(r.Off)}`,sourceId:`${Math.round(hz)}:${station}:${clean(r.On)}-${clean(r.Off)}`,band,frequencyKHz:kHz,name:station,location:clean(r.Site)||country,country,...(c?{lat:c.lat,lon:c.lon}:{}),locationApproximate:true,...(Number.isFinite(kw)&&kw>0?{powerW:kw*1000}:{}),mode:clean(r.M)||clean(r.Mode)||'AM',language,categories:['broadcast',band],description:`EiBi reference broadcast schedule${clean(r.Target)?`. Target: ${clean(r.Target)}`:''}.`,start:clean(r.On).padStart(4,'0'),end:clean(r.Off).padStart(4,'0'),days:clean(r.Days)||'1234567',target:clean(r.Target),source:'EiBi via FREQBEACON A26 merged schedule',season:'A26',sourceCommit:A26_COMMIT});
   }
   return out;
+}
+
+export function normalizeReviewedSupplement(payload, now = new Date()) {
+  if (!payload || !Array.isArray(payload.entries)) throw new Error('Reviewed MW supplement must contain entries[]');
+  const out=[];
+  for (const row of payload.entries) {
+    const frequencyKHz=num(row.frequencyKHz);
+    const country=clean(row.country), name=clean(row.name), location=clean(row.location);
+    const tier=Number(row.sourceTier);
+    const expiresAt=Date.parse(String(row.reviewExpiresAt||''));
+    if(!Number.isFinite(frequencyKHz)||frequencyKHz<148.5||frequencyKHz>1710) throw new Error('Reviewed MW supplement contains invalid frequency');
+    if(!country||!name||!location) throw new Error(`Reviewed MW supplement missing identity fields at ${frequencyKHz} kHz`);
+    if(tier!==2) throw new Error(`Reviewed MW supplement only accepts tier 2 entries; got ${row.sourceTier}`);
+    if(!clean(row.sourceAuthority)||!clean(row.sourceUrl)||!clean(row.sourceDate)||!Number.isFinite(expiresAt)) throw new Error(`Reviewed MW supplement missing provenance/freshness at ${frequencyKHz} kHz`);
+    if(expiresAt < now.getTime()) continue;
+    const lat=num(row.lat), lon=num(row.lon), powerW=num(row.powerW);
+    out.push({
+      ...stationBase(clean(row.sourceAuthority),2,country),
+      id:`reviewed:${Math.round(frequencyKHz*1000)}:${headerKey(name)}:${headerKey(location)}`,
+      sourceId:`${frequencyKHz}:${name}:${location}`,
+      band:clean(row.band)|| (frequencyKHz<300?'LW':'MW'),
+      frequencyKHz,name,location,country,
+      ...(validCoord(lat,lon)?{lat,lon}:{}),
+      ...(Number.isFinite(powerW)&&powerW>0?{powerW}:{}),
+      mode:clean(row.mode)||'AM',
+      language:clean(row.language),
+      categories:['broadcast',clean(row.band)|| (frequencyKHz<300?'LW':'MW')],
+      description:clean(row.description)||`Reviewed station identity for ${name}.`,
+      ...(clean(row.start)?{start:clean(row.start).padStart(4,'0')}:{}),
+      ...(clean(row.end)?{end:clean(row.end).padStart(4,'0')}:{}),
+      ...(clean(row.days)?{days:clean(row.days)}:{}),
+      source:clean(row.sourceAuthority),
+      sourceUrl:clean(row.sourceUrl),
+      sourceDate:clean(row.sourceDate),
+      reviewExpiresAt:new Date(expiresAt).toISOString(),
+      locationApproximate:Boolean(row.locationApproximate),
+      confidencePenalty:Number.isFinite(Number(row.confidencePenalty))?Number(row.confidencePenalty):0
+    });
+  }
+  return out;
+}
+
+async function readReviewedSupplement(now = new Date()) {
+  const payload=JSON.parse(await readFile(VERIFIED_SUPPLEMENT,'utf8'));
+  return normalizeReviewedSupplement(payload,now);
 }
 
 function validate(name,entries,min){
@@ -196,20 +332,23 @@ async function main(){
   const ofcomText=await readOfcomSnapshot();
   const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
   const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
+  const ctuText=await readCtuSnapshot();
   const [a26Text,countryText]=await Promise.all([
     fetchText(A26_URL,'A26 merged schedule'),
     fetchText(COUNTRY_URL,'country centroids')
   ]);
   const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf'); if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
-  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('global EiBi fallback',fallback,30);
-  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA');
-  const regulatorEntries=stableDedupe([...ca,...uk,...au]), fallbackEntries=stableDedupe(fallback), builtAt=new Date().toISOString();
-  const regulatorMeta={version:1,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}}};
-  const fallbackMeta={version:1,builtAt,recordCount:fallbackEntries.length,source:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT}};
+  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip), cz=normalizeCTU(ctuText), fallback=normalizeLowFrequencyFallback(a26Text,countryText);
+  const reviewed=await readReviewedSupplement();
+  validate('Canada/ISED',ca,150); validate('UK/Ofcom',uk,50); validate('Australia/ACMA',au,150); validate('Czechia/CTU',cz,3); validate('global EiBi fallback',fallback,30); validate('reviewed MW supplement',reviewed,2);
+  marker(ca,740,'CFZM','ISED'); marker(uk,648,'Radio Caroline','Ofcom'); marker(au,873,'2GB','ACMA'); marker(cz,792,'Dechovka','CTU');
+  marker(reviewed,558,'Radio Iran','reviewed supplement'); marker(reviewed,864,'Quran','reviewed supplement');
+  const regulatorEntries=stableDedupe([...ca,...uk,...au,...cz]), fallbackEntries=stableDedupe([...reviewed,...fallback]), builtAt=new Date().toISOString();
+  const regulatorMeta={version:2,builtAt,recordCount:regulatorEntries.length,sources:{ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02'},Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256},ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'},CTU:{authority:'Czech Telecommunication Office',tier:1,url:CTU_URL,records:cz.length,format:'pinned open-data CSV',sourceDate:'2026-09-25',snapshot:'data/ctu/mw-2026-09-25.csv',snapshotSha256:CTU_SNAPSHOT_SHA256,attribution:'CTU open data'}}};
+  const fallbackMeta={version:2,builtAt,recordCount:fallbackEntries.length,sources:{reviewedSupplement:{authority:'FREQBEACON reviewed MW identity supplement',tier:2,path:'data/terrestrial/verified-mw-supplement.json',records:reviewed.length},EiBi:{authority:'EiBi reference schedule',tier:'reference/fallback',url:A26_URL,season:'A26',sourceCommit:A26_COMMIT,records:fallback.length}}};
   const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
   const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Generated EiBi MW/LW fallback catalog.');
   await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
+  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}, CZ ${cz.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), reviewed ${reviewed.length}, fallback total ${fallbackEntries.length} (${Buffer.byteLength(fallbackJs)} B).`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
