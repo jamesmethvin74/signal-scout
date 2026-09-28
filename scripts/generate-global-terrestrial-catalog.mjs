@@ -179,7 +179,18 @@ function parseDelimited(text){
   const rows=[]; let row=[], cell='', quoted=false;
   for(let i=0;i<text.length;i++){
     const c=text[i];
-    if(c==='"'){ if(quoted&&text[i+1]==='"'){cell+='"';i++;} else quoted=!quoted; }
+    if(c==='"'){
+      if(quoted){
+        if(text[i+1]==='"'){cell+='"';i++;}
+        else quoted=false;
+      }else if(cell.length===0){
+        quoted=true;
+      }else{
+        // A literal quote inside an unquoted field is data, e.g. CTU DMS
+        // coordinates such as 15° 44' 42".
+        cell+=c;
+      }
+    }
     else if(c===delimiter&&!quoted){row.push(cell);cell='';}
     else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(x=>x!==''))rows.push(row);row=[];cell='';}
     else cell+=c;
