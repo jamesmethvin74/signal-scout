@@ -20,25 +20,6 @@
       "description": "Recent 2026 reception report confirms Radio Iran active on 558 kHz. Exact transmitter is intentionally not inferred from this source."
     },
     {
-      "frequencyKHz": 792,
-      "band": "MW",
-      "name": "Rádio Dechovka",
-      "location": "Hradec Králové / Stěžery",
-      "country": "Czechia",
-      "powerW": 5011,
-      "mode": "AM",
-      "language": "Czech",
-      "lat": 50.231667,
-      "lon": 15.745,
-      "sourceAuthority": "Czech Telecommunication Office",
-      "sourceTier": 2,
-      "sourceUrl": "https://ctu.gov.cz/io-detail/320498/792.00",
-      "sourceDate": "2026-09-25",
-      "reviewExpiresAt": "2027-03-31",
-      "locationApproximate": false,
-      "description": "Current Czech regulator authorization for Rádio Dechovka on 792 kHz from Hradec Králové."
-    },
-    {
       "frequencyKHz": 864,
       "band": "MW",
       "name": "NMA Al-Quran al-Karim",
