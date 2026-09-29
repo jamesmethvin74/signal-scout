@@ -1,4 +1,5 @@
 import baseWorker from './worker-program-v19.js';
+import { SECURITY_HEADERS } from './security-policy.js';
 
 const EXPLORE_HTML_ROUTES = new Set(['/', '/index.html', '/explore', '/explore/']);
 const HOME_ROUTES = new Set(['/', '/index.html']);
@@ -14,6 +15,12 @@ function json(value, status = 200, headers = {}) {
       ...headers
     }
   });
+}
+
+function applyBrowserSecurityHeaders(headers) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  headers.set('Strict-Transport-Security', 'max-age=31536000');
+  return headers;
 }
 
 function finiteCoordinate(value, min, max) {
@@ -282,7 +289,7 @@ async function exploreAssetResponse(request, env) {
 
 async function decorateExploreResponse(response, isHome) {
   if (!response) return response;
-  const headers = new Headers(response.headers);
+  const headers = applyBrowserSecurityHeaders(new Headers(response.headers));
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('x-freqbeacon-explore-launchpad', 'v1');
   if (isHome) headers.set('x-freqbeacon-home', 'explore-v1');
@@ -309,7 +316,7 @@ async function patchExploreScriptResponse(response) {
   );
   source = source.replace('Max-Age=2592000', 'Max-Age=31536000');
 
-  const headers = new Headers(response.headers);
+  const headers = applyBrowserSecurityHeaders(new Headers(response.headers));
   headers.delete('content-length');
   headers.delete('etag');
   headers.set('content-type', 'application/javascript; charset=utf-8');

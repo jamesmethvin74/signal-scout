@@ -15,13 +15,6 @@ function json(value, status = 200, headers = {}) {
   });
 }
 
-function selectedExploreReceiverId(request) {
-  const cookie = String(request.headers.get('cookie') || '');
-  const match = cookie.match(/(?:^|;\s*)fb_explore_receiver=([^;]+)/);
-  if (!match) return '';
-  try { return decodeURIComponent(match[1]).slice(0, 180); } catch { return ''; }
-}
-
 function normalizeIdentityText(value) {
   return String(value || '')
     .normalize('NFKD')

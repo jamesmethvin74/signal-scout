@@ -94,13 +94,24 @@ assert.equal(SECURITY_HEADERS['X-Content-Type-Options'], 'nosniff');
 assert.match(SECURITY_HEADERS['Permissions-Policy'], /geolocation=\(self\)/);
 
 const v19 = readFileSync(new URL('../worker-program-v19.js', import.meta.url), 'utf8');
-const v22 = readFileSync(new URL('../worker-program-v22.js', import.meta.url), 'utf8');
+const v21 = readFileSync(new URL('../worker-program-v21.js', import.meta.url), 'utf8');
+const v20 = readFileSync(new URL('../worker-program-v20.js', import.meta.url), 'utf8');
+const staticHeaders = readFileSync(new URL('../_headers', import.meta.url), 'utf8');
 assert.match(v19, /handleExploreClientFailureReport/);
 assert.doesNotMatch(v19, /health_score=MAX\(0, health_score - 25\)/);
-assert.match(v22, /path === '\/api\/sdr\/probe'/);
-assert.match(v22, /return json\(\{ error: 'Not found' \}, 404\)/);
-assert.match(v22, /sdr-ws-open/);
-assert.match(v22, /zero-ws-open/);
+assert.match(v21, /path === '\/api\/sdr\/probe'/);
+assert.match(v21, /return json\(\{ error: 'Not found' \}, 404\)/);
+assert.match(v21, /sdr-ws-open/);
+assert.match(v21, /zero-ws-open/);
+assert.match(v21, /validateSdrSocketUrl/);
+assert.match(v21, /validateProgramGuideUrl/);
+assert.match(v20, /applyBrowserSecurityHeaders/);
+assert.match(staticHeaders, /Content-Security-Policy:/);
+assert.match(staticHeaders, /frame-ancestors 'none'/);
+assert.match(staticHeaders, /X-Content-Type-Options: nosniff/);
+assert.match(staticHeaders, /Referrer-Policy: strict-origin-when-cross-origin/);
+assert.match(staticHeaders, /Permissions-Policy: geolocation=\(self\)/);
+assert.match(staticHeaders, /Strict-Transport-Security: max-age=31536000/);
 
 // Upstream-controlled UI text uses textContent or escaping at innerHTML boundaries.
 const explorePage = readFileSync(new URL('../explore-page.js', import.meta.url), 'utf8');
