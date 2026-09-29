@@ -68,7 +68,7 @@ body {
   display: grid !important;
   visibility: visible !important;
   opacity: 1 !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: 1px solid var(--fb-nav-line);
   background: linear-gradient(180deg, var(--fb-nav-bg-top), var(--fb-nav-bg-bottom));
   box-shadow: 0 -8px 20px rgba(0,0,0,.26);
