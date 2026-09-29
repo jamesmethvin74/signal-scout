@@ -1,0 +1,10 @@
+/* Isolated four-item app navigation extension.
+ * Keep freqbeacon-app-nav.css unchanged because Worker HTML decoration
+ * depends on its existing production asset references. */
+.fb-bottom-nav {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.near-me-app > .fb-page-scroll {
+  padding: max(10px, env(safe-area-inset-top)) 10px calc(var(--fb-nav-reserved-height) + 20px);
+}
