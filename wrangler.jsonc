@@ -2,7 +2,7 @@
 {
   "name": "signal-scout",
   "compatibility_date": "2026-08-23",
-  "main": "worker-program-v21.js",
+  "main": "worker-program-v22.js",
   "preview_urls": true,
   "routes": [
     { "pattern": "freqbeacon.methvindigitalworks.com", "custom_domain": true }
@@ -13,6 +13,23 @@
       "* * * * *"
     ]
   },
+  "ratelimits": [
+    {
+      "name": "SDR_CLIENT_RATE_LIMITER",
+      "namespace_id": "5292601",
+      "simple": { "limit": 48, "period": 60 }
+    },
+    {
+      "name": "SDR_SESSION_RATE_LIMITER",
+      "namespace_id": "5292602",
+      "simple": { "limit": 8, "period": 10 }
+    },
+    {
+      "name": "SDR_CONTROL_RATE_LIMITER",
+      "namespace_id": "5292603",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
   "d1_databases": [
     {
       "binding": "RECEIVER_HEALTH_DB",
