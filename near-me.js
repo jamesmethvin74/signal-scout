@@ -124,37 +124,47 @@
     const isNight = localSolarHour >= 19 || localSolarHour < 6;
     const mhz = Number(station.frequency) / 1000;
     const reasons = [];
-    let score = 42;
+    let score = 28;
 
-    if (distance < 400) {
-      score += 20;
-      reasons.push('nearby transmitter');
+    // Shortwave is not "closer is always stronger." Keep the estimate
+    // conservative because local noise, skip zones and antenna efficiency matter.
+    if (distance < 300) {
+      score += 5;
+      reasons.push('close enough for a possible skip-zone penalty');
     } else if (distance < 1200) {
-      score += 24;
-      reasons.push('good regional skywave distance');
-    } else if (distance < 3000) {
       score += 15;
-      reasons.push('workable skywave path');
-    } else if (distance < 6000) {
-      score += 7;
+      reasons.push('useful regional skywave path');
+    } else if (distance < 2500) {
+      score += 9;
+      reasons.push('workable multi-hop path');
+    } else if (distance < 4500) {
+      score += 3;
       reasons.push('long-haul path');
+    } else if (distance < 6000) {
+      score -= 8;
+      reasons.push('difficult long-haul path');
     } else {
-      score -= 5;
-      reasons.push('very long path');
+      score -= 15;
+      reasons.push('extreme DX path');
     }
 
     const powerKw = Number(station.power);
-    if (Number.isFinite(powerKw) && powerKw > 0) score += Math.min(16, Math.log10(Math.max(1, powerKw)) * 8);
+    if (Number.isFinite(powerKw) && powerKw > 0) {
+      if (powerKw >= 250) score += 7;
+      else if (powerKw >= 100) score += 5;
+      else if (powerKw >= 50) score += 3;
+      else if (powerKw < 10) score -= 4;
+    }
 
     const beam = Number(station.beam);
     if (Number.isFinite(beam) && beam !== 0) {
       const listenerBearing = bearingBetween(lat, lon, user.lat, user.lon);
       const difference = angularDifference(beam, listenerBearing);
       if (difference < 30) {
-        score += 18;
+        score += 10;
         reasons.push('transmitter beam favors you');
       } else if (difference < 65) {
-        score += 9;
+        score += 5;
         reasons.push('near the transmitter beam');
       } else if (difference > 120) {
         score -= 12;
@@ -164,27 +174,32 @@
 
     if (isNight) {
       if (mhz < 8) {
-        score += 14;
+        score += 8;
         reasons.push('lower HF favors darkness');
       } else if (mhz < 12) {
-        score += 8;
+        score += 5;
         reasons.push('evening-friendly band');
       } else if (mhz > 16) {
-        score -= 10;
-        reasons.push('high HF may fade after dark');
+        score -= 8;
+        reasons.push('high HF is less dependable after dark');
       }
     } else {
       if (mhz > 11 && mhz < 19) {
-        score += 10;
+        score += 7;
         reasons.push('daylight-friendly band');
       } else if (mhz < 5) {
-        score -= 9;
+        score -= 7;
         reasons.push('low HF is tougher in daylight');
       }
     }
 
+    if (station.locationApproximate) {
+      score -= 12;
+      reasons.push('transmitter location is approximate');
+    }
+
     return {
-      score: Math.max(4, Math.min(96, Math.round(score))),
+      score: Math.max(3, Math.min(90, Math.round(score))),
       distance,
       why: reasons.join(' · ')
     };
@@ -202,41 +217,56 @@
     const dayPowerW = Number(station.dayPowerW);
     const nightPowerW = Number(station.nightPowerW);
     const powerW = isNight ? nightPowerW : dayPowerW;
+    const powerKw = Number.isFinite(powerW) ? powerW / 1000 : 0;
     const reasons = [];
     let score;
 
+    // Near Me is intentionally conservative. Ground-wave/local reception gets
+    // the strongest confidence. Nighttime skywave is treated as DX: possible,
+    // sometimes excellent in practice, but never assumed merely from distance.
     if (!isNight) {
-      if (distance < 40) score = 92;
-      else if (distance < 90) score = 78;
-      else if (distance < 160) score = 55;
-      else if (distance < 250) score = 32;
-      else score = 12;
+      if (distance < 35) score = 92;
+      else if (distance < 60) score = 82;
+      else if (distance < 90) score = 68;
+      else if (distance < 120) score = 54;
+      else if (distance < 180) score = 36;
+      else score = 15;
       reasons.push('daytime ground-wave estimate');
     } else {
-      if (distance < 75) score = 90;
-      else if (distance < 350) score = 82;
-      else if (distance < 800) score = 68;
-      else if (distance < 1300) score = 47;
-      else score = 20;
-      reasons.push('nighttime skywave estimate');
+      if (distance < 40) score = 90;
+      else if (distance < 75) score = 80;
+      else if (distance < 120) score = 66;
+      else if (distance < 180) score = 52;
+      else if (distance < 300) score = 38;
+      else if (distance < 500) score = 26;
+      else if (distance < 800) score = 18;
+      else score = 10;
+      reasons.push(distance < 120 ? 'nearby nighttime reception' : 'nighttime skywave DX estimate');
     }
 
-    const powerKw = Number.isFinite(powerW) ? powerW / 1000 : 0;
-    if (powerKw > 0) score += Math.min(12, Math.log10(Math.max(.01, powerKw)) * 6);
+    if (powerKw >= 50) score += 8;
+    else if (powerKw >= 10) score += 6;
+    else if (powerKw >= 5) score += 4;
+    else if (powerKw >= 1) score += 2;
+
     if (isNight && (!Number.isFinite(nightPowerW) || nightPowerW <= 0)) {
-      score -= 38;
-      reasons.push('not authorized for meaningful night power');
+      score -= 40;
+      reasons.push('no meaningful authorized night power');
     } else if (isNight && powerKw < .1) {
-      score -= 20;
+      score -= 25;
       reasons.push('very low night power');
+    } else if (isNight && powerKw < .5) {
+      score -= 10;
+      reasons.push('low night power');
     }
+
     if (isNight && station.classA) {
-      score += 4;
-      reasons.push('high-power clear-channel class');
+      score += 5;
+      reasons.push('clear-channel class helps DX potential');
     }
 
     return {
-      score: Math.max(3, Math.min(97, Math.round(score))),
+      score: Math.max(3, Math.min(95, Math.round(score))),
       distance,
       why: reasons.join(' · '),
       isNight,
@@ -265,18 +295,43 @@
 
   function antennaFor(candidate) {
     const score = candidate.score;
+    const distance = Number(candidate.distance);
+
     if (candidate.band === 'MW') {
-      if (score >= 72) return { text: 'BUILT-IN AM ANTENNA SHOULD WORK', cls: 'good', category: 'easy' };
-      if (score >= 50) return { text: 'LOOP / FERRITE PREFERRED', cls: '', category: 'wire' };
-      return { text: 'EXTERNAL AM LOOP MAY HELP', cls: 'muted', category: 'wire' };
+      if (distance <= 55 && score >= 75) {
+        return { text: 'BUILT-IN AM ANTENNA LIKELY', cls: 'good', category: 'easy' };
+      }
+      if (distance <= 100 && score >= 58) {
+        return { text: 'BUILT-IN AM ANTENNA WORTH TRYING', cls: '', category: 'easy' };
+      }
+      if (distance <= 250 && score >= 40) {
+        return { text: 'EXTERNAL AM LOOP RECOMMENDED', cls: '', category: 'wire' };
+      }
+      return { text: 'DX TRY · EXTERNAL LOOP RECOMMENDED', cls: 'muted', category: 'wire' };
     }
+
     if (candidate.band === 'LW') {
       return { text: 'SPECIALIZED LF LOOP / LONG WIRE', cls: 'muted', category: 'wire' };
     }
-    if (score >= 78) return { text: 'TELESCOPIC SHOULD WORK', cls: 'good', category: 'easy' };
-    if (score >= 62) return { text: 'TELESCOPIC WORTH TRYING', cls: 'good', category: 'easy' };
-    if (score >= 45) return { text: 'BETTER WITH WIRE', cls: '', category: 'wire' };
-    return { text: 'WIRE RECOMMENDED', cls: 'muted', category: 'wire' };
+
+    // A whip can absolutely catch strong shortwave, but Near Me should not
+    // promise it. Reserve the easy label for a very strong, non-approximate path.
+    if (!candidate.approximate && distance <= 1500 && score >= 75) {
+      return { text: 'TELESCOPIC GOOD BET', cls: 'good', category: 'easy' };
+    }
+    if (!candidate.approximate && distance <= 2200 && score >= 62) {
+      return { text: 'TELESCOPIC WORTH TRYING', cls: '', category: 'easy' };
+    }
+    if (score >= 45) {
+      return { text: 'BETTER WITH WIRE', cls: '', category: 'wire' };
+    }
+    return { text: 'WIRE RECOMMENDED · DX CONDITIONS', cls: 'muted', category: 'wire' };
+  }
+
+  function unusableShortwaveName(name) {
+    const text = String(name || '').trim();
+    if (!text) return true;
+    return /^(?:for\s+new\s+organization|new\s+organization|unknown|n\/?a|not\s+available|test|tentative)$/i.test(text);
   }
 
   function buildShortwave(date) {
@@ -287,6 +342,7 @@
     for (const station of stations) {
       if (station?.band !== 'SW' || !isOnAir(station, date)) continue;
       if (/\bDRM\b/i.test(String(station.format || ''))) continue;
+      if (unusableShortwaveName(station.name)) continue;
       const frequencyKHz = Number(station.frequency);
       if (!Number.isFinite(frequencyKHz)) continue;
       const scored = scoreShortwave(station, date);
@@ -389,9 +445,13 @@
     else if (state.band === 'LW') candidates = lw;
     else candidates = [...mw, ...sw];
 
-    candidates.sort((a, b) => b.score - a.score || a.frequencyKHz - b.frequencyKHz);
+    candidates.sort((a, b) =>
+      b.score - a.score
+      || a.distance - b.distance
+      || a.frequencyKHz - b.frequencyKHz
+    );
 
-    const practical = candidates.filter((candidate) => candidate.score >= 38);
+    const practical = candidates.filter((candidate) => candidate.score >= 35);
     return practical.length >= 8 ? practical : candidates.slice(0, Math.max(8, practical.length));
   }
 
