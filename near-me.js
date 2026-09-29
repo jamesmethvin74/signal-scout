@@ -106,11 +106,17 @@
     return now >= start || now < end;
   }
 
-  function receptionLabel(score) {
-    if (score >= 80) return { text: 'EXCELLENT', cls: 'good' };
-    if (score >= 62) return { text: 'GOOD', cls: 'good' };
-    if (score >= 42) return { text: 'POSSIBLE', cls: '' };
-    return { text: 'LONG SHOT', cls: 'long' };
+  function receptionLabel(candidate) {
+    const antenna = antennaFor(candidate);
+    const score = candidate.score;
+
+    if (antenna.cls === 'good') {
+      return { text: score >= 82 ? 'EXCELLENT' : 'GOOD', cls: 'good' };
+    }
+    if (antenna.cls === '') {
+      return { text: score >= 55 ? 'WORTH TRYING' : 'POSSIBLE', cls: '' };
+    }
+    return { text: score >= 42 ? 'POSSIBLE' : 'LONG SHOT', cls: 'long' };
   }
 
   function scoreShortwave(station, date) {
@@ -201,7 +207,13 @@
     return {
       score: Math.max(3, Math.min(90, Math.round(score))),
       distance,
-      why: reasons.join(' · ')
+      why: reasons.join(' · '),
+      powerKw: Number.isFinite(powerKw) ? powerKw : 0,
+      beamDifference: Number.isFinite(beam) && beam !== 0
+        ? angularDifference(beam, bearingBetween(lat, lon, user.lat, user.lon))
+        : null,
+      mhz,
+      isNight
     };
   }
 
@@ -217,60 +229,60 @@
     const dayPowerW = Number(station.dayPowerW);
     const nightPowerW = Number(station.nightPowerW);
     const powerW = isNight ? nightPowerW : dayPowerW;
-    const powerKw = Number.isFinite(powerW) ? powerW / 1000 : 0;
     const reasons = [];
     let score;
 
-    // Near Me is intentionally conservative. Ground-wave/local reception gets
-    // the strongest confidence. Nighttime skywave is treated as DX: possible,
-    // sometimes excellent in practice, but never assumed merely from distance.
     if (!isNight) {
-      if (distance < 35) score = 92;
-      else if (distance < 60) score = 82;
-      else if (distance < 90) score = 68;
-      else if (distance < 120) score = 54;
-      else if (distance < 180) score = 36;
-      else score = 15;
+      if (distance < 20) score = 95;
+      else if (distance < 35) score = 90;
+      else if (distance < 55) score = 82;
+      else if (distance < 75) score = 74;
+      else if (distance < 100) score = 64;
+      else if (distance < 140) score = 52;
+      else if (distance < 200) score = 38;
+      else score = 18;
       reasons.push('daytime ground-wave estimate');
     } else {
-      if (distance < 40) score = 90;
-      else if (distance < 75) score = 80;
-      else if (distance < 120) score = 66;
-      else if (distance < 180) score = 52;
-      else if (distance < 300) score = 38;
-      else if (distance < 500) score = 26;
-      else if (distance < 800) score = 18;
-      else score = 10;
-      reasons.push(distance < 120 ? 'nearby nighttime reception' : 'nighttime skywave DX estimate');
+      if (distance < 20) score = 92;
+      else if (distance < 35) score = 88;
+      else if (distance < 55) score = 82;
+      else if (distance < 75) score = 74;
+      else if (distance < 100) score = 64;
+      else if (distance < 140) score = 52;
+      else if (distance < 200) score = 40;
+      else if (distance < 300) score = 30;
+      else if (distance < 500) score = 22;
+      else score = 12;
+      reasons.push(distance < 100 ? 'nearby nighttime reception' : 'nighttime skywave DX estimate');
     }
 
-    if (powerKw >= 50) score += 8;
-    else if (powerKw >= 10) score += 6;
-    else if (powerKw >= 5) score += 4;
-    else if (powerKw >= 1) score += 2;
-
-    if (isNight && (!Number.isFinite(nightPowerW) || nightPowerW <= 0)) {
-      score -= 40;
-      reasons.push('no meaningful authorized night power');
-    } else if (isNight && powerKw < .1) {
-      score -= 25;
-      reasons.push('very low night power');
-    } else if (isNight && powerKw < .5) {
-      score -= 10;
-      reasons.push('low night power');
+    if (!Number.isFinite(powerW) || powerW <= 0) {
+      score -= isNight ? 45 : 35;
+      reasons.push('no meaningful authorized power for this time');
+    } else {
+      // Power matters, but very short distance can overcome a low-power
+      // nighttime authorization. Keep the penalty proportional to range.
+      if (powerW >= 50000) score += 7;
+      else if (powerW >= 10000) score += 5;
+      else if (powerW >= 5000) score += 4;
+      else if (powerW >= 1000) score += 2;
+      else if (powerW < 10) score -= distance <= 20 ? 12 : 24;
+      else if (powerW < 25) score -= distance <= 20 ? 8 : (distance <= 35 ? 14 : 22);
+      else if (powerW < 100) score -= distance <= 20 ? 4 : (distance <= 35 ? 8 : 16);
+      else if (powerW < 500) score -= distance <= 35 ? 2 : 8;
     }
 
     if (isNight && station.classA) {
-      score += 5;
+      score += 4;
       reasons.push('clear-channel class helps DX potential');
     }
 
     return {
-      score: Math.max(3, Math.min(95, Math.round(score))),
+      score: Math.max(3, Math.min(97, Math.round(score))),
       distance,
       why: reasons.join(' · '),
       isNight,
-      powerW
+      powerW: Number.isFinite(powerW) ? powerW : 0
     };
   }
 
@@ -298,13 +310,23 @@
     const distance = Number(candidate.distance);
 
     if (candidate.band === 'MW') {
-      if (distance <= 55 && score >= 75) {
+      const powerW = Number(candidate.powerW) || 0;
+
+      // "Likely" is based on both distance and current authorized power.
+      // This intentionally lets a very close low-power station remain useful.
+      const builtInLikely =
+        (distance <= 20 && powerW >= 25 && score >= 72)
+        || (distance <= 35 && powerW >= 100 && score >= 72)
+        || (distance <= 55 && powerW >= 500 && score >= 72)
+        || (distance <= 75 && powerW >= 1000 && score >= 72);
+
+      if (builtInLikely) {
         return { text: 'BUILT-IN AM ANTENNA LIKELY', cls: 'good', category: 'easy' };
       }
-      if (distance <= 100 && score >= 58) {
+      if (distance <= 100 && score >= 52) {
         return { text: 'BUILT-IN AM ANTENNA WORTH TRYING', cls: '', category: 'easy' };
       }
-      if (distance <= 250 && score >= 40) {
+      if (distance <= 250 && score >= 35) {
         return { text: 'EXTERNAL AM LOOP RECOMMENDED', cls: '', category: 'wire' };
       }
       return { text: 'DX TRY · EXTERNAL LOOP RECOMMENDED', cls: 'muted', category: 'wire' };
@@ -314,9 +336,19 @@
       return { text: 'SPECIALIZED LF LOOP / LONG WIRE', cls: 'muted', category: 'wire' };
     }
 
-    // A whip can absolutely catch strong shortwave, but Near Me should not
-    // promise it. Reserve the easy label for a very strong, non-approximate path.
-    if (!candidate.approximate && distance <= 1500 && score >= 78) {
+    // Strong regional shortwave can be entirely realistic on a telescopic whip.
+    // Require a North-American/regional distance plus good power/path support,
+    // and never give the easy label to approximate transmitter locations.
+    const favorableBeam = candidate.beamDifference == null || candidate.beamDifference <= 45;
+    const strongRegional =
+      !candidate.approximate
+      && distance >= 300
+      && distance <= 1600
+      && Number(candidate.powerKw) >= 50
+      && favorableBeam
+      && score >= 60;
+
+    if (strongRegional) {
       return { text: 'TELESCOPIC WORTH TRYING', cls: 'good', category: 'easy' };
     }
     if (score >= 45) {
@@ -495,7 +527,7 @@
 
   function renderCard(candidate, index) {
     const frequency = formatFrequency(candidate);
-    const reception = receptionLabel(candidate.score);
+    const reception = receptionLabel(candidate);
     const antenna = antennaFor(candidate);
     const radioHref = `/zero?from=lookup&frequency=${encodeURIComponent(candidate.frequencyKHz)}&mode=${encodeURIComponent(candidate.mode || 'am')}`;
     const isBest = index === 0;
