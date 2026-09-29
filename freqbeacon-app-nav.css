@@ -47,7 +47,8 @@ body {
 }
 
 .zero-radio > .fb-page-scroll,
-.lookup-app > .fb-page-scroll {
+.lookup-app > .fb-page-scroll,
+.near-me-app > .fb-page-scroll {
   padding: max(10px, env(safe-area-inset-top)) 10px calc(var(--fb-nav-reserved-height) + 20px);
 }
 
