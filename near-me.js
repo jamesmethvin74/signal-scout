@@ -442,8 +442,16 @@
     else if (state.band === 'LW') candidates = lw;
     else candidates = [...mw, ...sw];
 
+    const antennaTier = (candidate) => {
+      const antenna = antennaFor(candidate);
+      if (antenna.cls === 'good') return 0;
+      if (antenna.cls === '') return 1;
+      return 2;
+    };
+
     candidates.sort((a, b) =>
-      b.score - a.score
+      antennaTier(a) - antennaTier(b)
+      || b.score - a.score
       || a.distance - b.distance
       || a.frequencyKHz - b.frequencyKHz
     );
