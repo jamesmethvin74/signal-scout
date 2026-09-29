@@ -2,8 +2,8 @@ const RECEIVER_ID_RE = /^[A-Za-z0-9._:[\]-]{1,180}$/;
 const SDR_STREAMS = new Set(['SND', 'W/F']);
 const CSP = [
   "default-src 'self' https: data: blob:",
-  "script-src 'self' 'unsafe-inline' https:",
-  "style-src 'self' 'unsafe-inline' https:",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",
   "connect-src 'self' https: wss:",
