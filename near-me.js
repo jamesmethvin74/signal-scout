@@ -318,7 +318,7 @@
         (distance <= 20 && powerW >= 25 && score >= 72)
         || (distance <= 35 && powerW >= 100 && score >= 72)
         || (distance <= 55 && powerW >= 500 && score >= 72)
-        || (distance <= 75 && powerW >= 1000 && score >= 72);
+        || (distance <= 65 && powerW >= 5000 && score >= 72);
 
       if (builtInLikely) {
         return { text: 'BUILT-IN AM ANTENNA LIKELY', cls: 'good', category: 'easy' };
