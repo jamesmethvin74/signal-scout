@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070a0d">
+  <meta name="description" content="Location-aware FREQBEACON listening guide: frequencies and stations you are most likely to hear, with antenna guidance.">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/near-me.css?v=1">
+  <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=3">
+  <link rel="stylesheet" href="/freqbeacon-four-nav.css?v=1">
+  <title>Near Me — FREQBEACON Zero</title>
+</head>
+<body>
+  <main class="near-me-app has-fb-bottom-nav">
+    <div class="fb-page-scroll">
+      <header class="near-header">
+        <div class="near-brandline">
+          <strong>FREQBEACON <span>Zero</span></strong>
+          <i aria-hidden="true"></i>
+          <small>CLEANROOM RECEIVER</small>
+        </div>
+        <div class="near-tagline">Explore the airwaves.</div>
+      </header>
+
+      <section class="near-panel near-location-panel" aria-labelledby="nearTitle">
+        <div class="near-panel-kicker">LOCAL LISTENING GUIDE</div>
+        <div class="near-location-row">
+          <div class="near-location-copy">
+            <h1 id="nearTitle">WHAT CAN I HEAR HERE?</h1>
+            <strong id="nearLocationName">Location not set</strong>
+            <span id="nearLocationMeta">Use your location to rank signals for where you are right now.</span>
+          </div>
+          <button id="nearLocationButton" class="near-location-button" type="button">USE LOCATION</button>
+        </div>
+
+        <div class="near-time-row" role="group" aria-label="Listening time">
+          <button type="button" class="near-time active" data-offset="0" aria-pressed="true">NOW</button>
+          <button type="button" class="near-time" data-offset="1" aria-pressed="false">+1 HR</button>
+          <button type="button" class="near-time" data-offset="3" aria-pressed="false">+3 HR</button>
+          <button type="button" class="near-time" data-offset="6" aria-pressed="false">TONIGHT</button>
+        </div>
+      </section>
+
+      <section class="near-panel near-summary-panel" aria-labelledby="outlookTitle">
+        <div class="near-section-head">
+          <div>
+            <div class="near-panel-kicker">YOUR LOCATION · CURRENT CONDITIONS</div>
+            <h2 id="outlookTitle">RECEPTION OUTLOOK</h2>
+          </div>
+          <span id="nearTargetTime">NOW</span>
+        </div>
+
+        <div class="near-stats">
+          <div><b id="nearGoodCount">—</b><span>GOOD BETS</span></div>
+          <div><b id="nearEasyCount">—</b><span>EASY ANTENNA</span></div>
+          <div><b id="nearWireCount">—</b><span>WIRE / LOOP</span></div>
+        </div>
+
+        <div class="near-band-row" role="group" aria-label="Band filter">
+          <button type="button" class="near-band active" data-band="ALL" aria-pressed="true">ALL</button>
+          <button type="button" class="near-band" data-band="SW" aria-pressed="false">SHORTWAVE</button>
+          <button type="button" class="near-band" data-band="MW" aria-pressed="false">AM BC</button>
+          <button type="button" class="near-band" data-band="LW" aria-pressed="false">LW</button>
+        </div>
+
+        <p class="near-estimate-note">Reception is an estimate. Local noise, antenna placement, solar conditions and propagation can change what actually reaches your radio.</p>
+      </section>
+
+      <section class="near-results-shell" aria-labelledby="nearResultsTitle">
+        <div class="near-results-head">
+          <div>
+            <div class="near-panel-kicker">RANKED FOR YOUR LOCATION</div>
+            <h2 id="nearResultsTitle">FREQUENCIES TO TRY</h2>
+          </div>
+          <span id="nearResultCount"></span>
+        </div>
+
+        <div id="nearDataStatus" class="near-data-status">Loading listening data…</div>
+        <div id="nearResults" class="near-results" aria-live="polite">
+          <div class="near-empty">
+            <strong>Set your location to build your listening list.</strong>
+            <p>FREQBEACON will rank active broadcasts and local AM stations, then tell you what kind of antenna is a sensible starting point.</p>
+          </div>
+        </div>
+        <button id="nearShowMore" class="near-show-more" type="button" hidden>SHOW MORE</button>
+      </section>
+    </div>
+
+    <nav class="fb-bottom-nav" aria-label="Primary">
+      <a class="fb-nav-item" href="/zero" aria-label="Radio">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M8.5 7.5a6 6 0 0 0 0 9M15.5 7.5a6 6 0 0 1 0 9M5.5 5a10 10 0 0 0 0 14M18.5 5a10 10 0 0 1 0 14"/></svg>
+        <span>Radio</span>
+      </a>
+      <a class="fb-nav-item" href="/explore" aria-label="Explore">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/></svg>
+        <span>Explore</span>
+      </a>
+      <a class="fb-nav-item" href="/lookup.html" aria-label="Lookup">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+        <span>Lookup</span>
+      </a>
+      <a class="fb-nav-item active" href="/near-me.html" aria-current="page" aria-label="Near Me">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        <span>Near Me</span>
+      </a>
+    </nav>
+  </main>
+
+  <script src="/freqbeacon-zero-am-catalog.js?v=1"></script>
+  <script src="/freqbeacon-zero-us-am-fcc.js?v=1"></script>
+  <script src="/freqbeacon-zero-am-merge.js?v=1"></script>
+  <script src="/freqbeacon-context-stations.js?v=2"></script>
+  <script src="/stations.js?v=1"></script>
+  <script src="/ham-bands.js?v=1"></script>
+  <script src="/freqbeacon-zero-identification-data.js?v=4"></script>
+  <script src="/full-data.js?v=2"></script>
+  <script src="/near-me.js?v=1"></script>
+</body>
+</html>
