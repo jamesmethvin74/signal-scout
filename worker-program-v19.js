@@ -218,40 +218,25 @@ async function suppressDuplicateReceiverEndpoints(env) {
   return { duplicateGroups, suppressedEndpoints: duplicateIds.length };
 }
 
-async function liveFailureResponse(request, env) {
+export async function liveFailureResponse(request, env) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  if (!env?.RECEIVER_HEALTH_DB) return json({ error: 'Receiver health database unavailable' }, 503);
 
   const receiverId = selectedExploreReceiverId(request);
   if (!receiverId) return json({ error: 'No Explore receiver is selected' }, 409);
 
-  try {
-    // A real Zero SND/W/F failure is stronger evidence than an old background
-    // success. Remove the receiver from the green trusted feed immediately. The
-    // normal health proof cycle can promote it again after it proves usable.
-    const result = await env.RECEIVER_HEALTH_DB.prepare(`
-      UPDATE receivers SET
-        trusted=0,
-        consecutive_failures=CASE
-          WHEN consecutive_failures < 8 THEN consecutive_failures + 1
-          ELSE consecutive_failures
-        END,
-        snd_success=0,
-        wf_success=0,
-        health_score=MAX(0, health_score - 25)
-      WHERE id=?
-    `).bind(receiverId).run();
-
-    return json({
-      ok: true,
-      receiverId,
-      temporarilyHidden: true,
-      changed: Number(result?.meta?.changes || 0)
-    });
-  } catch (error) {
-    console.warn('FREQBEACON live receiver failure persistence failed', error?.message || error);
-    return json({ error: 'Could not update receiver health' }, 503);
-  }
+  // Browser disconnects are useful failover/UX evidence, but they are not an
+  // authoritative receiver-health observation. Never mutate trusted state,
+  // SND/W/F proof fields, health score, or failure counters from this route.
+  // Scheduled server-side SND + paired W/F probes remain the sole authority.
+  void env;
+  return json({
+    ok: true,
+    accepted: true,
+    receiverId,
+    temporarilyHidden: false,
+    authoritativeHealthChanged: false,
+    policy: 'client failure reports are untrusted; server SND+W/F probes control receiver trust'
+  }, 202);
 }
 
 export default {

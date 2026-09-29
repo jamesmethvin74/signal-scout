@@ -368,6 +368,15 @@
     return { value: station.frequency.toLocaleString(), unit: 'kHz' };
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
   function renderCard(station, scored, selectedDate) {
     const [label, labelClass] = receptionLabel(scored.score);
     const frequency = formatFrequency(station);
@@ -384,8 +393,8 @@
         <div class="card-top">
           <div>
             <div class="frequency">${frequency.value}<span>${frequency.unit}</span></div>
-            <div class="station-name">${station.name}</div>
-            <div class="station-description">${station.note || ''}</div>
+            <div class="station-name">${escapeHtml(station.name)}</div>
+            <div class="station-description">${escapeHtml(station.note || '')}</div>
           </div>
           <div class="score">
             <strong class="${labelClass}">${label}</strong>
@@ -394,17 +403,17 @@
           </div>
         </div>
         <div class="tags">
-          <span class="tag">${station.country}</span>
-          <span class="tag">${station.language}</span>
-          <span class="tag">${station.format}</span>
+          <span class="tag">${escapeHtml(station.country)}</span>
+          <span class="tag">${escapeHtml(station.language)}</span>
+          <span class="tag">${escapeHtml(station.format)}</span>
         </div>
         <div class="details">
-          <div class="detail">Transmitter<b>${station.transmitter}</b></div>
+          <div class="detail">Transmitter<b>${escapeHtml(station.transmitter)}</b></div>
           <div class="detail">Distance<b>${distance}</b></div>
-          <div class="detail">Schedule<b>${schedule.local}${schedule.utc ? `<span style="display:block;margin-top:2px;color:#8fa4bc;font-size:11px;font-weight:600">${schedule.utc}</span>` : ''}</b></div>
+          <div class="detail">Schedule<b>${escapeHtml(schedule.local)}${schedule.utc ? `<span style="display:block;margin-top:2px;color:#8fa4bc;font-size:11px;font-weight:600">${escapeHtml(schedule.utc)}</span>` : ''}</b></div>
           <div class="detail">Power<b>${power}</b></div>
         </div>
-        <div class="why"><b>Why this rating:</b> ${scored.why}</div>
+        <div class="why"><b>Why this rating:</b> ${escapeHtml(scored.why)}</div>
       </article>`;
   }
 

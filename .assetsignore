@@ -7,3 +7,11 @@ worker-base.js
 worker-v2.js
 .assetsignore
 .nojekyll
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
