@@ -316,11 +316,8 @@
 
     // A whip can absolutely catch strong shortwave, but Near Me should not
     // promise it. Reserve the easy label for a very strong, non-approximate path.
-    if (!candidate.approximate && distance <= 1500 && score >= 75) {
-      return { text: 'TELESCOPIC GOOD BET', cls: 'good', category: 'easy' };
-    }
-    if (!candidate.approximate && distance <= 2200 && score >= 62) {
-      return { text: 'TELESCOPIC WORTH TRYING', cls: '', category: 'easy' };
+    if (!candidate.approximate && distance <= 1500 && score >= 78) {
+      return { text: 'TELESCOPIC WORTH TRYING', cls: 'good', category: 'easy' };
     }
     if (score >= 45) {
       return { text: 'BETTER WITH WIRE', cls: '', category: 'wire' };
