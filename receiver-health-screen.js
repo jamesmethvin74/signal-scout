@@ -1,3 +1,5 @@
+import { APPROVED_SDR_RECEIVER_IDS, isApprovedSdrReceiverId } from './sdr-approved-receivers.js';
+
 const SCREEN_BATCH_SIZE = 18;
 const SCREEN_CONCURRENCY = 6;
 const SCREEN_TIMEOUT_MS = 2500;
@@ -85,7 +87,7 @@ async function loadScreenCandidates(env, limit) {
       r.id ASC
     LIMIT ${limit}
   `).bind(cutoff, retryBefore).all();
-  return result.results || [];
+  return (result.results || []).filter((receiver) => isApprovedSdrReceiverId(receiver.id));
 }
 
 async function quickVerProbe(receiver) {
