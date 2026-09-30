@@ -220,7 +220,7 @@ function commonKiwiError(text) {
 
 async function openUpstreamSocket(receiver, stream, sessionTs) {
   const base = upstreamBase(receiver);
-  const response = await fetch(`${base}${sessionTs}/${stream}`, {
+  const response = await fetch(`${base}/${sessionTs}/${stream}`, {
     headers: {
       Upgrade: 'websocket',
       Origin: base,
@@ -580,7 +580,7 @@ async function trustedZeroSocket(request, url, receiver) {
   if (!/^\d{8,20}$/.test(sessionTs)) return new Response('BAD SESSION TIMESTAMP', { status: 400 });
 
   try {
-    const response = await fetch(`${upstreamBase(receiver)}${sessionTs}/${stream}`, {
+    const response = await fetch(`${upstreamBase(receiver)}/${sessionTs}/${stream}`, {
       headers: {
         Upgrade: 'websocket',
         Origin: upstreamBase(receiver),
