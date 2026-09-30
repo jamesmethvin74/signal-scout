@@ -1,16 +1,11 @@
 import baseWorker from './worker-base.js';
+import { approvedSdrReceiver } from './sdr-approved-receivers.js';
 
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
 const PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1';
-
-const LEGACY_RECEIVERS = {
-  florida: 'http://22315.proxy.kiwisdr.com',
-  'north-carolina': 'http://22904.proxy.kiwisdr.com',
-  pennsylvania: 'http://22479.proxy.kiwisdr.com'
-};
 
 
 function isBlockedHost(hostname) {
@@ -43,8 +38,8 @@ function normalizeReceiverUrl(rawUrl) {
 }
 
 function resolveReceiver(receiverId) {
-  const legacyUrl = LEGACY_RECEIVERS[receiverId];
-  return legacyUrl ? normalizeReceiverUrl(legacyUrl) : null;
+  const approved = approvedSdrReceiver(receiverId);
+  return approved ? normalizeReceiverUrl(`${approved.protocol}//${approved.upstreamHost}`) : null;
 }
 
 function proxySafeTimestamp(timestamp) {
