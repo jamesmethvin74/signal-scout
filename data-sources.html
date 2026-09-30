@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#070a0d">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/freqbeacon-attribution.css?v=1">
+  <title>Data sources & licensing — FREQBEACON</title>
+</head>
+<body class="fb-source-page">
+  <main>
+    <a class="back" href="/zero">← Back to FREQBEACON</a>
+    <h1>Data sources &amp; licensing</h1>
+    <p>FREQBEACON uses external radio data only when the intended use is supported by a documented licence, public-data grant, or explicit permission. Public availability alone is not treated as permission to scrape or republish data.</p>
+
+    <h2>Active data</h2>
+    <div class="source-card">
+      <strong>Ofcom — UK broadcast transmitter technical parameters</strong>
+      <p><span class="status">ACTIVE.</span> FREQBEACON uses a pinned snapshot of Ofcom's official MF technical-parameter data. Contains public sector information licensed under the Open Government Licence v3.0.</p>
+      <p>Source snapshot date: 5 August 2026. FREQBEACON verifies the pinned source by SHA-256 before generating the runtime catalog.</p>
+    </div>
+
+    <h2>Permitted but currently inactive</h2>
+    <div class="source-card">
+      <strong>ISED — Canada Broadcasting Database</strong>
+      <p><span class="inactive">INACTIVE.</span> The parser is retained, but production builds do not fetch ISED live. Activation requires a pinned first-party snapshot with provenance and integrity metadata plus required Government of Canada attribution.</p>
+    </div>
+    <div class="source-card">
+      <strong>ACMA — Licensed Broadcasting Transmitter Data</strong>
+      <p><span class="inactive">INACTIVE.</span> ACMA publishes this material under Creative Commons Attribution 2.5 Australia. Production builds do not fetch it live; activation requires a pinned first-party snapshot with provenance and integrity metadata.</p>
+    </div>
+
+    <h2>Disabled pending permission or source migration</h2>
+    <div class="source-card">
+      <strong>Receiver directories and public KiwiSDR receivers</strong>
+      <p>FREQBEACON does not scrape ReceiverBook. Live KiwiSDR access is made as an external client so each receiver owner's external-application channel limits are enforced by the receiver itself.</p>
+    </div>
+    <div class="source-card">
+      <strong>Program schedules and reference catalogs</strong>
+      <p><span class="blocked">DISABLED WHERE UNCLEARED.</span> Automated broadcaster-page scraping, the former third-party merged HFCC/EiBi schedule feed, and the former third-party FCC mirror are disabled until the relevant reuse permission or first-party migration is documented.</p>
+    </div>
+
+    <h2>Operating rule</h2>
+    <p>If FREQBEACON cannot establish that an external source permits the intended automated use, the integration stays off. A source restriction or receiver-owner control is never bypassed by changing paths, identities, mirrors, proxies, or cached copies.</p>
+  </main>
+</body>
+</html>
