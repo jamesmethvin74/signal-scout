@@ -185,42 +185,67 @@ function stableDedupe(entries){ const seen=new Map(); for(const e of entries){co
 function render(entries,meta,varName,metaName,comment){ return `(() => {\n  'use strict';\n  // ${comment} Do not hand-edit.\n  const entries = ${JSON.stringify(entries)};\n  window.${varName} = Object.freeze(entries.map((e) => Object.freeze({...e, categories:Object.freeze([...(e.categories||[])])})));\n  window.${metaName} = Object.freeze(${JSON.stringify(meta)});\n})();\n`; }
 
 async function main(){
-  // Only sources with documented reuse authority are permitted in the build.
-  // The former EiBi/HFCC third-party merged fallback is intentionally disabled
-  // until its source/licence chain is explicitly cleared.
+  // Deployment builds are intentionally network-free. A source can be legally
+  // permitted and still remain inactive until a vetted first-party snapshot is
+  // pinned in the repository with provenance and integrity checks.
+  //
+  // Ofcom is currently active because its official MF snapshot is pinned and
+  // SHA-256 verified below. ISED and ACMA parsers remain covered by fixtures,
+  // but their live network downloads are not part of production builds.
   const ofcomText=await readOfcomSnapshot();
-  const isedZipBuf=await fetchBuffer(ISED_URL,'ISED broadcasting database');
-  const acmaZip=await fetchBuffer(ACMA_URL,'ACMA transmitter workbook');
-
-  const isedZip=unzipEntries(isedZipBuf), amDbf=findZipEntry(isedZip,'amstatio.dbf');
-  if(!amDbf) throw new Error(`ISED archive missing AMSTATIO.DBF; entries: ${[...isedZip.keys()].join(', ')}`);
-
-  const ca=normalizeISED(amDbf), uk=normalizeOfcom(ofcomText), au=normalizeACMA(acmaZip);
-  validate('Canada/ISED',ca,150);
+  const uk=normalizeOfcom(ofcomText);
   validate('UK/Ofcom',uk,50);
-  validate('Australia/ACMA',au,150);
-  marker(ca,740,'CFZM','ISED');
   marker(uk,648,'Radio Caroline','Ofcom');
-  marker(au,873,'2GB','ACMA');
 
-  const regulatorEntries=stableDedupe([...ca,...uk,...au]);
+  const regulatorEntries=stableDedupe(uk);
   const fallbackEntries=[];
   const builtAt=new Date().toISOString();
   const regulatorMeta={
-    version:2,
+    version:3,
     builtAt,
     recordCount:regulatorEntries.length,
     complianceMode:true,
+    activeCountries:['United Kingdom'],
+    inactivePermittedSources:['ISED','ACMA'],
     sources:{
-      ISED:{authority:'Innovation, Science and Economic Development Canada',tier:1,url:ISED_URL,records:ca.length,format:'dBASEIII AMSTATIO.DBF',sourceDate:'2026-09-02',attribution:'Contains information licensed under the Open Government Licence – Canada.'},
-      Ofcom:{authority:'Ofcom',tier:1,url:OFCOM_URL,records:uk.length,format:'MF CSV (pinned gzip snapshot)',sourceDate:'2026-08-05',snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',snapshotSha256:OFCOM_SNAPSHOT_SHA256,attribution:'Contains public sector information licensed under the Open Government Licence v3.0.'},
-      ACMA:{authority:'Australian Communications and Media Authority',tier:1,url:ACMA_URL,records:au.length,format:'XLSX in ZIP',sourceDate:'2026-07-13',attribution:'CC BY 2.5 Australia'}
+      Ofcom:{
+        authority:'Ofcom',
+        tier:1,
+        url:OFCOM_URL,
+        records:uk.length,
+        format:'MF CSV (pinned gzip snapshot)',
+        sourceDate:'2026-08-05',
+        snapshot:'data/ofcom/txparamsmf-2026-08-05.csv.gz',
+        snapshotSha256:OFCOM_SNAPSHOT_SHA256,
+        attribution:'Contains public sector information licensed under the Open Government Licence v3.0.'
+      }
     }
   };
-  const fallbackMeta={version:2,builtAt,recordCount:0,disabled:true,reason:'Reference fallback source permission/licence chain not yet cleared.'};
-  const regulatorJs=render(regulatorEntries,regulatorMeta,'FREQBEACON_TERRESTRIAL_CATALOG','FREQBEACON_TERRESTRIAL_META','Generated regulator-grade MW catalog.');
-  const fallbackJs=render(fallbackEntries,fallbackMeta,'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG','FREQBEACON_TERRESTRIAL_FALLBACK_META','Compliance-disabled MW/LW fallback catalog.');
-  await Promise.all([writeFile(OUT,regulatorJs,'utf8'),writeFile(FALLBACK_OUT,fallbackJs,'utf8')]);
-  console.log(`FREQBEACON terrestrial catalogs: CA ${ca.length}, UK ${uk.length}, AU ${au.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback disabled.`);
+  const fallbackMeta={
+    version:3,
+    builtAt,
+    recordCount:0,
+    disabled:true,
+    reason:'Reference fallback source permission/licence chain not yet cleared.'
+  };
+  const regulatorJs=render(
+    regulatorEntries,
+    regulatorMeta,
+    'FREQBEACON_TERRESTRIAL_CATALOG',
+    'FREQBEACON_TERRESTRIAL_META',
+    'Generated regulator-grade MW catalog.'
+  );
+  const fallbackJs=render(
+    fallbackEntries,
+    fallbackMeta,
+    'FREQBEACON_TERRESTRIAL_FALLBACK_CATALOG',
+    'FREQBEACON_TERRESTRIAL_FALLBACK_META',
+    'Compliance-disabled MW/LW fallback catalog.'
+  );
+  await Promise.all([
+    writeFile(OUT,regulatorJs,'utf8'),
+    writeFile(FALLBACK_OUT,fallbackJs,'utf8')
+  ]);
+  console.log(`FREQBEACON terrestrial catalogs: UK ${uk.length}; regulator ${regulatorEntries.length} (${Buffer.byteLength(regulatorJs)} B), fallback disabled; build network disabled.`);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){main().catch(e=>{console.error(e);process.exitCode=1;});}
