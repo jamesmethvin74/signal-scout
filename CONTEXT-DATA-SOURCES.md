@@ -29,7 +29,7 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Coordinate handling: ISED DDMMSS is converted at build time; source west-positive longitude is converted to ordinary negative WGS84 longitude
 - Runtime: generated static catalog; browser never parses DBF and never calls ISED while listening
 - Confidence: Tier 1 / regulator
-- Refresh: run `node scripts/generate-global-terrestrial-catalog.mjs`; importer validates schema, coordinate/frequency/power ranges, minimum count, and current marker records before writing output
+- Production status: parser retained and tested, but live build download is inactive until an official ISED snapshot is pinned with provenance/integrity metadata
 - Limitations: categories remain generic broadcast/MW unless an independent curated overlay supplies programming metadata
 
 ### United Kingdom — regulator-grade MW
@@ -57,7 +57,7 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Fields ingested: callsign, frequency, purpose/service type, service area, transmitter/site, latitude/longitude, maximum ERP in watts, licence number
 - Runtime: ZIP/XLSX parsing happens only in the build generator; the app receives compact normalized static data
 - Confidence: Tier 1 / regulator. ACMA notes that a licence record does not itself guarantee a transmitter is operating, so runtime language must not overstate on-air certainty
-- Refresh: update the dated official workbook URL when ACMA publishes a new snapshot, rerun the generator, and verify minimum-count/current-marker validation
+- Production status: parser retained and tested, but live build download is inactive until an official ACMA snapshot is pinned with provenance/integrity metadata
 - Limitations: categories remain generic broadcast/MW unless separately curated; licensed pattern information is not yet applied to directional ranking
 
 ### Global MW/LW fallback
@@ -98,10 +98,10 @@ Sources are allowed to omit fields they do not publish. Identity/deduplication u
 
 ## Build safety / refresh
 
-`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It currently generates only the cleared regulator-grade Canada/UK/Australia catalog and an explicit empty fallback contract. The pinned Ofcom snapshot is protected by an exact raw CSV SHA-256 check.
+`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed and network-free during deployment. It currently generates the active UK catalog only from the pinned official Ofcom snapshot plus an explicit empty fallback contract. ISED and ACMA parsers remain tested but inactive until first-party snapshots are pinned. The Ofcom snapshot is protected by an exact raw CSV SHA-256 check.
 
 The generated outputs are:
-- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia records
+- `freqbeacon-zero-global-mw-lw.js` — currently active regulator-grade UK records from the pinned Ofcom snapshot
 - `freqbeacon-zero-global-mw-lw-fallback.js` — intentionally empty compliance-disabled fallback
 
 `postinstall` runs only the cleared regulator generator, wires those assets into Zero/Lookup, and runs tests. The old A26 and FCC mirror generators are retired and fail closed if invoked directly.
