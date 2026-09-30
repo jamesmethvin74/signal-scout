@@ -1,39 +1,6 @@
-const LEGACY_RECEIVERS = [
-  {
-    id: 'florida',
-    name: 'Florida KiwiSDR',
-    location: 'Palm Harbor, Florida',
-    host: '22315.proxy.kiwisdr.com',
-    lat: 28.0781,
-    lon: -82.7637,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  },
-  {
-    id: 'north-carolina',
-    name: 'North Carolina KiwiSDR',
-    location: 'Apex, North Carolina',
-    host: '22904.proxy.kiwisdr.com',
-    lat: 35.7327,
-    lon: -78.8503,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  },
-  {
-    id: 'pennsylvania',
-    name: 'Pennsylvania KiwiSDR',
-    location: 'Ridley Park, Pennsylvania',
-    host: '22479.proxy.kiwisdr.com',
-    lat: 39.8812,
-    lon: -75.3238,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  }
-];
+import { APPROVED_SDR_RECEIVERS, approvedSdrReceiver } from './sdr-approved-receivers.js';
 
+const LEGACY_RECEIVERS = APPROVED_SDR_RECEIVERS;
 
 function jsonResponse(value, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -342,9 +309,9 @@ async function resolveReceiver(request, receiverId, ctx) {
   const data = await fetchReceiverDirectory();
   const byId = data.receivers.find((receiver) => receiver.id === receiverId);
   if (byId) return byId;
-  const legacy = LEGACY_RECEIVERS.find((receiver) => receiver.id === receiverId);
+  const legacy = approvedSdrReceiver(receiverId);
   if (!legacy) return null;
-  const normalized = normalizedReceiverUrl(`http://${legacy.host}`);
+  const normalized = normalizedReceiverUrl(`${legacy.protocol}//${legacy.upstreamHost}`);
   return normalized ? { ...legacy, ...normalized } : null;
 }
 
