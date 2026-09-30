@@ -104,10 +104,12 @@ export async function receiverInventoryReady(env) {
 export async function receiverHealthSummary(env) {
   const now = Date.now();
   try {
+    const cutoff = now - DISCOVERY_STALE_MS;
+    const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
     const row = await db(env).prepare(`
       SELECT
         COUNT(*) AS inventory,
-        SUM(CASE WHEN trusted=1 AND last_success_at>=? AND last_discovered_at>=? THEN 1 ELSE 0 END) AS trustedFresh,
+        SUM(CASE WHEN trusted=1 AND last_success_at>=? THEN 1 ELSE 0 END) AS trustedFresh,
         SUM(CASE WHEN observations=0 THEN 1 ELSE 0 END) AS untested,
         SUM(CASE WHEN trusted=0 AND recent_successes>0 THEN 1 ELSE 0 END) AS promotionQueue,
         SUM(CASE WHEN last_tested_at>=? THEN 1 ELSE 0 END) AS tested24h,
@@ -115,7 +117,13 @@ export async function receiverHealthSummary(env) {
         MAX(last_tested_at) AS lastTestedAt,
         MAX(last_success_at) AS lastSuccessAt
       FROM receivers
-    `).bind(now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS, now - 86400000).first();
+      WHERE last_discovered_at>=? AND id IN (${placeholders})
+    `).bind(
+      now - TRUST_STALE_MS,
+      now - 86400000,
+      cutoff,
+      ...APPROVED_SDR_RECEIVER_IDS
+    ).first();
 
     return {
       inventoryReady: Number(row?.inventory || 0) > 0,
@@ -223,7 +231,7 @@ function commonKiwiError(text) {
 
 async function openUpstreamSocket(receiver, stream, sessionTs) {
   const base = upstreamBase(receiver);
-  const response = await fetch(`${base}${sessionTs}/${stream}`, {
+  const response = await fetch(`${base}/${sessionTs}/${stream}`, {
     headers: {
       Upgrade: 'websocket',
       Origin: base,
@@ -477,7 +485,7 @@ export async function handleExploreHealthStatus(request, env) {
       staleAfterDays: 7
     },
     cadence: {
-      directoryRefresh: 'every 6 hours',
+      receiverRegistry: 'approved static endpoints; refreshed every 6 hours',
       healthBackfill: 'hourly',
       batchSize: BACKFILL_BATCH_SIZE
     }
