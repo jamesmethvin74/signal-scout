@@ -3,12 +3,12 @@ import { readFile } from 'node:fs/promises';
 
 const wranglerText = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
 const wrangler = JSON.parse(wranglerText.replace(/^\s*\/\/.*$/gm, ''));
-assert.deepEqual(wrangler.triggers.crons, ['17 */6 * * *', '* * * * *']);
+assert.deepEqual(wrangler.triggers.crons, ['* * * * *']);
 assert.equal(wrangler.preview_urls, true);
 
 const worker = await readFile(new URL('../worker-program-v18.js', import.meta.url), 'utf8');
 assert.match(worker, /RECEIVER_HEALTH_CRON = '\* \* \* \* \*'/);
-assert.match(worker, /BOOTSTRAP_TRUSTED_TARGET = 125/);
+assert.match(worker, /BOOTSTRAP_TRUSTED_TARGET = APPROVED_SDR_RECEIVERS\.length/);
 assert.match(worker, /SCREEN_BATCH_SIZE = 18/);
 assert.match(worker, /FULL_PROOF_BATCH_SIZE = 10/);
 assert.match(worker, /MAINTENANCE_MINUTE_UTC = 45/);
@@ -26,6 +26,12 @@ assert.match(worker, /payload\.lastRun = recentRuns\[0\] \|\| null/);
 assert.match(worker, /mode: 'error'/);
 assert.match(worker, /maintenance-skip/);
 assert.match(worker, /cron !== RECEIVER_HEALTH_CRON/);
+
+const topWorker = await readFile(new URL('../worker-program-v22.js', import.meta.url), 'utf8');
+assert.match(topWorker, /const RECEIVER_HEALTH_CRON = '\* \* \* \* \*'/);
+assert.match(topWorker, /cron !== RECEIVER_HEALTH_CRON/);
+assert.match(topWorker, /compliance firewall blocked scheduled event/);
+assert.doesNotMatch(wranglerText, /17 \*\/6 \* \* \*/);
 
 const backfill = await readFile(new URL('../receiver-health-backfill.js', import.meta.url), 'utf8');
 assert.match(backfill, /BACKFILL_BATCH_SIZE = 10/);
