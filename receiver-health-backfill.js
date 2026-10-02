@@ -1,3 +1,5 @@
+import { APPROVED_SDR_RECEIVER_IDS, isApprovedSdrReceiverId } from './sdr-approved-receivers.js';
+
 const BACKFILL_BATCH_SIZE = 10;
 const HISTORY_LIMIT = 8;
 const TRUST_STALE_MS = 7 * 86400000;
@@ -88,7 +90,11 @@ export function evaluateHealthTransition(existing = {}, result = {}) {
 
 export async function receiverInventoryReady(env) {
   try {
-    const row = await db(env).prepare('SELECT COUNT(*) AS count FROM receivers').first();
+    const cutoff = Date.now() - DISCOVERY_STALE_MS;
+    const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
+    const row = await db(env).prepare(
+      `SELECT COUNT(*) AS count FROM receivers WHERE last_discovered_at>=? AND id IN (${placeholders})`
+    ).bind(cutoff, ...APPROVED_SDR_RECEIVER_IDS).first();
     return Number(row?.count || 0) > 0;
   } catch {
     return false;
@@ -98,10 +104,12 @@ export async function receiverInventoryReady(env) {
 export async function receiverHealthSummary(env) {
   const now = Date.now();
   try {
+    const cutoff = now - DISCOVERY_STALE_MS;
+    const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
     const row = await db(env).prepare(`
       SELECT
         COUNT(*) AS inventory,
-        SUM(CASE WHEN trusted=1 AND last_success_at>=? AND last_discovered_at>=? THEN 1 ELSE 0 END) AS trustedFresh,
+        SUM(CASE WHEN trusted=1 AND last_success_at>=? THEN 1 ELSE 0 END) AS trustedFresh,
         SUM(CASE WHEN observations=0 THEN 1 ELSE 0 END) AS untested,
         SUM(CASE WHEN trusted=0 AND recent_successes>0 THEN 1 ELSE 0 END) AS promotionQueue,
         SUM(CASE WHEN last_tested_at>=? THEN 1 ELSE 0 END) AS tested24h,
@@ -109,7 +117,13 @@ export async function receiverHealthSummary(env) {
         MAX(last_tested_at) AS lastTestedAt,
         MAX(last_success_at) AS lastSuccessAt
       FROM receivers
-    `).bind(now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS, now - 86400000).first();
+      WHERE last_discovered_at>=? AND id IN (${placeholders})
+    `).bind(
+      now - TRUST_STALE_MS,
+      now - 86400000,
+      cutoff,
+      ...APPROVED_SDR_RECEIVER_IDS
+    ).first();
 
     return {
       inventoryReady: Number(row?.inventory || 0) > 0,
@@ -217,11 +231,11 @@ function commonKiwiError(text) {
 
 async function openUpstreamSocket(receiver, stream, sessionTs) {
   const base = upstreamBase(receiver);
-  const response = await fetch(`${base}/ws/kiwi/${sessionTs}/${stream}`, {
+  const response = await fetch(`${base}/${sessionTs}/${stream}`, {
     headers: {
       Upgrade: 'websocket',
       Origin: base,
-      'User-Agent': 'FREQBEACON/1.0 receiver health backfill'
+      'User-Agent': 'FREQBEACON/1.0 external receiver health backfill'
     }
   });
   if (!response.webSocket) throw new Error(`${stream} refused WebSocket (${response.status})`);
@@ -349,7 +363,7 @@ async function probeReceiver(receiver) {
     let versionResponse;
     try {
       versionResponse = await fetch(`${upstreamBase(receiver)}/VER`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 receiver health backfill' },
+        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 external receiver health backfill' },
         signal: controller.signal
       });
     } finally {
@@ -411,6 +425,8 @@ export async function runExploreBackfillCycle(env, options = {}) {
     return { inventoryReady: false, tested: 0, successful: 0, promoted: 0, demoted: 0, results: [] };
   }
 
+  loaded.candidates = loaded.candidates.filter((receiver) => isApprovedSdrReceiverId(receiver.id));
+
   const results = [];
   let successful = 0;
   let promoted = 0;
@@ -469,7 +485,7 @@ export async function handleExploreHealthStatus(request, env) {
       staleAfterDays: 7
     },
     cadence: {
-      directoryRefresh: 'every 6 hours',
+      receiverRegistry: 'approved static endpoints; refreshed every 6 hours',
       healthBackfill: 'hourly',
       batchSize: BACKFILL_BATCH_SIZE
     }

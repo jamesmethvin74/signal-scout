@@ -1,4 +1,5 @@
 import baseWorker from './worker-program-v17.js';
+import { APPROVED_SDR_RECEIVERS } from './sdr-approved-receivers.js';
 import {
   handleExploreApi,
   handleExploreZeroRequest,
@@ -24,7 +25,7 @@ import {
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
 const RECEIVER_HEALTH_CRON = '* * * * *';
-const BOOTSTRAP_TRUSTED_TARGET = 125;
+const BOOTSTRAP_TRUSTED_TARGET = APPROVED_SDR_RECEIVERS.length;
 const SCREEN_BATCH_SIZE = 18;
 const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
@@ -212,7 +213,7 @@ async function healthStatusResponse(request, env) {
     payload.bootstrap = bootstrap;
     payload.cadence = {
       directoryRefresh: 'every 6 hours',
-      bootstrap: `every minute until ${BOOTSTRAP_TRUSTED_TARGET} trusted receivers`,
+      bootstrap: `every minute until all ${BOOTSTRAP_TRUSTED_TARGET} approved receivers are qualified`,
       bootstrapScreenBatch: SCREEN_BATCH_SIZE,
       bootstrapFullProofBatch: FULL_PROOF_BATCH_SIZE,
       maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after bootstrap`,

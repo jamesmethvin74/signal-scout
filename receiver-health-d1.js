@@ -1,5 +1,6 @@
-const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
-const MAX_RECEIVERS = 1400;
+import { APPROVED_SDR_RECEIVERS, APPROVED_SDR_RECEIVER_IDS, isApprovedSdrReceiverId } from './sdr-approved-receivers.js';
+
+const MAX_RECEIVERS = APPROVED_SDR_RECEIVERS.length;
 const BATCH_SIZE = 8;
 const HISTORY_LIMIT = 8;
 const TRUST_STALE_MS = 7 * 86400000;
@@ -114,64 +115,18 @@ function normalizeReceiverUrl(rawUrl) {
   };
 }
 
-function parseReceiverBook(html) {
-  const match = String(html || '').match(/var\s+receivers\s*=\s*(\[[\s\S]*?\]);/);
-  if (!match) throw new Error('ReceiverBook format was not recognized');
-  const sites = JSON.parse(match[1]);
-  if (!Array.isArray(sites)) throw new Error('ReceiverBook did not contain a receiver list');
-
-  const byId = new Map();
-  for (const site of sites) {
-    const coordinates = site?.location?.coordinates;
-    const lon = finiteNumber(Array.isArray(coordinates) ? coordinates[0] : site?.lon);
-    const lat = finiteNumber(Array.isArray(coordinates) ? coordinates[1] : site?.lat);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-    const siteLabel = cleanText(site?.label || site?.name || '');
-    const children = Array.isArray(site?.receivers) && site.receivers.length ? site.receivers : [site];
-    for (const child of children) {
-      if (byId.size >= MAX_RECEIVERS) break;
-      const typeText = [child?.type, child?.version, child?.software].filter(Boolean).join(' ');
-      if (typeText && /(?:openwebrx|websdr)/i.test(typeText) && !/kiwi/i.test(typeText)) continue;
-      const normalized = normalizeReceiverUrl(child?.url || site?.url);
-      if (!normalized || byId.has(normalized.id)) continue;
-
-      const childLabel = cleanText(child?.label || child?.name || '');
-      const name = childLabel || siteLabel || normalized.upstreamHost;
-      byId.set(normalized.id, {
-        ...normalized,
-        name,
-        location: siteLabel || childLabel || name,
-        country: cleanText(child?.country || site?.country || '', 80),
-        lat,
-        lon,
-        version: cleanText(child?.version || '', 80),
-        receiverType: 'KiwiSDR',
-        antenna: cleanText(child?.antenna || site?.antenna || '', 180)
-      });
-    }
-    if (byId.size >= MAX_RECEIVERS) break;
-  }
-  return [...byId.values()];
+function discoverReceivers() {
+  return APPROVED_SDR_RECEIVERS.map((receiver) => ({ ...receiver }));
 }
 
-async function discoverReceivers() {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const response = await fetch(DIRECTORY_URL, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'FREQBEACON/1.0 trusted receiver discovery'
-      },
-      signal: controller.signal,
-      cf: { cacheTtl: 15 * 60, cacheEverything: true }
-    });
-    if (!response.ok) throw new Error(`ReceiverBook HTTP ${response.status}`);
-    return parseReceiverBook(await response.text());
-  } finally {
-    clearTimeout(timer);
-  }
+async function deactivateUnapprovedReceivers(env) {
+  await ensureSchema(env);
+  const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
+  await db(env).prepare(`
+    UPDATE receivers
+    SET trusted=0, last_discovered_at=0
+    WHERE id NOT IN (${placeholders})
+  `).bind(...APPROVED_SDR_RECEIVER_IDS).run();
 }
 
 async function ingestReceivers(env, receivers, discoveredAt) {
@@ -265,11 +220,11 @@ function commonKiwiError(text) {
 
 async function openUpstreamSocket(receiver, stream, sessionTs) {
   const base = upstreamBase(receiver);
-  const response = await fetch(`${base}/ws/kiwi/${sessionTs}/${stream}`, {
+  const response = await fetch(`${base}/${sessionTs}/${stream}`, {
     headers: {
       Upgrade: 'websocket',
       Origin: base,
-      'User-Agent': 'FREQBEACON/1.0 receiver health probe'
+      'User-Agent': 'FREQBEACON/1.0 external receiver health probe'
     }
   });
   if (!response.webSocket) throw new Error(`${stream} refused WebSocket (${response.status})`);
@@ -397,7 +352,7 @@ async function probeReceiver(receiver) {
     let versionResponse;
     try {
       versionResponse = await fetch(`${upstreamBase(receiver)}/VER`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 receiver health probe' },
+        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 external receiver health probe' },
         signal: controller.signal
       });
     } finally {
@@ -482,7 +437,7 @@ async function trustedRows(env) {
 async function trustedReceiver(env, receiverId) {
   await ensureSchema(env);
   const id = String(receiverId || '').trim();
-  if (!id || id.length > 180) return null;
+  if (!id || id.length > 180 || !isApprovedSdrReceiverId(id)) return null;
   const now = Date.now();
   return db(env).prepare(`
     SELECT id,name,location,country,lat,lon,upstream_host AS upstreamHost,hostname,protocol,version,
@@ -493,18 +448,25 @@ async function trustedReceiver(env, receiverId) {
   `).bind(id, now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS).first();
 }
 
-export async function runExploreHealthCycle(env) {
+export async function syncApprovedReceiverInventory(env) {
   const discoveredAt = Date.now();
-  const receivers = await discoverReceivers();
+  await deactivateUnapprovedReceivers(env);
+  const receivers = discoverReceivers();
   await ingestReceivers(env, receivers, discoveredAt);
+  return { receivers, discoveredAt };
+}
+
+export async function runExploreHealthCycle(env) {
+  const { receivers } = await syncApprovedReceiverInventory(env);
   const candidates = await loadCandidates(env);
   const results = [];
   for (const receiver of candidates.slice(0, BATCH_SIZE)) {
+    if (!isApprovedSdrReceiverId(receiver.id)) continue;
     const result = await probeReceiver(receiver);
     results.push(result);
     await recordProbe(env, result);
   }
-  return { discovered: receivers.length, tested: results.length, results };
+  return { discovered: receivers.length, tested: results.length, results, source:'approved-static' };
 }
 
 export async function handleExploreApi(request, env) {
@@ -531,7 +493,7 @@ export async function handleExploreApi(request, env) {
     features,
     count: features.length,
     generatedAt: new Date().toISOString(),
-    policy: 'trusted-only'
+    policy: 'approved-static-trusted-only'
   }, 200, { 'cache-control': 'public, max-age=120, stale-while-revalidate=300' });
 }
 
@@ -555,7 +517,7 @@ function parseStatusPairs(text) {
 
 async function fetchTrustedText(receiver, path, accept = 'text/plain') {
   const response = await fetch(`${upstreamBase(receiver)}${path}`, {
-    headers: { accept, 'user-agent': 'FREQBEACON-ZERO/explore' }
+    headers: { accept, 'user-agent': 'FREQBEACON/1.0 external KiwiSDR client' }
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`${path} FAILED (${response.status})`);
@@ -618,11 +580,11 @@ async function trustedZeroSocket(request, url, receiver) {
   if (!/^\d{8,20}$/.test(sessionTs)) return new Response('BAD SESSION TIMESTAMP', { status: 400 });
 
   try {
-    const response = await fetch(`${upstreamBase(receiver)}/ws/kiwi/${sessionTs}/${stream}`, {
+    const response = await fetch(`${upstreamBase(receiver)}/${sessionTs}/${stream}`, {
       headers: {
         Upgrade: 'websocket',
         Origin: upstreamBase(receiver),
-        'User-Agent': 'FREQBEACON-ZERO/explore'
+        'User-Agent': 'FREQBEACON/1.0 external KiwiSDR client'
       }
     });
     if (!response.webSocket) return new Response(`${stream} REFUSED (${response.status})`, { status: 502 });

@@ -4,9 +4,10 @@ import fs from 'node:fs';
 
 const source = fs.readFileSync(new URL('../worker-v2.js', import.meta.url), 'utf8');
 
-test('Kiwi proxy uses native UI websocket class, not kiwirecorder external API', () => {
-  assert.match(source, /\/ws\/kiwi\/\$\{upstreamTimestamp\}\/\$\{stream\}/);
-  assert.doesNotMatch(source, /receiver\.upstreamHost\}\/\$\{upstreamTimestamp\}\/\$\{stream\}/);
+test('Kiwi proxy uses the external-client websocket class and honors operator limits', () => {
+  assert.doesNotMatch(source, /\/ws\/kiwi\/\$\{upstreamTimestamp\}\/\$\{stream\}/);
+  assert.match(source, /receiver\.upstreamHost\}\/\$\{upstreamTimestamp\}\/\$\{stream\}/);
   assert.match(source, /NEW_TSTAMP_SPACE/);
-  assert.match(source, /FREQBEACON\/1\.0 interactive KiwiSDR client/);
+  assert.match(source, /FREQBEACON\/1\.0 external KiwiSDR client/);
+  assert.match(source, /Never route around that control/);
 });

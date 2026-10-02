@@ -1,50 +1,6 @@
-const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
-const DIRECTORY_CACHE_TTL_SECONDS = 15 * 60;
-const DIRECTORY_STALE_TTL_SECONDS = 7 * 24 * 60 * 60;
-const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
-const DIRECTORY_FAILURE_RETRY_MS = 60 * 1000;
-const DIRECTORY_FETCH_TIMEOUT_MS = 4500;
-const MAX_DIRECTORY_RECEIVERS = 1400;
+import { APPROVED_SDR_RECEIVERS, approvedSdrReceiver } from './sdr-approved-receivers.js';
 
-const LEGACY_RECEIVERS = [
-  {
-    id: 'florida',
-    name: 'Florida KiwiSDR',
-    location: 'Palm Harbor, Florida',
-    host: '22315.proxy.kiwisdr.com',
-    lat: 28.0781,
-    lon: -82.7637,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  },
-  {
-    id: 'north-carolina',
-    name: 'North Carolina KiwiSDR',
-    location: 'Apex, North Carolina',
-    host: '22904.proxy.kiwisdr.com',
-    lat: 35.7327,
-    lon: -78.8503,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  },
-  {
-    id: 'pennsylvania',
-    name: 'Pennsylvania KiwiSDR',
-    location: 'Ridley Park, Pennsylvania',
-    host: '22479.proxy.kiwisdr.com',
-    lat: 39.8812,
-    lon: -75.3238,
-    minKHz: 10,
-    maxKHz: 30000,
-    source: 'legacy'
-  }
-];
-
-let directoryMemory = null;
-let directoryMemoryAt = 0;
-let directoryMemoryStale = false;
+const LEGACY_RECEIVERS = APPROVED_SDR_RECEIVERS;
 
 function jsonResponse(value, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -132,169 +88,29 @@ function normalizedReceiverUrl(rawUrl) {
   };
 }
 
-function parseReceiverBook(html) {
-  const match = String(html || '').match(/var\s+receivers\s*=\s*(\[[\s\S]*?\]);/);
-  if (!match) throw new Error('Receiver directory format was not recognized');
-  const sites = JSON.parse(match[1]);
-  if (!Array.isArray(sites)) throw new Error('Receiver directory did not contain a receiver list');
-
-  const byHost = new Map();
-  for (const site of sites) {
-    const coordinates = site?.location?.coordinates;
-    const lon = finiteNumber(Array.isArray(coordinates) ? coordinates[0] : site?.lon);
-    const lat = finiteNumber(Array.isArray(coordinates) ? coordinates[1] : site?.lat);
-    const siteLabel = String(site?.label || '').trim();
-    const children = Array.isArray(site?.receivers) && site.receivers.length ? site.receivers : [site];
-
-    for (const child of children) {
-      if (byHost.size >= MAX_DIRECTORY_RECEIVERS) break;
-      const typeText = [child?.type, child?.version, child?.software].filter(Boolean).join(' ');
-      if (typeText && /(?:openwebrx|websdr)/i.test(typeText) && !/kiwi/i.test(typeText)) continue;
-      const normalized = normalizedReceiverUrl(child?.url || site?.url);
-      if (!normalized) continue;
-
-      const cleanSiteLabel = siteLabel.replace(/<[^>]+>/g, '').trim();
-      const name = String(child?.label || cleanSiteLabel || normalized.upstreamHost).replace(/<[^>]+>/g, '').trim().slice(0, 180);
-      const location = (cleanSiteLabel || name).slice(0, 180);
-      const coverage = coverageFromText(`${name} ${location}`);
-      const receiver = {
-        id: normalized.host,
-        name,
-        location,
-        host: normalized.host,
-        upstreamHost: normalized.upstreamHost,
-        hostname: normalized.hostname,
-        protocol: normalized.protocol,
-        url: normalized.url,
-        lat,
-        lon,
-        minKHz: coverage.minKHz,
-        maxKHz: coverage.maxKHz,
-        coverageKnown: coverage.coverageKnown,
-        version: String(child?.version || '').trim(),
-        source: 'receiverbook'
-      };
-      if (!byHost.has(receiver.host)) byHost.set(receiver.host, receiver);
-    }
-  }
-
-  return [...byHost.values()];
-}
-
-function mergeLegacy(receivers) {
-  const result = [...receivers];
-  const known = new Set(receivers.map((receiver) => receiver.host));
-  for (const legacy of LEGACY_RECEIVERS) {
-    const normalized = normalizedReceiverUrl(`http://${legacy.host}`);
-    if (!normalized || known.has(normalized.host)) continue;
-    result.push({
-      ...legacy,
+function staticReceiverDirectory() {
+  return LEGACY_RECEIVERS.map((receiver) => {
+    const normalized = normalizedReceiverUrl(`http://${receiver.host}`);
+    return normalized ? {
+      ...receiver,
       host: normalized.host,
       upstreamHost: normalized.upstreamHost,
       hostname: normalized.hostname,
-      protocol: 'http:',
+      protocol: normalized.protocol,
       url: normalized.url,
-      coverageKnown: true
-    });
-  }
-  return result;
+      coverageKnown: true,
+      source: 'operator-public-static'
+    } : null;
+  }).filter(Boolean);
 }
 
-function validDirectoryData(data) {
-  return Array.isArray(data?.receivers) && data.receivers.length > LEGACY_RECEIVERS.length;
-}
-
-async function readDirectoryCache(cache, key) {
-  const cached = await cache.match(key);
-  if (!cached) return null;
-  try {
-    const data = await cached.json();
-    return validDirectoryData(data) ? data : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchReceiverDirectory(request, ctx) {
-  const now = Date.now();
-  const memoryTtl = directoryMemoryStale ? DIRECTORY_FAILURE_RETRY_MS : DIRECTORY_MEMORY_TTL_MS;
-  if (directoryMemory && now - directoryMemoryAt < memoryTtl) return directoryMemory;
-
-  const cache = caches.default;
-  const freshCacheKey = new Request(new URL('/__cache/sdr-directory-v4-fresh', request.url).toString(), { method: 'GET' });
-  const staleCacheKey = new Request(new URL('/__cache/sdr-directory-v4-last-good', request.url).toString(), { method: 'GET' });
-
-  const freshData = await readDirectoryCache(cache, freshCacheKey);
-  if (freshData) {
-    directoryMemory = freshData;
-    directoryMemoryAt = now;
-    directoryMemoryStale = false;
-    return freshData;
-  }
-
-  const staleData = await readDirectoryCache(cache, staleCacheKey);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DIRECTORY_FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(DIRECTORY_URL, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'SignalScout/1.0 (+public SDR receiver discovery)'
-      },
-      signal: controller.signal,
-      cf: { cacheTtl: DIRECTORY_CACHE_TTL_SECONDS, cacheEverything: true }
-    });
-    if (!response.ok) throw new Error(`Directory HTTP ${response.status}`);
-    const parsed = parseReceiverBook(await response.text());
-    if (!parsed.length) throw new Error('Directory returned no usable KiwiSDRs');
-    const data = {
-      receivers: mergeLegacy(parsed),
-      source: 'receiverbook',
-      fetchedAt: new Date().toISOString()
-    };
-    directoryMemory = data;
-    directoryMemoryAt = now;
-    directoryMemoryStale = false;
-
-    const freshResponse = jsonResponse(data, {
-      headers: { 'cache-control': `public, max-age=${DIRECTORY_CACHE_TTL_SECONDS}` }
-    });
-    const staleResponse = jsonResponse(data, {
-      headers: { 'cache-control': `public, max-age=${DIRECTORY_STALE_TTL_SECONDS}` }
-    });
-    ctx?.waitUntil(Promise.all([
-      cache.put(freshCacheKey, freshResponse.clone()),
-      cache.put(staleCacheKey, staleResponse.clone())
-    ]));
-    return data;
-  } catch (error) {
-    if (staleData) {
-      const stale = {
-        ...staleData,
-        source: 'receiverbook-stale',
-        warning: null
-      };
-      directoryMemory = stale;
-      directoryMemoryAt = now;
-      directoryMemoryStale = true;
-      return stale;
-    }
-
-    const fallback = {
-      receivers: mergeLegacy([]),
-      source: 'fallback',
-      warning: error?.name === 'AbortError'
-        ? 'Receiver directory timed out.'
-        : (error?.message || 'Public receiver directory unavailable'),
-      fetchedAt: new Date().toISOString()
-    };
-    directoryMemory = fallback;
-    directoryMemoryAt = now;
-    directoryMemoryStale = true;
-    return fallback;
-  } finally {
-    clearTimeout(timer);
-  }
+async function fetchReceiverDirectory() {
+  return {
+    receivers: staticReceiverDirectory(),
+    source: 'operator-public-static',
+    warning: null,
+    fetchedAt: new Date().toISOString()
+  };
 }
 
 function userProximityScore(distanceMiles) {
@@ -472,7 +288,7 @@ async function receiverRecommendations(request, ctx) {
     return jsonResponse({ error: 'frequency must be between 10 and 30000 kHz' }, { status: 400 });
   }
 
-  const data = await fetchReceiverDirectory(request, ctx);
+  const data = await fetchReceiverDirectory();
   const ranked = rankReceivers(data.receivers, {
     frequencyKHz,
     userLat: finiteNumber(url.searchParams.get('lat')),
@@ -490,12 +306,12 @@ async function receiverRecommendations(request, ctx) {
 }
 
 async function resolveReceiver(request, receiverId, ctx) {
-  const data = await fetchReceiverDirectory(request, ctx);
+  const data = await fetchReceiverDirectory();
   const byId = data.receivers.find((receiver) => receiver.id === receiverId);
   if (byId) return byId;
-  const legacy = LEGACY_RECEIVERS.find((receiver) => receiver.id === receiverId);
+  const legacy = approvedSdrReceiver(receiverId);
   if (!legacy) return null;
-  const normalized = normalizedReceiverUrl(`http://${legacy.host}`);
+  const normalized = normalizedReceiverUrl(`${legacy.protocol}//${legacy.upstreamHost}`);
   return normalized ? { ...legacy, ...normalized } : null;
 }
 

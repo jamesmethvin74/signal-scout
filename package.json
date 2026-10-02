@@ -2,10 +2,11 @@
   "name": "freqbeacon",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/generate-a26-identification-catalog.mjs && node scripts/generate-fcc-am-catalog.mjs && node scripts/generate-global-terrestrial-catalog.mjs && node scripts/wire-terrestrial-assets.mjs && npm run test",
+    "postinstall": "node scripts/generate-global-terrestrial-catalog.mjs && node scripts/wire-terrestrial-assets.mjs && npm run test",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs",
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs",
     "test:security": "node tests/security-hardening.test.mjs",
-    "test": "npm run test:catalogs && npm run test:receiver-health && npm run test:security"
+    "test": "npm run test:catalogs && npm run test:receiver-health && npm run test:security && npm run test:compliance",
+    "test:compliance": "node tests/source-compliance.test.mjs"
   }
 }

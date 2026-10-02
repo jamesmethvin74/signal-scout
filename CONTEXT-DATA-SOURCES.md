@@ -14,14 +14,12 @@ Receiver health is not part of this catalog and must not alter the user's local 
 
 ## Broadcast station infrastructure
 
-### United States — regulator-grade MW
-- Authority: Federal Communications Commission (FCC)
-- Build input: pinned FCC-derived AM engineering snapshot used by `scripts/generate-fcc-am-catalog.mjs`
-- Fields ingested: callsign, frequency, transmitter coordinates, day/night/critical power, status
-- Runtime: generated static catalog; no FCC request while listening
-- Confidence: Tier 1 technical record plus separate FREQBEACON programming/category overlays
-- Refresh: update the pinned source snapshot/validation marker and rebuild
-- Limitations: category/program format is not inferred from FCC geography or frequency
+### United States — FCC MW migration
+- Authority target: Federal Communications Commission (FCC), first-party only
+- Status: the prior third-party mirror-derived generated asset is compliance-disabled as of 2026-09-30
+- Runtime: the disabled asset exports an empty catalog; built-in legacy factual seeds may still provide limited fallback identity
+- Re-enable condition: implement and document a direct FCC public-data acquisition path before restoring generated nationwide coverage
+- Do not substitute another mirror merely because it is easier to fetch
 
 ### Canada — regulator-grade MW
 - Authority: Innovation, Science and Economic Development Canada (ISED)
@@ -31,7 +29,7 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Coordinate handling: ISED DDMMSS is converted at build time; source west-positive longitude is converted to ordinary negative WGS84 longitude
 - Runtime: generated static catalog; browser never parses DBF and never calls ISED while listening
 - Confidence: Tier 1 / regulator
-- Refresh: run `node scripts/generate-global-terrestrial-catalog.mjs`; importer validates schema, coordinate/frequency/power ranges, minimum count, and current marker records before writing output
+- Production status: parser retained and tested, but live build download is inactive until an official ISED snapshot is pinned with provenance/integrity metadata
 - Limitations: categories remain generic broadcast/MW unless an independent curated overlay supplies programming metadata
 
 ### United Kingdom — regulator-grade MW
@@ -59,22 +57,20 @@ Receiver health is not part of this catalog and must not alter the user's local 
 - Fields ingested: callsign, frequency, purpose/service type, service area, transmitter/site, latitude/longitude, maximum ERP in watts, licence number
 - Runtime: ZIP/XLSX parsing happens only in the build generator; the app receives compact normalized static data
 - Confidence: Tier 1 / regulator. ACMA notes that a licence record does not itself guarantee a transmitter is operating, so runtime language must not overstate on-air certainty
-- Refresh: update the dated official workbook URL when ACMA publishes a new snapshot, rerun the generator, and verify minimum-count/current-marker validation
+- Production status: parser retained and tested, but live build download is inactive until an official ACMA snapshot is pinned with provenance/integrity metadata
 - Limitations: categories remain generic broadcast/MW unless separately curated; licensed pattern information is not yet applied to directional ranking
 
-### Global MW/LW fallback — reference only
-- Authority/source: EiBi rows from the existing pinned A26 merged HFCC/EiBi schedule source
-- Output: separate generated low-frequency fallback asset; these rows are not mixed into the existing A26 shortwave shards
-- Scope: normal LW broadcast allocation 148.5–283.5 kHz and MW broadcast allocation 520–1710 kHz
-- Filtering: EiBi only, requires station and schedule fields, excludes negative/utility language rows and utility/NDB/navigation/service-name patterns
-- Coordinates: country centroid only when no precise site coordinate exists; such rows are explicitly marked `locationApproximate=true`
-- Confidence: reference/fallback, never regulator-grade
-- Precedence: regulator records outrank fallback rows on the same frequency; curated FREQBEACON metadata may enrich a regulator record but must not replace technical coordinates/power
-- Refresh: regenerated from the same pinned A26 source as the shortwave pipeline
+### Global MW/LW fallback
+- Status: compliance-disabled as of 2026-09-30
+- The former fallback depended on a third-party merged EiBi/HFCC source
+- The generated fallback contract is intentionally empty until current first-party reuse permission is documented
+- Regulator-grade Canada/UK/Australia coverage remains independent of this fallback
 
 ### Global shortwave
-- Existing FREQBEACON A26 HFCC/EiBi schedule pipeline remains unchanged and sharded from 2.3–30 MHz
-- ITU eHFBC is an additional authoritative schedule/reference source and may be used for verification, but FREQBEACON does not require an authenticated or paid ITU service for ordinary builds
+- Automated A26 HFCC/EiBi expansion is compliance-disabled as of 2026-09-30
+- The browser no longer fetches the third-party merged schedule, and postinstall no longer runs the mirror-based A26 generator
+- Built-in factual seed coverage remains available while a cleared first-party schedule source is evaluated
+- HFCC's "Public Schedule Data" label alone is not treated as a redistribution licence; explicit reuse authority must be documented before re-enabling automated ingestion
 
 ## Generated terrestrial contract
 
@@ -95,20 +91,20 @@ Sources are allowed to omit fields they do not publish. Identity/deduplication u
 - Receiver health and remote-SDR success/failure never alter the user's local reception score.
 - MW/LW station ranking uses transmitter distance and appropriate technical power; Canada can select separate day/night transmitter coordinates.
 - Zero/silent technical records are rejected or made ineligible.
-- Tier 1 regulator records outrank EiBi/reference fallback records on the same channel.
+- Tier 1 regulator records outrank any future cleared reference fallback records on the same channel.
 - Known station-level matches beat generic Medium Wave / AM Broadcast or Longwave cards only when the station-level candidate clears the geographic/technical confidence threshold.
 - If no responsible candidate exists, the existing generic band/service fallback remains.
 - No regulator website is queried while the radio is running.
 
 ## Build safety / refresh
 
-`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed. It validates required source headers, minimum national/fallback record counts, coordinate/frequency/power ranges, and known current marker records before writing either generated asset. The pinned Ofcom snapshot is additionally protected by an exact raw CSV SHA-256 check. The generator also prints generated byte sizes so startup cost can be monitored before introducing country sharding.
+`scripts/generate-global-terrestrial-catalog.mjs` is fail-closed and network-free during deployment. It currently generates the active UK catalog only from the pinned official Ofcom snapshot plus an explicit empty fallback contract. ISED and ACMA parsers remain tested but inactive until first-party snapshots are pinned. The Ofcom snapshot is protected by an exact raw CSV SHA-256 check.
 
 The generated outputs are:
-- `freqbeacon-zero-global-mw-lw.js` — regulator-grade Canada/UK/Australia records
-- `freqbeacon-zero-global-mw-lw-fallback.js` — separate EiBi/reference MW/LW fallback
+- `freqbeacon-zero-global-mw-lw.js` — currently active regulator-grade UK records from the pinned Ofcom snapshot
+- `freqbeacon-zero-global-mw-lw-fallback.js` — intentionally empty compliance-disabled fallback
 
-`postinstall` generates these assets and wires them into the built Zero and Lookup HTML immediately before the existing identification data/engine consumers. The existing A26 SW shards and SDR/Kiwi protocol files are untouched.
+`postinstall` runs only the cleared regulator generator, wires those assets into Zero/Lookup, and runs tests. The old A26 and FCC mirror generators are retired and fail closed if invoked directly.
 
 ## Aviation HF
 
@@ -141,3 +137,8 @@ For each category-enrichment record store:
 - confidence
 
 Never infer a sports station merely from geography or frequency. If receiver-local category metadata is missing, Lookup should say coverage is incomplete and fall back only to genuinely global scheduled services.
+
+
+## Compliance gate
+
+See `SOURCE-COMPLIANCE.md`. Public reachability is not treated as permission for automated extraction or republication, and external receiver controls must never be bypassed.
