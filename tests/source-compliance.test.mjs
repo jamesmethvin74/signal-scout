@@ -3,12 +3,27 @@ import { readFile } from 'node:fs/promises';
 
 const read = (name) => readFile(new URL('../' + name, import.meta.url), 'utf8');
 
-const [workerV2, workerBase, guideWorker, fullData, pkgText, fccAsset, terrestrialGenerator, policy] = await Promise.all([
+const [
+  workerV2,
+  workerBase,
+  zeroWorker,
+  topWorker,
+  guideWorker,
+  fullData,
+  pkgText,
+  wranglerText,
+  fccAsset,
+  terrestrialGenerator,
+  policy
+] = await Promise.all([
   read('worker-v2.js'),
   read('worker-base.js'),
+  read('freqbeacon-zero-worker.js'),
+  read('worker-program-v22.js'),
   read('program-guide-worker.js'),
   read('full-data.js'),
   read('package.json'),
+  read('wrangler.jsonc'),
   read('freqbeacon-zero-us-am-fcc.js'),
   read('scripts/generate-global-terrestrial-catalog.mjs'),
   read('SOURCE-COMPLIANCE.md')
@@ -19,6 +34,20 @@ assert.doesNotMatch(workerBase, /receiverbook\.de/i);
 assert.doesNotMatch(workerV2, /\/ws\/kiwi\/\$\{upstreamTimestamp\}/);
 assert.match(workerV2, /external KiwiSDR client/);
 assert.match(workerV2, /owner’s ext_api channel/);
+
+assert.doesNotMatch(zeroWorker, /\/ws\/kiwi\//);
+assert.match(zeroWorker, /proxySafeTimestamp/);
+assert.match(zeroWorker, /external KiwiSDR client/);
+assert.match(zeroWorker, /receiver owner's ext_api channel limit/);
+
+assert.match(topWorker, /legacyProgramFirewall/);
+assert.match(topWorker, /\/api\/program-guide/);
+assert.match(topWorker, /\/api\/ham-activity/);
+assert.match(topWorker, /url\.pathname === '\/full-data\.js'/);
+assert.match(topWorker, /cron !== RECEIVER_HEALTH_CRON/);
+assert.match(topWorker, /compliance firewall blocked scheduled event/);
+assert.doesNotMatch(wranglerText, /17 \*\/6 \* \* \*/);
+assert.match(wranglerText, /"\* \* \* \* \*"/);
 
 assert.doesNotMatch(guideWorker, /https?:\/\//i);
 assert.doesNotMatch(guideWorker, /fetch\s*\(/);
