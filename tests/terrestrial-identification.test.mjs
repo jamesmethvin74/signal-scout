@@ -30,10 +30,10 @@ const c=context();
 for(const name of ['freqbeacon-zero-am-catalog.js','freqbeacon-zero-us-am-fcc.js','freqbeacon-zero-am-merge.js','stations.js','ham-bands.js','freqbeacon-zero-identification-data.js','freqbeacon-identification-engine.js']) await run(c,name);
 let engine=c.FREQBEACON_IDENTIFICATION_ENGINE;
 
-let result=engine.identify(740,{receiver:{lat:33.68,lon:-117.83},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'KBRT');
-result=engine.identify(660,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09-15T19:00:00Z')});
+let result=engine.identify(660,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WFAN');
+result=engine.identify(920,{receiver:{lat:34.75,lon:-92.3},now:new Date('2026-09-15T19:00:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'KARN');
 result=await engine.identifyAsync(9955,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.band,'SW'); assert.equal(result.entry.name,'A26 TEST 9955');
 assert.equal(result.nominalFrequencyKHz,9955); assert.equal(result.frequencyOffsetKHz,0);
@@ -42,10 +42,10 @@ assert.equal(result.kind,'exact'); assert.equal(result.entry.name,'A26 TEST 9955
 assert.equal(result.nominalFrequencyKHz,9955); assert.ok(Math.abs(result.frequencyOffsetKHz+1.8)<1e-9);
 result=await engine.identifyAsync(9952.4,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
 assert.notEqual(result.entry?.name,'A26 TEST 9955');
-result=engine.identify(743.9,{receiver:{lat:33.68,lon:-117.83},now:new Date('2026-09-15T19:00:00Z')});
-assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'KBRT'); assert.equal(result.nominalFrequencyKHz,740);
-result=engine.identify(744.1,{receiver:{lat:33.68,lon:-117.83},now:new Date('2026-09-15T19:00:00Z')});
-assert.notEqual(result.entry?.callsign,'KBRT');
+result=engine.identify(663.9,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09-15T19:00:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WFAN'); assert.equal(result.nominalFrequencyKHz,660);
+result=engine.identify(664.1,{receiver:{lat:40.72,lon:-74.0},now:new Date('2026-09-15T19:00:00Z')});
+assert.notEqual(result.entry?.callsign,'WFAN');
 assert.equal(engine.frequencyToleranceKHz({type:'station',band:'MW'}),4);
 assert.equal(engine.frequencyToleranceKHz({type:'station',band:'LW'}),2.5);
 assert.equal(engine.frequencyToleranceKHz({type:'station',band:'SW'}),2.5);

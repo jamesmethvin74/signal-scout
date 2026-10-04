@@ -21,6 +21,7 @@ import {
   recentReceiverHealthRuns,
   recordReceiverHealthRun
 } from './receiver-health-runs.js';
+import { kiwiDirectoryStatus, refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
 const RECEIVER_HEALTH_CRON = '* * * * *';
@@ -114,6 +115,7 @@ function scheduledMinuteUtc(event) {
 }
 
 async function runReceiverHealthCron(event, env) {
+  const directoryRefresh = await refreshKiwiPublicDirectory(receiverHealthCompatEnv(env));
   const inventoryReady = await receiverInventoryReady(env);
   if (!inventoryReady) {
     const seeded = await runExploreHealthCycle(receiverHealthCompatEnv(env));
@@ -125,7 +127,8 @@ async function runReceiverHealthCron(event, env) {
       trustedReceivers: summary.trustedReceivers,
       inventory: summary.inventory,
       untested: summary.untested,
-      promotionQueue: summary.promotionQueue
+      promotionQueue: summary.promotionQueue,
+      directoryRefresh: directoryRefresh.status
     };
   }
 
@@ -210,9 +213,10 @@ async function healthStatusResponse(request, env) {
     payload.recentRuns = recentRuns;
     payload.lastRun = recentRuns[0] || null;
     payload.bootstrap = bootstrap;
+    try { payload.directory = await kiwiDirectoryStatus(env); } catch {}
     payload.cadence = {
-      directoryRefresh: 'every 6 hours',
-      bootstrap: `every minute until ${BOOTSTRAP_TRUSTED_TARGET} trusted receivers`,
+      directoryRefresh: 'authorized Kiwi .gz list, no more than once per hour',
+      bootstrap: `every minute until all ${BOOTSTRAP_TRUSTED_TARGET} trusted public receivers are qualified`,
       bootstrapScreenBatch: SCREEN_BATCH_SIZE,
       bootstrapFullProofBatch: FULL_PROOF_BATCH_SIZE,
       maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after bootstrap`,

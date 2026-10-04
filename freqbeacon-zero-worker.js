@@ -17,7 +17,14 @@ const RECEIVERS = Object.freeze({
   })
 });
 
-const VERSION = 'zero-cleanroom-4';
+const VERSION = 'zero-cleanroom-5';
+const NEW_TSTAMP_SPACE = 1n << 62n;
+const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
+
+function proxySafeTimestamp(timestamp) {
+  const raw = BigInt(String(timestamp || '0')) & LOWER_TSTAMP_MASK;
+  return (NEW_TSTAMP_SPACE | raw).toString();
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -178,14 +185,19 @@ async function openKiwiSocket(request, url, receiver) {
     return new Response('BAD SESSION TIMESTAMP', { status: 400 });
   }
 
-  const target = `${upstreamBase(receiver)}/ws/kiwi/${sessionTs}/${stream}`;
+  // Zero is an external application. Use Kiwi's external-client socket class
+  // so the receiver owner's ext_api channel limit is enforced by Kiwi itself.
+  // The NEW_TSTAMP_SPACE bit keeps paired SND/W/F streams valid when Cloudflare
+  // sends the two outbound WebSockets through different egress IPs.
+  const upstreamTimestamp = proxySafeTimestamp(sessionTs);
+  const target = `${upstreamBase(receiver)}/${upstreamTimestamp}/${stream}`;
 
   try {
     const response = await fetch(target, {
       headers: {
         Upgrade: 'websocket',
         Origin: upstreamBase(receiver),
-        'User-Agent': 'FREQBEACON-ZERO/cleanroom'
+        'User-Agent': 'FREQBEACON-ZERO/1.0 external KiwiSDR client'
       }
     });
 

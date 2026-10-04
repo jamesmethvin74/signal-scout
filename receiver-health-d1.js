@@ -1,5 +1,5 @@
-const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
-const MAX_RECEIVERS = 1400;
+import { refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
+
 const BATCH_SIZE = 8;
 const HISTORY_LIMIT = 8;
 const TRUST_STALE_MS = 7 * 86400000;
@@ -114,90 +114,6 @@ function normalizeReceiverUrl(rawUrl) {
   };
 }
 
-function parseReceiverBook(html) {
-  const match = String(html || '').match(/var\s+receivers\s*=\s*(\[[\s\S]*?\]);/);
-  if (!match) throw new Error('ReceiverBook format was not recognized');
-  const sites = JSON.parse(match[1]);
-  if (!Array.isArray(sites)) throw new Error('ReceiverBook did not contain a receiver list');
-
-  const byId = new Map();
-  for (const site of sites) {
-    const coordinates = site?.location?.coordinates;
-    const lon = finiteNumber(Array.isArray(coordinates) ? coordinates[0] : site?.lon);
-    const lat = finiteNumber(Array.isArray(coordinates) ? coordinates[1] : site?.lat);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-    const siteLabel = cleanText(site?.label || site?.name || '');
-    const children = Array.isArray(site?.receivers) && site.receivers.length ? site.receivers : [site];
-    for (const child of children) {
-      if (byId.size >= MAX_RECEIVERS) break;
-      const typeText = [child?.type, child?.version, child?.software].filter(Boolean).join(' ');
-      if (typeText && /(?:openwebrx|websdr)/i.test(typeText) && !/kiwi/i.test(typeText)) continue;
-      const normalized = normalizeReceiverUrl(child?.url || site?.url);
-      if (!normalized || byId.has(normalized.id)) continue;
-
-      const childLabel = cleanText(child?.label || child?.name || '');
-      const name = childLabel || siteLabel || normalized.upstreamHost;
-      byId.set(normalized.id, {
-        ...normalized,
-        name,
-        location: siteLabel || childLabel || name,
-        country: cleanText(child?.country || site?.country || '', 80),
-        lat,
-        lon,
-        version: cleanText(child?.version || '', 80),
-        receiverType: 'KiwiSDR',
-        antenna: cleanText(child?.antenna || site?.antenna || '', 180)
-      });
-    }
-    if (byId.size >= MAX_RECEIVERS) break;
-  }
-  return [...byId.values()];
-}
-
-async function discoverReceivers() {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const response = await fetch(DIRECTORY_URL, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'FREQBEACON/1.0 trusted receiver discovery'
-      },
-      signal: controller.signal,
-      cf: { cacheTtl: 15 * 60, cacheEverything: true }
-    });
-    if (!response.ok) throw new Error(`ReceiverBook HTTP ${response.status}`);
-    return parseReceiverBook(await response.text());
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function ingestReceivers(env, receivers, discoveredAt) {
-  await ensureSchema(env);
-  const rows = receivers.slice(0, MAX_RECEIVERS);
-  for (let offset = 0; offset < rows.length; offset += 100) {
-    const values = rows.slice(offset, offset + 100).map((receiver) => `(
-      ${sqlText(receiver.id)},${sqlText(receiver.name)},${sqlText(receiver.location)},${sqlText(receiver.country)},
-      ${Number(receiver.lat)},${Number(receiver.lon)},${sqlText(receiver.upstreamHost)},${sqlText(receiver.hostname)},
-      ${sqlText(receiver.protocol)},${sqlText(receiver.version)},${sqlText(receiver.receiverType || 'KiwiSDR')},
-      ${sqlText(receiver.antenna)},${Number(discoveredAt)}
-    )`).join(',');
-    await db(env).exec(`
-      INSERT INTO receivers (
-        id,name,location,country,lat,lon,upstream_host,hostname,protocol,version,receiver_type,antenna,last_discovered_at
-      ) VALUES ${values}
-      ON CONFLICT(id) DO UPDATE SET
-        name=excluded.name, location=excluded.location, country=excluded.country,
-        lat=excluded.lat, lon=excluded.lon, upstream_host=excluded.upstream_host,
-        hostname=excluded.hostname, protocol=excluded.protocol, version=excluded.version,
-        receiver_type=excluded.receiver_type, antenna=excluded.antenna,
-        last_discovered_at=excluded.last_discovered_at;
-    `);
-  }
-}
-
 function candidateSelect() {
   return `id,name,location,country,lat,lon,upstream_host AS upstreamHost,hostname,protocol,version,
           receiver_type AS receiverType,antenna,trusted,recent_successes AS recentSuccesses,last_tested_at AS lastTestedAt`;
@@ -265,11 +181,11 @@ function commonKiwiError(text) {
 
 async function openUpstreamSocket(receiver, stream, sessionTs) {
   const base = upstreamBase(receiver);
-  const response = await fetch(`${base}/ws/kiwi/${sessionTs}/${stream}`, {
+  const response = await fetch(`${base}/${sessionTs}/${stream}`, {
     headers: {
       Upgrade: 'websocket',
       Origin: base,
-      'User-Agent': 'FREQBEACON/1.0 receiver health probe'
+      'User-Agent': 'FREQBEACON/1.0 external receiver health probe'
     }
   });
   if (!response.webSocket) throw new Error(`${stream} refused WebSocket (${response.status})`);
@@ -397,7 +313,7 @@ async function probeReceiver(receiver) {
     let versionResponse;
     try {
       versionResponse = await fetch(`${upstreamBase(receiver)}/VER`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 receiver health probe' },
+        headers: { Accept: 'application/json', 'User-Agent': 'FREQBEACON/1.0 external receiver health probe' },
         signal: controller.signal
       });
     } finally {
@@ -493,10 +409,12 @@ async function trustedReceiver(env, receiverId) {
   `).bind(id, now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS).first();
 }
 
+export async function syncReceiverInventory(env) {
+  return refreshKiwiPublicDirectory(env);
+}
+
 export async function runExploreHealthCycle(env) {
-  const discoveredAt = Date.now();
-  const receivers = await discoverReceivers();
-  await ingestReceivers(env, receivers, discoveredAt);
+  const directory = await syncReceiverInventory(env);
   const candidates = await loadCandidates(env);
   const results = [];
   for (const receiver of candidates.slice(0, BATCH_SIZE)) {
@@ -504,7 +422,7 @@ export async function runExploreHealthCycle(env) {
     results.push(result);
     await recordProbe(env, result);
   }
-  return { discovered: receivers.length, tested: results.length, results };
+  return { discovered: Number(directory.receiverCount || 0), tested: results.length, results, source:'kiwisdr-public-list', directoryStatus: directory.status };
 }
 
 export async function handleExploreApi(request, env) {
@@ -531,7 +449,7 @@ export async function handleExploreApi(request, env) {
     features,
     count: features.length,
     generatedAt: new Date().toISOString(),
-    policy: 'trusted-only'
+    policy: 'kiwisdr-public-list-trusted-only'
   }, 200, { 'cache-control': 'public, max-age=120, stale-while-revalidate=300' });
 }
 
@@ -555,7 +473,7 @@ function parseStatusPairs(text) {
 
 async function fetchTrustedText(receiver, path, accept = 'text/plain') {
   const response = await fetch(`${upstreamBase(receiver)}${path}`, {
-    headers: { accept, 'user-agent': 'FREQBEACON-ZERO/explore' }
+    headers: { accept, 'user-agent': 'FREQBEACON/1.0 external KiwiSDR client' }
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`${path} FAILED (${response.status})`);
@@ -618,11 +536,11 @@ async function trustedZeroSocket(request, url, receiver) {
   if (!/^\d{8,20}$/.test(sessionTs)) return new Response('BAD SESSION TIMESTAMP', { status: 400 });
 
   try {
-    const response = await fetch(`${upstreamBase(receiver)}/ws/kiwi/${sessionTs}/${stream}`, {
+    const response = await fetch(`${upstreamBase(receiver)}/${sessionTs}/${stream}`, {
       headers: {
         Upgrade: 'websocket',
         Origin: upstreamBase(receiver),
-        'User-Agent': 'FREQBEACON-ZERO/explore'
+        'User-Agent': 'FREQBEACON/1.0 external KiwiSDR client'
       }
     });
     if (!response.webSocket) return new Response(`${stream} REFUSED (${response.status})`, { status: 502 });

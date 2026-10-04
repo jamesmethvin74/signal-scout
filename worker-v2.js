@@ -1,25 +1,12 @@
 import baseWorker from './worker-base.js';
+import { cachedReceiverById } from './kiwi-public-directory.js';
 
-const DIRECTORY_URL = 'https://www.receiverbook.de/map?type=kiwisdr';
-const DIRECTORY_MEMORY_TTL_MS = 10 * 60 * 1000;
-const SHARED_DIRECTORY_CACHE_PATHS = [
-  '/__cache/sdr-directory-v4-fresh',
-  '/__cache/sdr-directory-v4-last-good'
-];
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
 const PLAYER_AUDIO_MARKER = 'sdr-player-audio-chunking-v1';
 const PLAYER_VISUALIZER_MARKER = 'sdr-player-disable-hidden-legacy-spectrum-v1';
 const PLAYER_LIVE_FAILOVER_MARKER = 'sdr-player-live-disconnect-failover-v1';
 
-const LEGACY_RECEIVERS = {
-  florida: 'http://22315.proxy.kiwisdr.com',
-  'north-carolina': 'http://22904.proxy.kiwisdr.com',
-  pennsylvania: 'http://22479.proxy.kiwisdr.com'
-};
-
-let directoryMemory = null;
-let directoryMemoryAt = 0;
 
 function isBlockedHost(hostname) {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
@@ -50,78 +37,9 @@ function normalizeReceiverUrl(rawUrl) {
   };
 }
 
-function parseReceiverBook(html) {
-  const match = String(html || '').match(/var\s+receivers\s*=\s*(\[[\s\S]*?\]);/);
-  if (!match) throw new Error('Receiver directory format was not recognized');
-  const sites = JSON.parse(match[1]);
-  if (!Array.isArray(sites)) throw new Error('Receiver directory did not contain a receiver list');
-
-  const byId = new Map();
-  for (const site of sites) {
-    const children = Array.isArray(site?.receivers) && site.receivers.length ? site.receivers : [site];
-    for (const child of children) {
-      const typeText = [child?.type, child?.version, child?.software].filter(Boolean).join(' ');
-      if (typeText && /(?:openwebrx|websdr)/i.test(typeText) && !/kiwi/i.test(typeText)) continue;
-      const receiver = normalizeReceiverUrl(child?.url || site?.url);
-      if (receiver && !byId.has(receiver.id)) byId.set(receiver.id, receiver);
-    }
-  }
-  return byId;
-}
-
-async function receiverDirectory() {
-  const now = Date.now();
-  if (directoryMemory && now - directoryMemoryAt < DIRECTORY_MEMORY_TTL_MS) return directoryMemory;
-
-  const response = await fetch(DIRECTORY_URL, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml',
-      'User-Agent': 'SignalScout/1.0 (+public SDR receiver discovery)'
-    },
-    cf: { cacheTtl: 15 * 60, cacheEverything: true }
-  });
-  if (!response.ok) throw new Error(`Receiver directory HTTP ${response.status}`);
-  directoryMemory = parseReceiverBook(await response.text());
-  directoryMemoryAt = now;
-  return directoryMemory;
-}
-
-function normalizedCachedReceiver(receiver) {
-  if (!receiver || typeof receiver !== 'object') return null;
-  const rawUrl = receiver.url
-    || (receiver.upstreamHost ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.upstreamHost}` : '')
-    || (receiver.host ? `${receiver.protocol === 'https:' ? 'https:' : 'http:'}//${receiver.host}` : '');
-  return normalizeReceiverUrl(rawUrl);
-}
-
-async function resolveReceiverFromSharedCache(request, receiverId) {
-  const cache = caches.default;
-  for (const path of SHARED_DIRECTORY_CACHE_PATHS) {
-    try {
-      const key = new Request(new URL(path, request.url).toString(), { method: 'GET' });
-      const cached = await cache.match(key);
-      if (!cached) continue;
-      const payload = await cached.json();
-      if (!Array.isArray(payload?.receivers)) continue;
-      const match = payload.receivers.find((receiver) => receiver?.id === receiverId || receiver?.host === receiverId);
-      const normalized = normalizedCachedReceiver(match);
-      if (normalized?.id === receiverId) return normalized;
-    } catch {
-      // The shared cache is advisory. Fall through to live ReceiverBook lookup.
-    }
-  }
-  return null;
-}
-
-async function resolveReceiver(request, receiverId) {
-  const legacyUrl = LEGACY_RECEIVERS[receiverId];
-  if (legacyUrl) return normalizeReceiverUrl(legacyUrl);
-
-  const shared = await resolveReceiverFromSharedCache(request, receiverId);
-  if (shared) return shared;
-
-  const directory = await receiverDirectory();
-  return directory.get(receiverId) || null;
+async function resolveReceiver(env, receiverId) {
+  const receiver = await cachedReceiverById(env, receiverId, { trustedOnly: true });
+  return receiver ? normalizeReceiverUrl(`${receiver.protocol}//${receiver.upstreamHost}`) : null;
 }
 
 function proxySafeTimestamp(timestamp) {
@@ -129,7 +47,7 @@ function proxySafeTimestamp(timestamp) {
   return (NEW_TSTAMP_SPACE | lower).toString();
 }
 
-async function proxySdrWebSocket(request) {
+async function proxySdrWebSocket(request, env) {
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('Expected WebSocket upgrade', { status: 426 });
   }
@@ -144,7 +62,7 @@ async function proxySdrWebSocket(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(request, receiverId);
+    receiver = await resolveReceiver(env, receiverId);
   } catch (error) {
     return new Response(`Receiver directory unavailable: ${error?.message || 'lookup failed'}`, { status: 502 });
   }
@@ -158,17 +76,17 @@ async function proxySdrWebSocket(request) {
   // are not guaranteed to use the same egress IP.
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  // Current Kiwi 1.9xx treats the native browser UI WebSocket separately from
-  // the external/kiwirecorder form. Use the native UI route so receivers with
-  // external API channels disabled can still serve normal interactive SND/W/F.
-  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
+  // FREQBEACON is an external client, not the receiver's native Kiwi UI.
+  // Use Kiwi's external-client route so the receiver owner’s ext_api channel
+  // limit is enforced by the receiver itself. Never route around that control.
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/${upstreamTimestamp}/${stream}`;
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       headers: {
         Upgrade: 'websocket',
         Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
-        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
+        'User-Agent': 'FREQBEACON/1.0 external KiwiSDR client'
       }
     });
     if (!upstreamResponse.webSocket) {
@@ -180,7 +98,7 @@ async function proxySdrWebSocket(request) {
   }
 }
 
-async function probeSdrReceiver(request) {
+async function probeSdrReceiver(request, env) {
   const url = new URL(request.url);
   const receiverId = url.searchParams.get('receiver') || '';
   const stream = url.searchParams.get('stream') || 'SND';
@@ -211,7 +129,7 @@ async function probeSdrReceiver(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(request, receiverId);
+    receiver = await resolveReceiver(env, receiverId);
   } catch (error) {
     result.error = `directory: ${error?.message || 'lookup failed'}`;
     return respond();
@@ -228,14 +146,14 @@ async function probeSdrReceiver(request) {
   const timestamp = String(Math.floor(Date.now() / 1000) % 10000000000);
   const upstreamTimestamp = proxySafeTimestamp(timestamp);
   const upstreamScheme = receiver.protocol === 'https:' ? 'https:' : 'http:';
-  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/ws/kiwi/${upstreamTimestamp}/${stream}`;
+  const upstreamUrl = `${upstreamScheme}//${receiver.upstreamHost}/${upstreamTimestamp}/${stream}`;
   const started = Date.now();
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       headers: {
         Upgrade: 'websocket',
         Origin: `${upstreamScheme}//${receiver.upstreamHost}`,
-        'User-Agent': 'FREQBEACON/1.0 interactive KiwiSDR client'
+        'User-Agent': 'FREQBEACON/1.0 external KiwiSDR client'
       }
     });
     result.elapsedMs = Date.now() - started;
@@ -306,8 +224,8 @@ async function patchSdrPlayerRuntime(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request);
-    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
+    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request, env);
+    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request, env);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerRuntime(await baseWorker.fetch(request, env, ctx));
     }
