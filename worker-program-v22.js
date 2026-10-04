@@ -84,6 +84,20 @@ async function directoryProofSvg(request, env) {
   return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
 }
 
+async function directoryStateSvg(env) {
+  const state = await kiwiDirectoryStatus(env);
+  const lines = [
+    'FREQBEACON KiwiSDR cached directory state',
+    `receiver count: ${Number(state?.receiverCount || 0)}`,
+    `last success: ${state?.lastSuccessAt ? new Date(Number(state.lastSuccessAt)).toISOString() : 'none'}`,
+    `last attempt: ${state?.lastAttemptAt ? new Date(Number(state.lastAttemptAt)).toISOString() : 'none'}`,
+    `last error: ${state?.lastError || 'none'}`
+  ];
+  const texts=lines.map((line,i)=>`<text x="20" y="${38+i*26}" font-family="monospace" font-size="18" fill="#d8f8ff">${proofXml(line)}</text>`).join('');
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="220" viewBox="0 0 1600 220"><rect width="100%" height="100%" fill="#07131c"/>${texts}</svg>`;
+  return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
+}
+
 function httpsRedirect(request) {
   const url = new URL(request.url);
   if (url.protocol !== 'http:') return null;
@@ -145,6 +159,9 @@ export default {
     if (!abuse.ok) return securityResponse(abuse.message, abuse.status);
 
     const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/api/explore/directory-state.svg') {
+      return directoryStateSvg(env);
+    }
     if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof.svg') {
       return directoryProofSvg(request, env);
     }
