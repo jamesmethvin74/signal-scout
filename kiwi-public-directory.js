@@ -1,7 +1,7 @@
 import { APPROVED_SDR_RECEIVERS } from './sdr-approved-receivers.js';
 
 export const KIWI_PUBLIC_DIRECTORY_URL =
-  'https://kiwisdr.com/public.list/index.html.gz/?freqbeacon.methvindigitalworks.com';
+  'https://kiwisdr.com/public.list/index.html.gz?freqbeacon.methvindigitalworks.com';
 export const KIWI_PUBLIC_DIRECTORY_SOURCE = 'kiwisdr-public-list';
 export const KIWI_DIRECTORY_MIN_FETCH_MS = 60 * 60 * 1000;
 const DISCOVERY_STALE_MS = 14 * 86400000;

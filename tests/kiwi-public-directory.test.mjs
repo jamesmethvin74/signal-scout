@@ -43,7 +43,7 @@ test('authorized Kiwi public list parser keeps only active external-app receiver
 test('directory source is the owner-authorized gzip endpoint and never faster than hourly', () => {
   assert.equal(
     KIWI_PUBLIC_DIRECTORY_URL,
-    'https://kiwisdr.com/public.list/index.html.gz/?freqbeacon.methvindigitalworks.com'
+    'https://kiwisdr.com/public.list/index.html.gz?freqbeacon.methvindigitalworks.com'
   );
   assert.equal(KIWI_DIRECTORY_MIN_FETCH_MS, 60 * 60 * 1000);
 });
