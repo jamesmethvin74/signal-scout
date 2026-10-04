@@ -8,10 +8,11 @@ assert.equal(wrangler.preview_urls, true);
 
 const worker = await readFile(new URL('../worker-program-v18.js', import.meta.url), 'utf8');
 assert.match(worker, /RECEIVER_HEALTH_CRON = '\* \* \* \* \*'/);
-assert.match(worker, /BOOTSTRAP_TRUSTED_TARGET = APPROVED_SDR_RECEIVERS\.length/);
+assert.match(worker, /BOOTSTRAP_TRUSTED_TARGET = 125/);
 assert.match(worker, /SCREEN_BATCH_SIZE = 18/);
 assert.match(worker, /FULL_PROOF_BATCH_SIZE = 10/);
 assert.match(worker, /MAINTENANCE_MINUTE_UTC = 45/);
+assert.match(worker, /refreshKiwiPublicDirectory/);
 assert.match(worker, /acquireReceiverBootstrapLease/);
 assert.match(worker, /releaseReceiverBootstrapLease/);
 assert.match(worker, /mode: 'overlap-skip'/);

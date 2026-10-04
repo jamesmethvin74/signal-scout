@@ -1,6 +1,5 @@
-import { APPROVED_SDR_RECEIVERS, APPROVED_SDR_RECEIVER_IDS, isApprovedSdrReceiverId } from './sdr-approved-receivers.js';
+import { refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
 
-const MAX_RECEIVERS = APPROVED_SDR_RECEIVERS.length;
 const BATCH_SIZE = 8;
 const HISTORY_LIMIT = 8;
 const TRUST_STALE_MS = 7 * 86400000;
@@ -113,44 +112,6 @@ function normalizeReceiverUrl(rawUrl) {
     hostname: parsed.hostname.toLowerCase(),
     protocol: parsed.protocol
   };
-}
-
-function discoverReceivers() {
-  return APPROVED_SDR_RECEIVERS.map((receiver) => ({ ...receiver }));
-}
-
-async function deactivateUnapprovedReceivers(env) {
-  await ensureSchema(env);
-  const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
-  await db(env).prepare(`
-    UPDATE receivers
-    SET trusted=0, last_discovered_at=0
-    WHERE id NOT IN (${placeholders})
-  `).bind(...APPROVED_SDR_RECEIVER_IDS).run();
-}
-
-async function ingestReceivers(env, receivers, discoveredAt) {
-  await ensureSchema(env);
-  const rows = receivers.slice(0, MAX_RECEIVERS);
-  for (let offset = 0; offset < rows.length; offset += 100) {
-    const values = rows.slice(offset, offset + 100).map((receiver) => `(
-      ${sqlText(receiver.id)},${sqlText(receiver.name)},${sqlText(receiver.location)},${sqlText(receiver.country)},
-      ${Number(receiver.lat)},${Number(receiver.lon)},${sqlText(receiver.upstreamHost)},${sqlText(receiver.hostname)},
-      ${sqlText(receiver.protocol)},${sqlText(receiver.version)},${sqlText(receiver.receiverType || 'KiwiSDR')},
-      ${sqlText(receiver.antenna)},${Number(discoveredAt)}
-    )`).join(',');
-    await db(env).exec(`
-      INSERT INTO receivers (
-        id,name,location,country,lat,lon,upstream_host,hostname,protocol,version,receiver_type,antenna,last_discovered_at
-      ) VALUES ${values}
-      ON CONFLICT(id) DO UPDATE SET
-        name=excluded.name, location=excluded.location, country=excluded.country,
-        lat=excluded.lat, lon=excluded.lon, upstream_host=excluded.upstream_host,
-        hostname=excluded.hostname, protocol=excluded.protocol, version=excluded.version,
-        receiver_type=excluded.receiver_type, antenna=excluded.antenna,
-        last_discovered_at=excluded.last_discovered_at;
-    `);
-  }
 }
 
 function candidateSelect() {
@@ -437,7 +398,7 @@ async function trustedRows(env) {
 async function trustedReceiver(env, receiverId) {
   await ensureSchema(env);
   const id = String(receiverId || '').trim();
-  if (!id || id.length > 180 || !isApprovedSdrReceiverId(id)) return null;
+  if (!id || id.length > 180) return null;
   const now = Date.now();
   return db(env).prepare(`
     SELECT id,name,location,country,lat,lon,upstream_host AS upstreamHost,hostname,protocol,version,
@@ -448,25 +409,20 @@ async function trustedReceiver(env, receiverId) {
   `).bind(id, now - TRUST_STALE_MS, now - DISCOVERY_STALE_MS).first();
 }
 
-export async function syncApprovedReceiverInventory(env) {
-  const discoveredAt = Date.now();
-  await deactivateUnapprovedReceivers(env);
-  const receivers = discoverReceivers();
-  await ingestReceivers(env, receivers, discoveredAt);
-  return { receivers, discoveredAt };
+export async function syncReceiverInventory(env) {
+  return refreshKiwiPublicDirectory(env);
 }
 
 export async function runExploreHealthCycle(env) {
-  const { receivers } = await syncApprovedReceiverInventory(env);
+  const directory = await syncReceiverInventory(env);
   const candidates = await loadCandidates(env);
   const results = [];
   for (const receiver of candidates.slice(0, BATCH_SIZE)) {
-    if (!isApprovedSdrReceiverId(receiver.id)) continue;
     const result = await probeReceiver(receiver);
     results.push(result);
     await recordProbe(env, result);
   }
-  return { discovered: receivers.length, tested: results.length, results, source:'approved-static' };
+  return { discovered: Number(directory.receiverCount || 0), tested: results.length, results, source:'kiwisdr-public-list', directoryStatus: directory.status };
 }
 
 export async function handleExploreApi(request, env) {
@@ -493,7 +449,7 @@ export async function handleExploreApi(request, env) {
     features,
     count: features.length,
     generatedAt: new Date().toISOString(),
-    policy: 'approved-static-trusted-only'
+    policy: 'kiwisdr-public-list-trusted-only'
   }, 200, { 'cache-control': 'public, max-age=120, stale-while-revalidate=300' });
 }
 

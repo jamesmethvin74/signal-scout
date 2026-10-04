@@ -14,7 +14,8 @@ const [
   wranglerText,
   fccAsset,
   terrestrialGenerator,
-  policy
+  policy,
+  kiwiDirectory
 ] = await Promise.all([
   read('worker-v2.js'),
   read('worker-base.js'),
@@ -26,7 +27,8 @@ const [
   read('wrangler.jsonc'),
   read('freqbeacon-zero-us-am-fcc.js'),
   read('scripts/generate-global-terrestrial-catalog.mjs'),
-  read('SOURCE-COMPLIANCE.md')
+  read('SOURCE-COMPLIANCE.md'),
+  read('kiwi-public-directory.js')
 ]);
 
 assert.doesNotMatch(workerV2, /receiverbook\.de/i);
@@ -69,5 +71,10 @@ assert.match(terrestrialGenerator, /fallbackEntries=\[\]/);
 assert.match(policy, /Public reachability is not permission/i);
 assert.match(policy, /ReceiverBook receiver directory \| DISABLED/);
 assert.match(policy, /KiwiSDR public receivers \| ALLOWED WITH OPERATOR CONTROLS/);
+assert.match(policy, /KiwiSDR public directory .* \| ALLOWED/);
+assert.match(kiwiDirectory, /public\.list\/index\.html\.gz\/\?freqbeacon\.methvindigitalworks\.com/);
+assert.match(kiwiDirectory, /KIWI_DIRECTORY_MIN_FETCH_MS = 60 \* 60 \* 1000/);
+assert.match(kiwiDirectory, /extApi < 1/);
+assert.doesNotMatch(kiwiDirectory, /receiverbook\.de/i);
 
 console.log('source compliance guards: ok');

@@ -1,8 +1,8 @@
-// Manually configured public KiwiSDR endpoints approved for FREQBEACON use.
+// Emergency fallback KiwiSDR endpoints for FREQBEACON.
 //
-// These records are intentionally small and explicit. Do not populate this
-// registry from scraped receiver directories. The receiver itself remains the
-// authority for whether an external application may connect.
+// The primary worldwide inventory comes from KiwiSDR's owner-authorized cached
+// public.list feed. These few records are retained only so listening can fail
+// soft if the cached directory is temporarily unavailable.
 export const APPROVED_SDR_RECEIVERS = Object.freeze([
   Object.freeze({
     id:'florida',

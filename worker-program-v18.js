@@ -1,5 +1,4 @@
 import baseWorker from './worker-program-v17.js';
-import { APPROVED_SDR_RECEIVERS } from './sdr-approved-receivers.js';
 import {
   handleExploreApi,
   handleExploreZeroRequest,
@@ -22,10 +21,11 @@ import {
   recentReceiverHealthRuns,
   recordReceiverHealthRun
 } from './receiver-health-runs.js';
+import { kiwiDirectoryStatus, refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
 
 const PROGRAM_REFRESH_CRON = '17 */6 * * *';
 const RECEIVER_HEALTH_CRON = '* * * * *';
-const BOOTSTRAP_TRUSTED_TARGET = APPROVED_SDR_RECEIVERS.length;
+const BOOTSTRAP_TRUSTED_TARGET = 125;
 const SCREEN_BATCH_SIZE = 18;
 const FULL_PROOF_BATCH_SIZE = 10;
 const MAINTENANCE_MINUTE_UTC = 45;
@@ -115,6 +115,7 @@ function scheduledMinuteUtc(event) {
 }
 
 async function runReceiverHealthCron(event, env) {
+  const directoryRefresh = await refreshKiwiPublicDirectory(receiverHealthCompatEnv(env));
   const inventoryReady = await receiverInventoryReady(env);
   if (!inventoryReady) {
     const seeded = await runExploreHealthCycle(receiverHealthCompatEnv(env));
@@ -126,7 +127,8 @@ async function runReceiverHealthCron(event, env) {
       trustedReceivers: summary.trustedReceivers,
       inventory: summary.inventory,
       untested: summary.untested,
-      promotionQueue: summary.promotionQueue
+      promotionQueue: summary.promotionQueue,
+      directoryRefresh: directoryRefresh.status
     };
   }
 
@@ -211,9 +213,10 @@ async function healthStatusResponse(request, env) {
     payload.recentRuns = recentRuns;
     payload.lastRun = recentRuns[0] || null;
     payload.bootstrap = bootstrap;
+    try { payload.directory = await kiwiDirectoryStatus(env); } catch {}
     payload.cadence = {
-      directoryRefresh: 'every 6 hours',
-      bootstrap: `every minute until all ${BOOTSTRAP_TRUSTED_TARGET} approved receivers are qualified`,
+      directoryRefresh: 'authorized Kiwi .gz list, no more than once per hour',
+      bootstrap: `every minute until all ${BOOTSTRAP_TRUSTED_TARGET} trusted public receivers are qualified`,
       bootstrapScreenBatch: SCREEN_BATCH_SIZE,
       bootstrapFullProofBatch: FULL_PROOF_BATCH_SIZE,
       maintenance: `hourly at minute ${MAINTENANCE_MINUTE_UTC} UTC after bootstrap`,

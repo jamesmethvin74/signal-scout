@@ -1,6 +1,4 @@
-import { APPROVED_SDR_RECEIVERS, approvedSdrReceiver } from './sdr-approved-receivers.js';
-
-const LEGACY_RECEIVERS = APPROVED_SDR_RECEIVERS;
+import { cachedReceiverById, cachedReceiverDirectory } from './kiwi-public-directory.js';
 
 function jsonResponse(value, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -88,27 +86,12 @@ function normalizedReceiverUrl(rawUrl) {
   };
 }
 
-function staticReceiverDirectory() {
-  return LEGACY_RECEIVERS.map((receiver) => {
-    const normalized = normalizedReceiverUrl(`http://${receiver.host}`);
-    return normalized ? {
-      ...receiver,
-      host: normalized.host,
-      upstreamHost: normalized.upstreamHost,
-      hostname: normalized.hostname,
-      protocol: normalized.protocol,
-      url: normalized.url,
-      coverageKnown: true,
-      source: 'operator-public-static'
-    } : null;
-  }).filter(Boolean);
-}
-
-async function fetchReceiverDirectory() {
+async function fetchReceiverDirectory(env) {
+  const receivers = await cachedReceiverDirectory(env, { trustedOnly: true });
   return {
-    receivers: staticReceiverDirectory(),
-    source: 'operator-public-static',
-    warning: null,
+    receivers,
+    source: 'kiwisdr-public-list-cache',
+    warning: receivers.length ? null : 'Receiver directory is still warming',
     fetchedAt: new Date().toISOString()
   };
 }
@@ -281,14 +264,14 @@ function rankReceivers(receivers, params) {
   }));
 }
 
-async function receiverRecommendations(request, ctx) {
+async function receiverRecommendations(request, env, ctx) {
   const url = new URL(request.url);
   const frequencyKHz = finiteNumber(url.searchParams.get('frequency'));
   if (!Number.isFinite(frequencyKHz) || frequencyKHz < 10 || frequencyKHz > 30000) {
     return jsonResponse({ error: 'frequency must be between 10 and 30000 kHz' }, { status: 400 });
   }
 
-  const data = await fetchReceiverDirectory();
+  const data = await fetchReceiverDirectory(env);
   const ranked = rankReceivers(data.receivers, {
     frequencyKHz,
     userLat: finiteNumber(url.searchParams.get('lat')),
@@ -305,17 +288,11 @@ async function receiverRecommendations(request, ctx) {
   });
 }
 
-async function resolveReceiver(request, receiverId, ctx) {
-  const data = await fetchReceiverDirectory();
-  const byId = data.receivers.find((receiver) => receiver.id === receiverId);
-  if (byId) return byId;
-  const legacy = approvedSdrReceiver(receiverId);
-  if (!legacy) return null;
-  const normalized = normalizedReceiverUrl(`${legacy.protocol}//${legacy.upstreamHost}`);
-  return normalized ? { ...legacy, ...normalized } : null;
+async function resolveReceiver(request, env, receiverId, ctx) {
+  return cachedReceiverById(env, receiverId, { trustedOnly: true });
 }
 
-async function proxySdrWebSocket(request, ctx) {
+async function proxySdrWebSocket(request, env, ctx) {
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('Expected WebSocket upgrade', { status: 426 });
   }
@@ -328,7 +305,7 @@ async function proxySdrWebSocket(request, ctx) {
     return new Response('Invalid SDR request', { status: 400 });
   }
 
-  const receiver = await resolveReceiver(request, receiverId, ctx);
+  const receiver = await resolveReceiver(request, env, receiverId, ctx);
   if (!receiver?.upstreamHost || isBlockedHost(receiver.hostname)) {
     return new Response('Unknown SDR receiver', { status: 400 });
   }
@@ -356,8 +333,8 @@ async function proxySdrWebSocket(request, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/sdr/receivers') return receiverRecommendations(request, ctx);
-    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request, ctx);
+    if (url.pathname === '/api/sdr/receivers') return receiverRecommendations(request, env, ctx);
+    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request, env, ctx);
     return env.ASSETS.fetch(request);
   }
 };

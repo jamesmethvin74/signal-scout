@@ -7,6 +7,6 @@
     "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs",
     "test:security": "node tests/security-hardening.test.mjs",
     "test": "npm run test:catalogs && npm run test:receiver-health && npm run test:security && npm run test:compliance",
-    "test:compliance": "node tests/source-compliance.test.mjs"
+    "test:compliance": "node tests/source-compliance.test.mjs && node tests/kiwi-public-directory.test.mjs"
   }
 }

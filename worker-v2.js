@@ -1,5 +1,5 @@
 import baseWorker from './worker-base.js';
-import { approvedSdrReceiver } from './sdr-approved-receivers.js';
+import { cachedReceiverById } from './kiwi-public-directory.js';
 
 const NEW_TSTAMP_SPACE = 1n << 62n;
 const LOWER_TSTAMP_MASK = NEW_TSTAMP_SPACE - 1n;
@@ -37,9 +37,9 @@ function normalizeReceiverUrl(rawUrl) {
   };
 }
 
-function resolveReceiver(receiverId) {
-  const approved = approvedSdrReceiver(receiverId);
-  return approved ? normalizeReceiverUrl(`${approved.protocol}//${approved.upstreamHost}`) : null;
+async function resolveReceiver(env, receiverId) {
+  const receiver = await cachedReceiverById(env, receiverId, { trustedOnly: true });
+  return receiver ? normalizeReceiverUrl(`${receiver.protocol}//${receiver.upstreamHost}`) : null;
 }
 
 function proxySafeTimestamp(timestamp) {
@@ -47,7 +47,7 @@ function proxySafeTimestamp(timestamp) {
   return (NEW_TSTAMP_SPACE | lower).toString();
 }
 
-async function proxySdrWebSocket(request) {
+async function proxySdrWebSocket(request, env) {
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('Expected WebSocket upgrade', { status: 426 });
   }
@@ -62,7 +62,7 @@ async function proxySdrWebSocket(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(receiverId);
+    receiver = await resolveReceiver(env, receiverId);
   } catch (error) {
     return new Response(`Receiver directory unavailable: ${error?.message || 'lookup failed'}`, { status: 502 });
   }
@@ -98,7 +98,7 @@ async function proxySdrWebSocket(request) {
   }
 }
 
-async function probeSdrReceiver(request) {
+async function probeSdrReceiver(request, env) {
   const url = new URL(request.url);
   const receiverId = url.searchParams.get('receiver') || '';
   const stream = url.searchParams.get('stream') || 'SND';
@@ -129,7 +129,7 @@ async function probeSdrReceiver(request) {
 
   let receiver;
   try {
-    receiver = await resolveReceiver(receiverId);
+    receiver = await resolveReceiver(env, receiverId);
   } catch (error) {
     result.error = `directory: ${error?.message || 'lookup failed'}`;
     return respond();
@@ -224,8 +224,8 @@ async function patchSdrPlayerRuntime(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request);
-    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request);
+    if (url.pathname === '/api/sdr/probe') return probeSdrReceiver(request, env);
+    if (url.pathname === '/api/sdr/ws') return proxySdrWebSocket(request, env);
     if (url.pathname === '/sdr-player.js') {
       return patchSdrPlayerRuntime(await baseWorker.fetch(request, env, ctx));
     }

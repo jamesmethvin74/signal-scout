@@ -1,5 +1,3 @@
-import { APPROVED_SDR_RECEIVER_IDS, isApprovedSdrReceiverId } from './sdr-approved-receivers.js';
-
 const BACKFILL_BATCH_SIZE = 10;
 const HISTORY_LIMIT = 8;
 const TRUST_STALE_MS = 7 * 86400000;
@@ -91,10 +89,9 @@ export function evaluateHealthTransition(existing = {}, result = {}) {
 export async function receiverInventoryReady(env) {
   try {
     const cutoff = Date.now() - DISCOVERY_STALE_MS;
-    const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
     const row = await db(env).prepare(
-      `SELECT COUNT(*) AS count FROM receivers WHERE last_discovered_at>=? AND id IN (${placeholders})`
-    ).bind(cutoff, ...APPROVED_SDR_RECEIVER_IDS).first();
+      'SELECT COUNT(*) AS count FROM receivers WHERE last_discovered_at>=?'
+    ).bind(cutoff).first();
     return Number(row?.count || 0) > 0;
   } catch {
     return false;
@@ -105,7 +102,6 @@ export async function receiverHealthSummary(env) {
   const now = Date.now();
   try {
     const cutoff = now - DISCOVERY_STALE_MS;
-    const placeholders = APPROVED_SDR_RECEIVER_IDS.map(() => '?').join(',');
     const row = await db(env).prepare(`
       SELECT
         COUNT(*) AS inventory,
@@ -117,12 +113,11 @@ export async function receiverHealthSummary(env) {
         MAX(last_tested_at) AS lastTestedAt,
         MAX(last_success_at) AS lastSuccessAt
       FROM receivers
-      WHERE last_discovered_at>=? AND id IN (${placeholders})
+      WHERE last_discovered_at>=?
     `).bind(
       now - TRUST_STALE_MS,
       now - 86400000,
-      cutoff,
-      ...APPROVED_SDR_RECEIVER_IDS
+      cutoff
     ).first();
 
     return {
@@ -425,8 +420,6 @@ export async function runExploreBackfillCycle(env, options = {}) {
     return { inventoryReady: false, tested: 0, successful: 0, promoted: 0, demoted: 0, results: [] };
   }
 
-  loaded.candidates = loaded.candidates.filter((receiver) => isApprovedSdrReceiverId(receiver.id));
-
   const results = [];
   let successful = 0;
   let promoted = 0;
@@ -485,7 +478,7 @@ export async function handleExploreHealthStatus(request, env) {
       staleAfterDays: 7
     },
     cadence: {
-      receiverRegistry: 'approved static endpoints; refreshed every 6 hours',
+      receiverRegistry: 'authorized Kiwi public list; cached by FREQBEACON and refreshed no more than hourly',
       healthBackfill: 'hourly',
       batchSize: BACKFILL_BATCH_SIZE
     }
