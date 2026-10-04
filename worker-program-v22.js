@@ -6,8 +6,82 @@ import {
   validateSecurityRequest
 } from './security-hardening.js';
 import { kiwiDirectoryStatus, refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
+import { receiverHealthSummary, runExploreBackfillCycle } from './receiver-health-backfill.js';
 
 const RECEIVER_HEALTH_CRON = '* * * * *';
+
+function proofXml(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function proofRegion(receiver) {
+  const lat = Number(receiver?.lat), lon = Number(receiver?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat >= 13 && lat <= 84 && lon >= -170 && lon <= -50) return 'North America';
+  if (lat >= -56 && lat < 13 && lon >= -82 && lon <= -34) return 'South America';
+  if (lat >= 35 && lat <= 72 && lon >= -25 && lon <= 52) return 'Europe';
+  if (lat >= -35 && lat < 35 && lon >= -20 && lon <= 52) return 'Africa';
+  if (lat >= -10 && lat <= 72 && lon > 52 && lon <= 180) return 'Asia';
+  if (lat >= -50 && lat < -10 && lon >= 110 && lon <= 180) return 'Oceania';
+  return null;
+}
+
+async function proofInventory(env) {
+  const cutoff = Date.now() - 14 * 86400000;
+  const countRow = await env.RECEIVER_HEALTH_DB.prepare(`
+    SELECT COUNT(*) AS inventory, SUM(CASE WHEN trusted=1 THEN 1 ELSE 0 END) AS trusted
+    FROM receivers WHERE last_discovered_at>=?
+  `).bind(cutoff).first();
+  const rows = (await env.RECEIVER_HEALTH_DB.prepare(`
+    SELECT id,name,location,country,lat,lon,trusted FROM receivers
+    WHERE last_discovered_at>=? ORDER BY id LIMIT 2000
+  `).bind(cutoff).all())?.results || [];
+  const samples = [], seen = new Set();
+  for (const receiver of rows) {
+    const region = proofRegion(receiver);
+    if (!region || seen.has(region)) continue;
+    seen.add(region);
+    samples.push({ region, ...receiver });
+    if (samples.length >= 6) break;
+  }
+  return { inventory:Number(countRow?.inventory || 0), trusted:Number(countRow?.trusted || 0), samples };
+}
+
+async function directoryProofSvg(request, env) {
+  const first = await refreshKiwiPublicDirectory(env);
+  const second = await refreshKiwiPublicDirectory(env);
+  const state = await kiwiDirectoryStatus(env);
+  const before = await receiverHealthSummary(env);
+  const probes = await runExploreBackfillCycle(env, { limit: 2 });
+  const after = await receiverHealthSummary(env);
+  const inventory = await proofInventory(env);
+  const feedResponse = await baseWorker.fetch(new Request(new URL('/api/explore/receivers', request.url).toString()), env, {});
+  let feed = {};
+  try { feed = await feedResponse.json(); } catch {}
+  const d = first?.diagnostics || {};
+  const lines = [
+    'FREQBEACON KiwiSDR authorized-directory runtime proof',
+    `first refresh: ${first?.status || 'unknown'} | parsed=${Number(first?.receiverCount || 0)}`,
+    `authorized URL: ${d.requestedUrl || 'cached/no-network-fetch'}`,
+    `ACL/HTTP: ${d.httpStatus ?? 'cached'} | response URL: ${d.responseUrl || 'cached'}`,
+    `gzip magic: ${d.gzipMagic ?? 'cached'} | encoding: ${d.contentEncoding || '(none)'} | bytes: ${d.responseBytes ?? 'cached'}`,
+    `raw entries: ${d.directoryEntries ?? 'cached'} | ext_api fields: ${d.extApiFields ?? 'cached'}`,
+    `raw ext_api=0: ${d.rawExtApiZero ?? 'cached'} | parsed ext_api<1: ${d.parsedExtApiZero ?? 'cached'} | min parsed ext_api: ${d.parsedMinExtApi ?? 'cached'}`,
+    `D1 inventory: ${inventory.inventory} | D1 trusted: ${inventory.trusted} | state count: ${Number(state?.receiverCount || 0)}`,
+    `state last success: ${state?.lastSuccessAt ? new Date(Number(state.lastSuccessAt)).toISOString() : 'none'}`,
+    `immediate second refresh: ${second?.status || 'unknown'} | count=${Number(second?.receiverCount || 0)}`,
+    `health before: inventory=${before.inventory} trusted=${before.trustedReceivers} untested=${before.untested}`,
+    `health probes: tested=${probes.tested} successful=${probes.successful} promoted=${probes.promoted} demoted=${probes.demoted}`,
+    ...((probes.results || []).map((item, index) => `probe ${index+1}: ${item.id} success=${item.success} trusted=${item.trusted} connectMs=${item.connectMs ?? 'n/a'} error=${item.error || 'none'}`)),
+    `health after: inventory=${after.inventory} trusted=${after.trustedReceivers} tested24h=${after.testedLast24h}`,
+    `trusted Explore feed: HTTP ${feedResponse.status} count=${Number(feed?.count || 0)} policy=${feed?.policy || 'unknown'}`,
+    ...inventory.samples.map((item) => `sample ${item.region}: ${item.id} | ${item.location || item.name || ''} | trusted=${Boolean(Number(item.trusted))}`)
+  ];
+  const lineHeight=24, height=Math.max(720,50+lines.length*lineHeight);
+  const texts=lines.map((line,i)=>`<text x="20" y="${38+i*lineHeight}" font-family="monospace" font-size="16" fill="#d8f8ff">${proofXml(line)}</text>`).join('');
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="${height}" viewBox="0 0 1600 ${height}"><rect width="100%" height="100%" fill="#07131c"/>${texts}</svg>`;
+  return applySecurityHeaders(new Response(svg,{status:first?.status==='error'?502:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
+}
 
 function httpsRedirect(request) {
   const url = new URL(request.url);
@@ -70,6 +144,9 @@ export default {
     if (!abuse.ok) return securityResponse(abuse.message, abuse.status);
 
     const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof.svg') {
+      return directoryProofSvg(request, env);
+    }
     if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof') {
       const refresh = await refreshKiwiPublicDirectory(env);
       const state = await kiwiDirectoryStatus(env);
