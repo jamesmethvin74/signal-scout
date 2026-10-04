@@ -92,7 +92,7 @@ async function directoryStateSvg(env) {
   const parser = error.match(/^Kiwi public list parser returned only (\d+) usable receivers$/);
   if (http) {
     const status = Number(http[1]);
-    targetBytes = ({400:2048,401:2560,403:3072,404:3584,429:4096}[status] || 4608);
+    targetBytes = Math.round((10 + Math.max(0, Math.min(199, status - 400)) * 0.1) * 1024);
   } else if (parser) {
     targetBytes = Math.round((6 + Math.min(24, Number(parser[1])) * 0.1) * 1024);
   } else if (/gzip|decompression/i.test(error)) {
