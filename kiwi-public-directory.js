@@ -193,21 +193,12 @@ async function ensureSchema(env) {
 async function decodeDirectoryBody(response) {
   const bytes = new Uint8Array(await response.arrayBuffer());
   const gzipMagic = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
-  let html;
   if (gzipMagic) {
     if (typeof DecompressionStream !== 'function') throw new Error('gzip decompression is unavailable');
     const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
-    html = await new Response(stream).text();
-  } else {
-    html = new TextDecoder().decode(bytes);
+    return await new Response(stream).text();
   }
-  return {
-    html,
-    gzipMagic,
-    contentEncoding: String(response.headers.get('content-encoding') || ''),
-    contentType: String(response.headers.get('content-type') || ''),
-    byteLength: bytes.length
-  };
+  return new TextDecoder().decode(bytes);
 }
 
 async function ingestDirectory(env, receivers, discoveredAt) {
@@ -284,27 +275,8 @@ export async function refreshKiwiPublicDirectory(env, options = {}) {
     });
     if (!response.ok) throw new Error(`Kiwi public list HTTP ${response.status}`);
 
-    const decoded = await decodeDirectoryBody(response);
-    const html = decoded.html;
-    const directoryEntries = [...html.matchAll(/<div\\s+class=['"]cl-info['"][^>]*>/gi)].length;
-    const extApiValues = [...html.matchAll(/<!--\\s*ext_api\\s*=\\s*([0-9]+)\\s*-->/gi)]
-      .map((match) => Number(match[1]))
-      .filter(Number.isFinite);
+    const html = await decodeDirectoryBody(response);
     const receivers = parseKiwiPublicListHtml(html);
-    const diagnostics = {
-      requestedUrl: KIWI_PUBLIC_DIRECTORY_URL,
-      responseUrl: response.url || KIWI_PUBLIC_DIRECTORY_URL,
-      httpStatus: response.status,
-      gzipMagic: decoded.gzipMagic,
-      contentEncoding: decoded.contentEncoding,
-      contentType: decoded.contentType,
-      responseBytes: decoded.byteLength,
-      directoryEntries,
-      extApiFields: extApiValues.length,
-      rawExtApiZero: extApiValues.filter((value) => value === 0).length,
-      parsedExtApiZero: receivers.filter((receiver) => Number(receiver.extApi) < 1).length,
-      parsedMinExtApi: receivers.length ? Math.min(...receivers.map((receiver) => Number(receiver.extApi))) : null
-    };
     if (receivers.length < 25) {
       throw new Error(`Kiwi public list parser returned only ${receivers.length} usable receivers`);
     }
@@ -316,7 +288,7 @@ export async function refreshKiwiPublicDirectory(env, options = {}) {
       WHERE source=?
     `).bind(now, receivers.length, KIWI_PUBLIC_DIRECTORY_SOURCE).run();
 
-    return { status: 'refreshed', receiverCount: receivers.length, fetchedAt: now, diagnostics };
+    return { status: 'refreshed', receiverCount: receivers.length, fetchedAt: now };
   } catch (error) {
     const message = String(error?.message || 'directory refresh failed').slice(0, 300);
     await db(env).prepare(`
