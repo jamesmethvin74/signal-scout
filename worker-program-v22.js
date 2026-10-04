@@ -5,6 +5,7 @@ import {
   securityResponse,
   validateSecurityRequest
 } from './security-hardening.js';
+import { kiwiDirectoryStatus, refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
 
 const RECEIVER_HEALTH_CRON = '* * * * *';
 
@@ -67,6 +68,23 @@ export default {
 
     const abuse = await enforceAbuseLimits(request, env);
     if (!abuse.ok) return securityResponse(abuse.message, abuse.status);
+
+    const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof') {
+      const refresh = await refreshKiwiPublicDirectory(env);
+      const state = await kiwiDirectoryStatus(env);
+      return applySecurityHeaders(new Response(JSON.stringify({
+        ok: refresh.status !== 'error',
+        refresh,
+        state
+      }), {
+        status: refresh.status === 'error' ? 502 : 200,
+        headers: {
+          'content-type':'application/json; charset=utf-8',
+          'cache-control':'no-store, max-age=0'
+        }
+      }));
+    }
 
     const complianceBlocked = legacyProgramFirewall(request, env);
     if (complianceBlocked) return await complianceBlocked;
