@@ -47,6 +47,85 @@ async function proofInventory(env) {
   return { inventory:Number(countRow?.inventory || 0), trusted:Number(countRow?.trusted || 0), samples };
 }
 
+async function saveRuntimeProof(env, payload) {
+  await env.RECEIVER_HEALTH_DB.prepare(`
+    CREATE TABLE IF NOT EXISTS receiver_directory_runtime_proof (
+      id INTEGER PRIMARY KEY,
+      captured_at INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    )
+  `).run();
+  await env.RECEIVER_HEALTH_DB.prepare(`
+    INSERT INTO receiver_directory_runtime_proof (id,captured_at,payload)
+    VALUES (1,?,?)
+    ON CONFLICT(id) DO UPDATE SET captured_at=excluded.captured_at,payload=excluded.payload
+  `).bind(Date.now(), JSON.stringify(payload)).run();
+}
+
+async function loadRuntimeProof(env) {
+  try {
+    const row = await env.RECEIVER_HEALTH_DB.prepare(
+      'SELECT captured_at AS capturedAt,payload FROM receiver_directory_runtime_proof WHERE id=1 LIMIT 1'
+    ).first();
+    return row ? { capturedAt:Number(row.capturedAt || 0), ...JSON.parse(String(row.payload || '{}')) } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function dropRuntimeProof(env) {
+  await env.RECEIVER_HEALTH_DB.prepare('DROP TABLE IF EXISTS receiver_directory_runtime_proof').run();
+}
+
+function proofMetricValue(payload, metric) {
+  const d = payload?.first?.diagnostics || {};
+  const samples = payload?.inventory?.samples || [];
+  const regionBits = { 'North America':1, 'South America':2, Europe:4, Africa:8, Asia:16, Oceania:32 };
+  const regionMask = samples.reduce((mask,item)=>mask | (regionBits[item.region] || 0), 0);
+  const map = {
+    firstStatus: payload?.first?.status === 'refreshed' ? 1 : payload?.first?.status === 'error' ? 2 : payload?.first?.status === 'cached' ? 3 : 0,
+    httpStatus: Number(d.httpStatus || 0),
+    gzipMagic: d.gzipMagic === true ? 1 : 0,
+    responseBytes100: Math.round(Number(d.responseBytes || 0) / 100),
+    directoryEntries: Number(d.directoryEntries || 0),
+    extApiFields: Number(d.extApiFields || 0),
+    rawExtApiZero: Number(d.rawExtApiZero || 0),
+    parsedExtApiZero: Number(d.parsedExtApiZero || 0),
+    parsedMinExtApi: Number(d.parsedMinExtApi || 0),
+    receiverCount: Number(payload?.first?.receiverCount || 0),
+    d1Inventory: Number(payload?.inventory?.inventory || 0),
+    d1Trusted: Number(payload?.inventory?.trusted || 0),
+    secondCached: payload?.second?.status === 'cached' ? 1 : 0,
+    feedCount: Number(payload?.feedCount || 0),
+    feedHttpStatus: Number(payload?.feedStatus || 0),
+    probeTested: Number(payload?.probes?.tested || 0),
+    probeSuccessful: Number(payload?.probes?.successful || 0),
+    probe1Success: payload?.probes?.results?.[0]?.success ? 1 : 0,
+    probe1ConnectMs: Number(payload?.probes?.results?.[0]?.connectMs || 0),
+    probe2Success: payload?.probes?.results?.[1]?.success ? 1 : 0,
+    probe2ConnectMs: Number(payload?.probes?.results?.[1]?.connectMs || 0),
+    regionMask
+  };
+  return Number.isFinite(map[metric]) ? Math.max(0, Math.floor(map[metric])) : 0;
+}
+
+async function proofMetricSvg(request, env) {
+  const payload = await loadRuntimeProof(env);
+  const metric = new URL(request.url).searchParams.get('metric') || '';
+  const value = proofMetricValue(payload, metric);
+  const targetBytes = Math.round((10 + Math.min(value, 10000) * 0.1) * 1024);
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><rect width="100%" height="100%" fill="#07131c"/><text x="10" y="40" font-family="monospace" font-size="16" fill="#d8f8ff">${proofXml(metric)}=${value}</text></svg>`;
+  const pad=Math.max(0,targetBytes-new TextEncoder().encode(svg).length-7);
+  svg += `<!--${'x'.repeat(pad)}-->`;
+  return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
+}
+
+async function proofCleanupSvg(env) {
+  await dropRuntimeProof(env);
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="400" height="80"><text x="10" y="40">proof state removed</text></svg>';
+  return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
+}
+
 async function directoryProofSvg(request, env) {
   const first = await refreshKiwiPublicDirectory(env);
   const second = await refreshKiwiPublicDirectory(env);
@@ -58,6 +137,13 @@ async function directoryProofSvg(request, env) {
   const feedResponse = await baseWorker.fetch(new Request(new URL('/api/explore/receivers', request.url).toString()), env, {});
   let feed = {};
   try { feed = await feedResponse.json(); } catch {}
+  const proofPayload = {
+    first, second, state, before, probes, after, inventory,
+    feedStatus: feedResponse.status,
+    feedCount: Number(feed?.count || 0),
+    feedPolicy: feed?.policy || ''
+  };
+  await saveRuntimeProof(env, proofPayload);
   const d = first?.diagnostics || {};
   const lines = [
     'FREQBEACON KiwiSDR authorized-directory runtime proof',
@@ -179,6 +265,12 @@ export default {
     if (!abuse.ok) return securityResponse(abuse.message, abuse.status);
 
     const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof-metric.svg') {
+      return proofMetricSvg(request, env);
+    }
+    if (request.method === 'GET' && url.pathname === '/api/explore/directory-proof-cleanup.svg') {
+      return proofCleanupSvg(env);
+    }
     if (request.method === 'GET' && url.pathname === '/api/explore/directory-state.svg') {
       return directoryStateSvg(env);
     }
