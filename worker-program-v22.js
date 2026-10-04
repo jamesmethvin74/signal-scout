@@ -61,7 +61,7 @@ async function directoryProofSvg(request, env) {
   const d = first?.diagnostics || {};
   const lines = [
     'FREQBEACON KiwiSDR authorized-directory runtime proof',
-    `first refresh: ${first?.status || 'unknown'} | parsed=${Number(first?.receiverCount || 0)}`,
+    `first refresh: ${first?.status || 'unknown'} | parsed=${Number(first?.receiverCount || 0)} | error=${first?.error || 'none'}`,
     `authorized URL: ${d.requestedUrl || 'cached/no-network-fetch'}`,
     `ACL/HTTP: ${d.httpStatus ?? 'cached'} | response URL: ${d.responseUrl || 'cached'}`,
     `gzip magic: ${d.gzipMagic ?? 'cached'} | encoding: ${d.contentEncoding || '(none)'} | bytes: ${d.responseBytes ?? 'cached'}`,
@@ -69,6 +69,7 @@ async function directoryProofSvg(request, env) {
     `raw ext_api=0: ${d.rawExtApiZero ?? 'cached'} | parsed ext_api<1: ${d.parsedExtApiZero ?? 'cached'} | min parsed ext_api: ${d.parsedMinExtApi ?? 'cached'}`,
     `D1 inventory: ${inventory.inventory} | D1 trusted: ${inventory.trusted} | state count: ${Number(state?.receiverCount || 0)}`,
     `state last success: ${state?.lastSuccessAt ? new Date(Number(state.lastSuccessAt)).toISOString() : 'none'}`,
+    `state last attempt: ${state?.lastAttemptAt ? new Date(Number(state.lastAttemptAt)).toISOString() : 'none'} | last error=${state?.lastError || 'none'}`,
     `immediate second refresh: ${second?.status || 'unknown'} | count=${Number(second?.receiverCount || 0)}`,
     `health before: inventory=${before.inventory} trusted=${before.trustedReceivers} untested=${before.untested}`,
     `health probes: tested=${probes.tested} successful=${probes.successful} promoted=${probes.promoted} demoted=${probes.demoted}`,
@@ -80,7 +81,7 @@ async function directoryProofSvg(request, env) {
   const lineHeight=24, height=Math.max(720,50+lines.length*lineHeight);
   const texts=lines.map((line,i)=>`<text x="20" y="${38+i*lineHeight}" font-family="monospace" font-size="16" fill="#d8f8ff">${proofXml(line)}</text>`).join('');
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="${height}" viewBox="0 0 1600 ${height}"><rect width="100%" height="100%" fill="#07131c"/>${texts}</svg>`;
-  return applySecurityHeaders(new Response(svg,{status:first?.status==='error'?502:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
+  return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
 }
 
 function httpsRedirect(request) {
