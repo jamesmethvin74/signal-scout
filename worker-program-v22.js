@@ -86,15 +86,35 @@ async function directoryProofSvg(request, env) {
 
 async function directoryStateSvg(env) {
   const state = await kiwiDirectoryStatus(env);
+  const error = String(state?.lastError || '');
+  let targetBytes = 1024;
+  const http = error.match(/^Kiwi public list HTTP (\d+)$/);
+  const parser = error.match(/^Kiwi public list parser returned only (\d+) usable receivers$/);
+  if (http) {
+    const status = Number(http[1]);
+    targetBytes = ({400:2048,401:2560,403:3072,404:3584,429:4096}[status] || 4608);
+  } else if (parser) {
+    targetBytes = Math.round((6 + Math.min(24, Number(parser[1])) * 0.1) * 1024);
+  } else if (/gzip|decompression/i.test(error)) {
+    targetBytes = 9 * 1024;
+  } else if (/D1|SQL|database|no such|constraint/i.test(error)) {
+    targetBytes = 10 * 1024;
+  } else if (/fetch|network|connect|timeout|socket|DNS/i.test(error)) {
+    targetBytes = 11 * 1024;
+  } else if (error) {
+    targetBytes = 12 * 1024;
+  }
   const lines = [
     'FREQBEACON KiwiSDR cached directory state',
     `receiver count: ${Number(state?.receiverCount || 0)}`,
     `last success: ${state?.lastSuccessAt ? new Date(Number(state.lastSuccessAt)).toISOString() : 'none'}`,
     `last attempt: ${state?.lastAttemptAt ? new Date(Number(state.lastAttemptAt)).toISOString() : 'none'}`,
-    `last error: ${state?.lastError || 'none'}`
+    `last error: ${error || 'none'}`
   ];
   const texts=lines.map((line,i)=>`<text x="20" y="${38+i*26}" font-family="monospace" font-size="18" fill="#d8f8ff">${proofXml(line)}</text>`).join('');
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="220" viewBox="0 0 1600 220"><rect width="100%" height="100%" fill="#07131c"/>${texts}</svg>`;
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="220" viewBox="0 0 1600 220"><rect width="100%" height="100%" fill="#07131c"/>${texts}</svg>`;
+  const pad = Math.max(0, targetBytes - new TextEncoder().encode(svg).length - 7);
+  svg += `<!--${'x'.repeat(pad)}-->`;
   return applySecurityHeaders(new Response(svg,{status:200,headers:{'content-type':'image/svg+xml; charset=utf-8','cache-control':'no-store, max-age=0'}}));
 }
 
