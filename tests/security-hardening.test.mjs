@@ -241,6 +241,26 @@ test('rotating a caller-supplied timestamp cannot reset the SDR session limit', 
   assert.equal(bypass.status, 429);
 });
 
+test('rotating Zero receiver preference cookies cannot bypass session limits', async () => {
+  const env = {
+    SDR_CLIENT_RATE_LIMITER: new FakeLimiter(100),
+    SDR_SESSION_RATE_LIMITER: new FakeLimiter(2),
+    SDR_CONTROL_RATE_LIMITER: new FakeLimiter(100)
+  };
+  const make = (stream, ts, receiver) => request(`/api/zero/ws?stream=${stream}&ts=${ts}`, {
+    headers: {
+      Upgrade: 'websocket',
+      'CF-Connecting-IP': '198.51.100.85',
+      cookie: `fb_explore_receiver=${encodeURIComponent(receiver)}`
+    }
+  });
+  assert.equal((await enforceAbuseLimits(make('SND', '1234567890123', 'receiver-one:8073'), env)).ok, true);
+  assert.equal((await enforceAbuseLimits(make('W/F', '1234567890123', 'receiver-one:8073'), env)).ok, true);
+  const bypass = await enforceAbuseLimits(make('SND', '9876543210123', 'receiver-two:8073'), env);
+  assert.equal(bypass.status, 429);
+  assert.equal(bypass.ok, false);
+});
+
 test('all Explore endpoints share a dedicated limiter and fail closed if missing', async () => {
   const req = (path) => request(path, { headers: { 'CF-Connecting-IP': '198.51.100.93' } });
   const denied = await enforceAbuseLimits(req('/api/explore/status'), {});
