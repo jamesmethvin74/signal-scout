@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { liveFailureResponse } from '../worker-program-v19.js';
 import { evaluateHealthTransition } from '../receiver-health-backfill.js';
@@ -160,6 +161,36 @@ test('security headers cover XSS, MIME sniffing, referrer and clickjacking defen
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
   assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
   assert.match(response.headers.get('permissions-policy') || '', /geolocation=\(self\)/);
+});
+
+
+test('production static assets exclude private Worker modules and public debug surfaces', () => {
+  const ignore = readFileSync(new URL('../.assetsignore', import.meta.url), 'utf8');
+  const entries = new Set(ignore.split(/\r?\n/).map((value) => value.trim()).filter((value) => value && !value.startsWith('#')));
+  const required = [
+    'worker-*.js',
+    'security-hardening.js',
+    'receiver-health-d1.js',
+    'receiver-health-backfill.js',
+    'receiver-health-runs.js',
+    'kiwi-public-directory.js',
+    'sdr-ws-router.js',
+    'scripts/',
+    'tests/',
+    'package.json',
+    'SOURCE-COMPLIANCE.md',
+    'boot-forensics.html',
+    'pwa-diagnostics.html',
+    'sdr-diagnostics.html',
+    'sdr-forensics-v4.html',
+    'sdr-pair-diagnostics.html',
+    'sdr-runtime-trace.html',
+    'sdr-trace.html',
+    'sdr-trace-v2.html'
+  ];
+  for (const file of required) {
+    assert.ok(entries.has(file), `Internal asset protection missing: ${file}`);
+  }
 });
 
 console.log('FREQBEACON security hardening regression checks passed.');
