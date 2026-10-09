@@ -15,3 +15,36 @@ worker-v2.js
 *.key
 *.p12
 *.pfx
+# M02: Never publish server implementation, audit fixtures, or build tooling as browser assets.
+# Wrangler bundles imported Worker modules separately from the ASSETS directory.
+worker-*.js
+security-hardening.js
+receiver-health-backfill.js
+receiver-health-d1.js
+receiver-health-runs.js
+kiwi-public-directory.js
+sdr-ws-router.js
+scripts/
+tests/
+package.json
+package-lock.json
+SOURCE-COMPLIANCE.md
+CONTEXT-DATA-SOURCES.md
+FREQBEACON_ZERO_QUALIFIED_LOCK.md
+
+# M02: Internal diagnostics and temporary proof/test pages are not public product surfaces.
+boot-forensics.html
+boot-marker.txt
+pwa-diagnostics.html
+pwa-check/
+sdr-asset-check.html
+sdr-diagnostics.html
+sdr-forensics-v4.html
+sdr-pair-diagnostics.html
+sdr-runtime-trace.html
+sdr-trace.html
+sdr-trace-v2.html
+sdr-forensics-v4.js
+sdr-pair-diagnostics.js
+sdr-runtime-trace.js
+sdr-trace-v2.js
