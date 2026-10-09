@@ -20,7 +20,25 @@ jobs:
       - name: Existing security, catalog, health and compliance suites
         run: |
           npm test
-          node --test tests/*.test.mjs
+      - name: Check historical full test inventory for NEW failures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs > /tmp/freqbeacon-proposal-tests.txt 2>&1 || true
+          git fetch --no-tags --depth=1 origin main
+          git worktree add --detach /tmp/freqbeacon-baseline FETCH_HEAD
+          (cd /tmp/freqbeacon-baseline && node --test tests/*.test.mjs) > /tmp/freqbeacon-baseline-tests.txt 2>&1 || true
+          sed -nE 's/^not ok [0-9]+ - //p' /tmp/freqbeacon-proposal-tests.txt | LC_ALL=C sort -u > /tmp/proposal-failures.txt
+          sed -nE 's/^not ok [0-9]+ - //p' /tmp/freqbeacon-baseline-tests.txt | LC_ALL=C sort -u > /tmp/baseline-failures.txt
+          echo "Historic full-suite failures on main: $(wc -l < /tmp/baseline-failures.txt)"
+          echo "Historic full-suite failures on PR:   $(wc -l < /tmp/proposal-failures.txt)"
+          comm -23 /tmp/proposal-failures.txt /tmp/baseline-failures.txt > /tmp/new-failures.txt
+          if [[ -s /tmp/new-failures.txt ]]; then
+            echo "FAIL: New full-suite regressions:"
+            cat /tmp/new-failures.txt
+            exit 1
+          fi
+          echo "PASS: No new failures beyond pre-existing main-branch test debt"
       - name: Verify Cloudflare package and static asset manifest generation
         run: |
           npx --yes wrangler@4.92.0 deploy --dry-run --outdir ./security-build-proof
@@ -46,6 +64,16 @@ jobs:
             sleep 15
           done
           [[ "$code" == "200" ]] || { echo "FAIL: preview homepage not available (HTTP $code)"; exit 1; }
+          # This file is removed only by the most recent .assetsignore patch.
+          # Do not test an earlier Cloudflare commit while its async preview build catches up.
+          ready=0
+          for i in $(seq 1 24); do
+            sentinel="$(curl -sS --retry 2 --retry-all-errors -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/sdr-diagnostics-worker.js" || true)"
+            if [[ "$sentinel" == "404" ]]; then ready=1; break; fi
+            echo "Awaiting latest diagnostic-block patch, attempt $i: HTTP $sentinel"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: latest exclusion patch is not yet live on the preview"; exit 1; }
           blocked=(
             '/worker-program-v22.js' '/worker-base.js' '/security-hardening.js'
             '/receiver-health-d1.js' '/receiver-health-backfill.js'
