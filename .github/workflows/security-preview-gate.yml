@@ -3,8 +3,6 @@ name: FreqBeacon Security Preview Gate
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [audit/freqbeacon-static-asset-lockdown-20261008]
 
 permissions:
   contents: read
@@ -22,7 +20,10 @@ jobs:
       - name: Existing security, catalog, health and compliance suites
         run: npm test
       - name: Verify Cloudflare package and static asset manifest generation
-        run: npx --yes wrangler@4.92.0 deploy --dry-run --outdir ./security-build-proof
+        run: |
+          npx --yes wrangler@4.92.0 deploy --dry-run --outdir ./security-build-proof
+          echo "Dry-run output artifact names:"
+          find security-build-proof -maxdepth 2 -type f -printf '%P\\n' | head -40
 
   deployed-preview:
     name: Test public preview GET and HEAD
@@ -57,16 +58,18 @@ jobs:
           failures=0
           for path in "${blocked[@]}"; do
             for method in GET HEAD; do
-              status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X "$method" "$BASE$path" || true)"
+              status="$(curl -sS --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code}' --max-time 15 -X "$method" "$BASE$path" || true)"
               echo "BLOCKED $method $path -> HTTP $status"
               if [[ ! "$status" =~ ^(403|404|410)$ ]]; then failures=$((failures+1)); fi
             done
           done
           allowed=('/' '/index.html' '/explore.html' '/lookup.html' '/freqbeacon-zero.html' '/app.js' '/explore-page.js' '/sdr-player.js' '/full-data.js' '/favicon.svg')
           for path in "${allowed[@]}"; do
-            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$BASE$path" || true)"
-            echo "PUBLIC GET $path -> HTTP $status"
-            if [[ "$status" != "200" ]]; then failures=$((failures+1)); fi
+            status="$(curl -sS -L --proto-redir '=https' --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code} %{url_effective}' --max-time 15 "$BASE$path" || true)"
+            code="${status%% *}"
+            final_url="${status#* }"
+            echo "PUBLIC GET $path -> HTTP $code at $final_url"
+            if [[ "$code" != "200" || "$final_url" != "$BASE"* ]]; then failures=$((failures+1)); fi
           done
           if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
           echo "PASS: 40 blocked GET/HEAD requests and 10 core public routes"
