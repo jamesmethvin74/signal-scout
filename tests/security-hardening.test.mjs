@@ -186,7 +186,11 @@ test('production static assets exclude private Worker modules and public debug s
     'sdr-pair-diagnostics.html',
     'sdr-runtime-trace.html',
     'sdr-trace.html',
-    'sdr-trace-v2.html'
+    'sdr-trace-v2.html',
+    'sdr-asset-check.html',
+    'sdr-diagnostics.js',
+    'sdr-diagnostics-query.js',
+    'sdr-diagnostics-worker.js'
   ];
   for (const file of required) {
     assert.ok(entries.has(file), `Internal asset protection missing: ${file}`);
