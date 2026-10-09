@@ -177,7 +177,11 @@ function clientIdentity(request) {
 
 function sessionIdentity(request) {
   const url = new URL(request.url);
-  const receiver = url.searchParams.get('receiver') || selectedReceiverPreference(request) || 'fixed-zero';
+  // The Zero browser preference is an untrusted, mutable cookie. Rotating
+  // that cookie must not mint fresh rate-limit keys for the same connection.
+  const receiver = url.pathname === '/api/sdr/ws'
+    ? (url.searchParams.get('receiver') || 'unknown-sdr')
+    : 'zero-session';
   // Timestamp is caller controlled and changes across legitimate reconnects.
   // Including it would create a fresh limiter key on every retry.
   return `${clientIdentity(request)}|${url.pathname}|${receiver}`;
