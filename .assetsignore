@@ -48,3 +48,8 @@ sdr-forensics-v4.js
 sdr-pair-diagnostics.js
 sdr-runtime-trace.js
 sdr-trace-v2.js
+# Additional Worker-only diagnostic handler and retired diagnostic page assets.
+sdr-asset-check.html
+sdr-diagnostics.js
+sdr-diagnostics-query.js
+sdr-diagnostics-worker.js
