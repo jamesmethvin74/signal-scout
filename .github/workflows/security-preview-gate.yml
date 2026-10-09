@@ -1,0 +1,171 @@
+name: FreqBeacon Security Preview Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-build:
+    if: github.event_name == 'pull_request'
+    name: Source regressions and Cloudflare bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing security, catalog, health and compliance suites
+        run: |
+          npm test
+      - name: Check historical full test inventory for NEW failures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs > /tmp/freqbeacon-proposal-tests.txt 2>&1 || true
+          git fetch --no-tags --depth=1 origin main
+          git worktree add --detach /tmp/freqbeacon-baseline FETCH_HEAD
+          (cd /tmp/freqbeacon-baseline && node --test tests/*.test.mjs) > /tmp/freqbeacon-baseline-tests.txt 2>&1 || true
+          sed -nE 's/^not ok [0-9]+ - //p' /tmp/freqbeacon-proposal-tests.txt | LC_ALL=C sort -u > /tmp/proposal-failures.txt
+          sed -nE 's/^not ok [0-9]+ - //p' /tmp/freqbeacon-baseline-tests.txt | LC_ALL=C sort -u > /tmp/baseline-failures.txt
+          echo "Historic full-suite failures on main: $(wc -l < /tmp/baseline-failures.txt)"
+          echo "Historic full-suite failures on PR:   $(wc -l < /tmp/proposal-failures.txt)"
+          comm -23 /tmp/proposal-failures.txt /tmp/baseline-failures.txt > /tmp/new-failures.txt
+          if [[ -s /tmp/new-failures.txt ]]; then
+            echo "FAIL: New full-suite regressions:"
+            cat /tmp/new-failures.txt
+            exit 1
+          fi
+          echo "PASS: No new failures beyond pre-existing main-branch test debt"
+      - name: Verify Cloudflare package and static asset manifest generation
+        run: |
+          npx --yes wrangler@4.92.0 deploy --dry-run --outdir ./security-build-proof
+          echo "Dry-run output artifact names:"
+          find security-build-proof -maxdepth 2 -type f -printf '%P\\n' | head -40
+
+  deployed-preview:
+    if: github.event_name == 'pull_request'
+    name: Test public preview GET and HEAD
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Confirm blocked assets are not publicly retrievable
+        env:
+          BASE: https://audit-freqbeacon-static-asset-lockdown-20261008-signal-scout.james-methvin74.workers.dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Limited retries allow Cloudflare Git integration time to deploy this PR commit.
+          for i in 1 2 3 4 5; do
+            code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/" || true)"
+            if [[ "$code" == "200" ]]; then break; fi
+            echo "Preview root pending: attempt $i HTTP $code"
+            sleep 15
+          done
+          [[ "$code" == "200" ]] || { echo "FAIL: preview homepage not available (HTTP $code)"; exit 1; }
+          # This file is removed only by the most recent .assetsignore patch.
+          # Do not test an earlier Cloudflare commit while its async preview build catches up.
+          ready=0
+          for i in $(seq 1 24); do
+            sentinel="$(curl -sS --retry 2 --retry-all-errors -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/sdr-diagnostics-worker.js" || true)"
+            if [[ "$sentinel" == "404" ]]; then ready=1; break; fi
+            echo "Awaiting latest diagnostic-block patch, attempt $i: HTTP $sentinel"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: latest exclusion patch is not yet live on the preview"; exit 1; }
+          blocked=(
+            '/worker-program-v22.js' '/worker-base.js' '/security-hardening.js'
+            '/receiver-health-d1.js' '/receiver-health-backfill.js'
+            '/kiwi-public-directory.js' '/sdr-ws-router.js'
+            '/sdr-forensics-v4.html' '/sdr-forensics-v4.js'
+            '/sdr-diagnostics.html' '/sdr-diagnostics.js' '/sdr-diagnostics-query.js'
+            '/sdr-diagnostics-worker.js' '/sdr-asset-check.html' '/sdr-trace.html' '/sdr-trace-v2.html'
+            '/pwa-diagnostics.html' '/pwa-check/index.html'
+            '/scripts/generate-global-terrestrial-catalog.mjs'
+            '/tests/security-hardening.test.mjs' '/package.json'
+            '/SOURCE-COMPLIANCE.md' '/wrangler.jsonc' '/.assetsignore'
+          )
+          failures=0
+          for path in "${blocked[@]}"; do
+            for method in GET HEAD; do
+              status="$(curl -sS --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code}' --max-time 15 -X "$method" "$BASE$path" || true)"
+              echo "BLOCKED $method $path -> HTTP $status"
+              if [[ ! "$status" =~ ^(403|404|410)$ ]]; then failures=$((failures+1)); fi
+            done
+          done
+          allowed=('/' '/index.html' '/explore.html' '/lookup.html' '/freqbeacon-zero.html' '/app.js' '/explore-page.js' '/sdr-player.js' '/full-data.js' '/favicon.svg')
+          for path in "${allowed[@]}"; do
+            status="$(curl -sS -L --proto-redir '=https' --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code} %{url_effective}' --max-time 15 "$BASE$path" || true)"
+            code="${status%% *}"
+            final_url="${status#* }"
+            echo "PUBLIC GET $path -> HTTP $code at $final_url"
+            if [[ "$code" != "200" || "$final_url" != "$BASE"* ]]; then failures=$((failures+1)); fi
+          done
+          if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
+          echo "PASS: 48 blocked GET/HEAD requests and 10 core public routes"
+
+  deployed-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Verify live production GET and HEAD
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Confirm protected paths are blocked in production and public pages work
+        env:
+          BASE: https://freqbeacon.methvindigitalworks.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Cloudflare Git integration may finish publishing after this GitHub push.
+          for i in 1 2 3 4 5; do
+            code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/" || true)"
+            if [[ "$code" == "200" ]]; then break; fi
+            echo "Preview root pending: attempt $i HTTP $code"
+            sleep 15
+          done
+          [[ "$code" == "200" ]] || { echo "FAIL: preview homepage not available (HTTP $code)"; exit 1; }
+          # This file is removed by this approved .assetsignore security release.
+          # Do not treat the old production build as proof of the new deployment.
+          ready=0
+          for i in $(seq 1 24); do
+            sentinel="$(curl -sS --retry 2 --retry-all-errors -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/sdr-diagnostics-worker.js" || true)"
+            if [[ "$sentinel" == "404" ]]; then ready=1; break; fi
+            echo "Awaiting production deployment of diagnostic-block patch, attempt $i: HTTP $sentinel"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: new security release is not yet visible on production"; exit 1; }
+          blocked=(
+            '/worker-program-v22.js' '/worker-base.js' '/security-hardening.js'
+            '/receiver-health-d1.js' '/receiver-health-backfill.js'
+            '/kiwi-public-directory.js' '/sdr-ws-router.js'
+            '/sdr-forensics-v4.html' '/sdr-forensics-v4.js'
+            '/sdr-diagnostics.html' '/sdr-diagnostics.js' '/sdr-diagnostics-query.js'
+            '/sdr-diagnostics-worker.js' '/sdr-asset-check.html' '/sdr-trace.html' '/sdr-trace-v2.html'
+            '/pwa-diagnostics.html' '/pwa-check/index.html'
+            '/scripts/generate-global-terrestrial-catalog.mjs'
+            '/tests/security-hardening.test.mjs' '/package.json'
+            '/SOURCE-COMPLIANCE.md' '/wrangler.jsonc' '/.assetsignore'
+          )
+          failures=0
+          for path in "${blocked[@]}"; do
+            for method in GET HEAD; do
+              status="$(curl -sS --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code}' --max-time 15 -X "$method" "$BASE$path" || true)"
+              echo "BLOCKED $method $path -> HTTP $status"
+              if [[ ! "$status" =~ ^(403|404|410)$ ]]; then failures=$((failures+1)); fi
+            done
+          done
+          allowed=('/' '/index.html' '/explore.html' '/lookup.html' '/freqbeacon-zero.html' '/app.js' '/explore-page.js' '/sdr-player.js' '/full-data.js' '/favicon.svg')
+          for path in "${allowed[@]}"; do
+            status="$(curl -sS -L --proto-redir '=https' --retry 3 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code} %{url_effective}' --max-time 15 "$BASE$path" || true)"
+            code="${status%% *}"
+            final_url="${status#* }"
+            echo "PUBLIC GET $path -> HTTP $code at $final_url"
+            if [[ "$code" != "200" || "$final_url" != "$BASE"* ]]; then failures=$((failures+1)); fi
+          done
+          if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
+          echo "PASS: production 48 blocked GET/HEAD requests and 10 core public routes"
