@@ -250,6 +250,7 @@ export function applySecurityHeaders(response) {
   const headers = new Headers(response.headers);
   headers.set('content-security-policy', CSP);
   headers.set('x-content-type-options', 'nosniff');
+  headers.set('x-freqbeacon-security-policy', 'api-cost-guard-v1');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   headers.set('permissions-policy', 'geolocation=(self), camera=(), microphone=(), payment=(), usb=()');
   headers.set('x-frame-options', 'DENY');
