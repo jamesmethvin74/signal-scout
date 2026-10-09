@@ -18,7 +18,9 @@ jobs:
         with:
           node-version: '22'
       - name: Existing security, catalog, health and compliance suites
-        run: npm test
+        run: |
+          npm test
+          node --test tests/*.test.mjs
       - name: Verify Cloudflare package and static asset manifest generation
         run: |
           npx --yes wrangler@4.92.0 deploy --dry-run --outdir ./security-build-proof
@@ -49,7 +51,8 @@ jobs:
             '/receiver-health-d1.js' '/receiver-health-backfill.js'
             '/kiwi-public-directory.js' '/sdr-ws-router.js'
             '/sdr-forensics-v4.html' '/sdr-forensics-v4.js'
-            '/sdr-diagnostics.html' '/sdr-trace.html' '/sdr-trace-v2.html'
+            '/sdr-diagnostics.html' '/sdr-diagnostics.js' '/sdr-diagnostics-query.js'
+            '/sdr-diagnostics-worker.js' '/sdr-asset-check.html' '/sdr-trace.html' '/sdr-trace-v2.html'
             '/pwa-diagnostics.html' '/pwa-check/index.html'
             '/scripts/generate-global-terrestrial-catalog.mjs'
             '/tests/security-hardening.test.mjs' '/package.json'
@@ -72,4 +75,4 @@ jobs:
             if [[ "$code" != "200" || "$final_url" != "$BASE"* ]]; then failures=$((failures+1)); fi
           done
           if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
-          echo "PASS: 40 blocked GET/HEAD requests and 10 core public routes"
+          echo "PASS: 48 blocked GET/HEAD requests and 10 core public routes"
