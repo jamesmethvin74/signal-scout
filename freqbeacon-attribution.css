@@ -33,3 +33,8 @@
 .fb-source-page .inactive { color: #e6c47a; font-weight: 800; }
 .fb-source-page .blocked { color: #dc9490; font-weight: 800; }
 .fb-source-page .back { display:inline-block; margin-bottom:18px; text-decoration:none; }
+
+/* Legal entry links use the same mobile-safe footer spacing. */
+.fb-legal-entry{margin:12px auto 94px;text-align:center;font:700 11px/1.5 system-ui,sans-serif}
+.fb-legal-entry a{color:#a4e4ea;text-decoration:underline;text-underline-offset:3px}
+.fb-source-link + .fb-legal-entry{margin-top:-86px}
