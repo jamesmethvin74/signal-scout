@@ -56,6 +56,20 @@ assert.equal(result.kind,'range'); assert.match(result.range.name,/Medium Wave|A
 result=engine.identify(150,{receiver:{lat:0,lon:0},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'range'); assert.match(result.range.name,/Longwave/i);
 
+// Receiver-based allocation at the overlapping 40m/41m frequencies.
+result=engine.identify(7260,{receiver:{lat:50.43,lon:9.20,country:'Germany'}});
+assert.equal(result.kind,'range'); assert.match(result.range.name,/41 Meter Shortwave Broadcast Band/);
+result=engine.identify(7260,{receiverIdentity:'KiwiSDR | Gedern, Hessen, Germany'});
+assert.match(result.range.name,/41 Meter Shortwave Broadcast Band/);
+result=engine.identify(7260,{receiver:{lat:35.09,lon:-92.44,country:'United States'}});
+assert.match(result.range.name,/40 meters Amateur Band/i);
+result=engine.identify(7260);
+assert.match(result.range.name,/region-dependent/i);
+result=engine.identify(7190,{receiver:{lat:50.43,lon:9.20,country:'Germany'}});
+assert.match(result.range.name,/40 meters Amateur Band/i);
+result=engine.identify(7310,{receiver:{lat:35.09,lon:-92.44,country:'United States'}});
+assert.match(result.range.name,/41 Meter Shortwave Broadcast Band/);
+
 c.FREQBEACON_TERRESTRIAL_CATALOG=[
   {type:'station',band:'MW',frequencyKHz:999,name:'REG',country:'Canada',sourceAuthority:'ISED',sourceTier:1,dayLat:45,dayLon:-75,nightLat:50,nightLon:-100,dayPowerW:50000,nightPowerW:0,categories:['broadcast','MW']}
 ];

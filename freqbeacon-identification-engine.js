@@ -258,7 +258,25 @@
     return 0;
   }
 
-  function rangeMatch(kHz) {
+  // 7200-7300 kHz: broadcast in ITU Regions 1/3, amateur in Region 2.
+  // The relevant location is the selected remote receiver, not the user.
+  function allocationAt7200(receiver, receiverIdentity = '') {
+    const place = [receiver?.country, receiver?.location, receiver?.identity, receiverIdentity]
+      .filter(Boolean).join(' ').toLowerCase();
+    if (/\b(?:germany|deutschland|hessen|gedern)\b/.test(place)) return 'broadcast';
+    if (/\b(?:united states|canada|mexico|brazil|argentina|chile|colombia)\b/.test(place)) return 'amateur';
+    if (/\b(?:fiji|samoa|tonga|vanuatu|french polynesia|tahiti|new zealand|australia)\b/.test(place)) return 'broadcast';
+
+    const lat = receiver?.lat;
+    const lon = receiver?.lon;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    if (lon >= -30) return 'broadcast';
+    // Northern Americas only; an unknown southern/Pacific region stays mixed.
+    if (lon >= -170 && lon <= -30 && lat >= 12 && lat <= 75) return 'amateur';
+    return null;
+  }
+
+  function rangeMatch(kHz, receiver, receiverIdentity = '') {
     const matches = (catalog.ranges || [])
       .filter((range) => kHz >= Number(range.startKHz) && kHz <= Number(range.endKHz))
       .sort((a, b) =>
@@ -266,6 +284,22 @@
         || (Number(a.endKHz) - Number(a.startKHz)) - (Number(b.endKHz) - Number(b.startKHz))
         || String(a.name || '').localeCompare(String(b.name || ''))
       );
+
+    if (kHz >= 7200 && kHz < 7300) {
+      const broadcast = matches.find((range) => range.type === 'broadcast-band');
+      const amateur = matches.find((range) => (range.categories || []).includes('amateur'));
+      if (broadcast && amateur) {
+        const allocation = allocationAt7200(receiver, receiverIdentity);
+        if (allocation === 'broadcast') return broadcast;
+        if (allocation === 'amateur') return amateur;
+        return {
+          ...broadcast,
+          name: '41 Meter Broadcast / 40 Meter Amateur (region-dependent)',
+          mode: 'AM / DRM / SSB / CW',
+          description: '7.200-7.300 MHz is broadcasting in ITU Regions 1 and 3 (including Germany), but amateur spectrum in Region 2 (the Americas). Select a receiver to resolve its local allocation.'
+        };
+      }
+    }
     return matches[0] || null;
   }
 
@@ -276,7 +310,7 @@
     const now = options.now instanceof Date ? options.now : new Date();
     const exact = exactMatch(frequencyKHz, receiver, now, extraEntries);
     if (exact) return { ...exact, frequencyKHz, receiver };
-    const range = rangeMatch(frequencyKHz);
+    const range = rangeMatch(frequencyKHz, receiver, options.receiverIdentity || '');
     if (range) return { kind: 'range', range, frequencyKHz, receiver };
     return { kind: 'unknown', frequencyKHz, receiver };
   }
