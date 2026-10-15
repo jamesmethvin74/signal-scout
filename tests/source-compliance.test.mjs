@@ -13,6 +13,7 @@ const [
   pkgText,
   wranglerText,
   fccAsset,
+  fccGenerator,
   terrestrialGenerator,
   policy,
   kiwiDirectory
@@ -26,6 +27,7 @@ const [
   read('package.json'),
   read('wrangler.jsonc'),
   read('freqbeacon-zero-us-am-fcc.js'),
+  read('scripts/generate-fcc-am-catalog.mjs'),
   read('scripts/generate-global-terrestrial-catalog.mjs'),
   read('SOURCE-COMPLIANCE.md'),
   read('kiwi-public-directory.js')
@@ -61,14 +63,22 @@ assert.match(fullData, /complianceMode:\s*true/);
 
 const pkg = JSON.parse(pkgText);
 assert.doesNotMatch(pkg.scripts.postinstall, /generate-a26-identification-catalog/);
-assert.doesNotMatch(pkg.scripts.postinstall, /generate-fcc-am-catalog/);
+assert.match(pkg.scripts.postinstall, /generate-fcc-am-catalog/);
+assert.match(fccGenerator, /https:\/\/publicfiles\.fcc\.gov\/api\/service\/facility\/search/);
+assert.doesNotMatch(fccGenerator, /Roger-Need\/StationFinder|githubusercontent\.com|fccdata\.org/i);
+assert.match(fccGenerator, /REFUSING INCOMPLETE FCC AM DATA/);
 assert.match(pkg.scripts.test, /test:compliance/);
 
-assert.match(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG = Object\.freeze\(\[\]\)/);
+// The generated public-asset snapshot must exist and have a substantive FCC
+// dataset; a compliance-disabled empty station list must not ship silently.
+assert.match(fccAsset, /FCC Public Inspection Files API/);
+assert.match(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG/);
+assert.doesNotMatch(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG = Object\.freeze\(\[\]\)/);
 assert.doesNotMatch(terrestrialGenerator, /Roger-Need\/StationFinder/);
 assert.match(terrestrialGenerator, /fallbackEntries=\[\]/);
 
 assert.match(policy, /Public reachability is not permission/i);
+assert.match(policy, /FCC Public Inspection Files API/);
 assert.match(policy, /ReceiverBook receiver directory \| DISABLED/);
 assert.match(policy, /KiwiSDR public receivers \| ALLOWED WITH OPERATOR CONTROLS/);
 assert.match(policy, /KiwiSDR public directory .* \| ALLOWED/);
