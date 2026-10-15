@@ -94,20 +94,18 @@ assert.match(kiwiDirectory, /KIWI_DIRECTORY_MIN_FETCH_MS = 60 \* 60 \* 1000/);
 assert.match(kiwiDirectory, /extApi < 1/);
 assert.doesNotMatch(kiwiDirectory, /receiverbook\.de/i);
 
-// Read-only source health diagnostic for the official FCC API during this
-// migration. Never logs station/user secrets and does not affect CI success.
+// Temporary read-only first-party FCC API shape verification.
 if (process.env.CI === 'true') {
-  try {
-    const u = 'https://publicfiles.fcc.gov/api/service/facility/search/AR.json';
-    const r = await fetch(u, {signal:AbortSignal.timeout(8000),headers:{accept:'application/json'}});
-    const raw = r.ok ? await r.json() : null;
-    console.log('FCC API DIAGNOSTIC:',r.status,'AM count:',raw?.results?.globalSearchResults?.amResultsCount,
-      'AM rows:',raw?.results?.globalSearchResults?.amFacilityList?.length,
-      'topKeys:',Object.keys(raw||{}),'resultsKeys:',Object.keys(raw?.results||{}),
-      'globalKeys:',Object.keys(raw?.results?.globalSearchResults||{}),
-      'sample:',JSON.stringify(raw).slice(0,700));
-  } catch (error) {
-    console.log('FCC API DIAGNOSTIC ERROR:',error?.message || String(error));
+  for(const prefix of ['K','W','KA','WA']) {
+    try {
+      const r=await fetch('https://publicfiles.fcc.gov/api/service/facility/search/'+prefix+'.json', {
+        signal:AbortSignal.timeout(10000),headers:{accept:'application/json'}
+      });
+      const d=await r.json();
+      const g=d?.results?.globalSearchResults;
+      console.log('FCC CALLSIGN DIAG',prefix,'HTTP',r.status,'AM-count',g?.amResultsCount,
+        'AM-rows',g?.amFacilityList?.length,'sample',JSON.stringify(g?.amFacilityList?.[0]||{}).slice(0,650));
+    } catch(e) {console.log('FCC CALLSIGN DIAG',prefix,'ERROR',e.message);}
   }
 }
 console.log('source compliance guards: ok');
