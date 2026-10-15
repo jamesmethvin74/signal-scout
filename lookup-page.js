@@ -15,6 +15,7 @@
   const sourceLabel = document.querySelector('#lookupRadioLabel');
   const frequencyUnit = document.querySelector('#lookupFrequencyUnit');
   const submit = form?.querySelector('.lookup-submit');
+  const radioNav = document.querySelector('.fb-bottom-nav a[href="/zero"]');
   if (!engine || !form || !input || !stage || !count || !status) return;
 
   let lookupToken = 0;
@@ -89,6 +90,7 @@
   }
 
   function showEntryPrompt() {
+    if (radioNav) radioNav.href = '/zero';
     paintManualContext();
     count.textContent = '';
     if (resultsTitle) resultsTitle.textContent = 'WHAT YOU MAY BE HEARING';
@@ -158,6 +160,20 @@
     if (modeChip) modeChip.textContent = contextMode(context);
   }
 
+  // Zero already supports this exact deeplink as its initial SND and W/F
+  // frequency. Do not mutate live radio state or start a receiver from Lookup.
+  function radioHref(frequencyKHz) {
+    const value = Number(frequencyKHz);
+    if (!Number.isFinite(value) || value < 30 || value > 30000) return '/zero';
+    const requestedMode = manualMode ? 'am' : contextMode(radioContext()).toLowerCase();
+    const mode = ['am', 'sam', 'usb', 'lsb', 'cw', 'nbfm'].includes(requestedMode) ? requestedMode : 'am';
+    return `/zero?from=lookup&frequency=${value.toFixed(3)}&mode=${mode}`;
+  }
+
+  function setRadioHandoff(frequencyKHz) {
+    if (radioNav) radioNav.href = radioHref(frequencyKHz);
+  }
+
   function categoryLabel(entry) {
     const cats = new Set((entry?.categories || []).map((value) => String(value).toLowerCase()));
     if (cats.has('religious')) return 'Religious';
@@ -204,7 +220,7 @@
         <p class="lookup-card-description">${esc(description)}</p>
         <div class="lookup-tags"><span class="lookup-tag">${esc(categoryLabel(entry))}</span>${entry.language ? `<span class="lookup-tag">${esc(entry.language)}</span>` : ''}</div>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div>
     </article>`;
   }
 
@@ -219,6 +235,7 @@
   }
 
   function renderRange(result) {
+    const frequencyKHz = result.frequencyKHz;
     const range = result.range;
     count.textContent = `1 result for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
     stage.innerHTML = `<article class="lookup-result-card is-best">
@@ -230,17 +247,19 @@
         <div class="lookup-card-program-label">Frequency Guide</div>
         <p class="lookup-card-description">${esc(range.description || 'Known radio allocation or service range.')}</p>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div>
     </article>`;
   }
 
   function renderUnknown(result) {
+    const frequencyKHz = result.frequencyKHz;
     count.textContent = `No catalog match for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
-    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact station identity is stored yet for this frequency.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="/zero">RADIO</a></div></div>`;
+    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact station identity is stored yet for this frequency.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div></div>`;
   }
 
   function render(result) {
     if (!result) return;
+    setRadioHandoff(result.frequencyKHz);
     if (result.kind === 'exact') renderExact(result);
     else if (result.kind === 'range') renderRange(result);
     else renderUnknown(result);
@@ -262,6 +281,7 @@
       manualMode = true;
       frequencyKHz = parseEnteredFrequency(input.value);
       if (frequencyKHz == null) {
+        if (radioNav) radioNav.href = '/zero';
         paintManualContext();
         count.textContent = '';
         status.className = 'lookup-status is-error';
