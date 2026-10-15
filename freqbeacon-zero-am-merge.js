@@ -31,6 +31,11 @@
     merged.push(Object.freeze({
       ...station,
       name: overlay.name || station.name,
+      // Curated transmitter coordinates beat a state centroid from FCC OPIF
+      // facility search. A county/city label alone is not a transmitter fix.
+      lat: Number.isFinite(overlay.lat) ? overlay.lat : station.lat,
+      lon: Number.isFinite(overlay.lon) ? overlay.lon : station.lon,
+      locationApproximate: Boolean(overlay.locationApproximate ?? station.locationApproximate),
       categories: Object.freeze([...(overlay.categories || station.categories || ['broadcast'])]),
       description: overlay.description || station.description,
       classA: Boolean(overlay.classA || station.classA),
