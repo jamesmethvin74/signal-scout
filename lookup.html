@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/lookup-page.css?v=4">
   <link rel="stylesheet" href="/lookup-category-diversity.css?v=2">
-  <link rel="stylesheet" href="/lookup-radio-context.css?v=1">
+  <link rel="stylesheet" href="/lookup-radio-context.css?v=2">
   <link rel="stylesheet" href="/lookup-scroll-fix.css?v=1">
   <link rel="stylesheet" href="/freqbeacon-app-nav.css?v=3">
   <link rel="stylesheet" href="/freqbeacon-four-nav.css?v=1">
@@ -30,11 +30,11 @@
       </header>
 
       <section class="lookup-panel lookup-frequency-panel" aria-labelledby="frequencyLookupTitle">
-        <h1 class="lookup-section-label" id="frequencyLookupTitle">CURRENT RADIO</h1>
+        <h1 class="lookup-section-label" id="frequencyLookupTitle">FREQUENCY LOOKUP</h1>
 
         <div class="lookup-radio-context" id="lookupRadioContext" aria-live="polite">
           <div class="lookup-radio-copy">
-            <span class="lookup-radio-label">LISTENING THROUGH</span>
+            <span class="lookup-radio-label" id="lookupRadioLabel">LISTENING THROUGH</span>
             <strong id="lookupReceiverName">Confirming receiver…</strong>
             <small id="lookupReceiverPlace">Checking the trusted receiver network.</small>
           </div>
@@ -43,11 +43,12 @@
 
         <form id="lookupForm" class="lookup-form is-radio-bound">
           <div class="lookup-input-shell">
-            <input id="lookupFrequency" name="frequency" type="text" inputmode="none" readonly value="—" aria-label="Current Radio frequency in kilohertz" aria-describedby="lookupStatus">
-            <span>kHz</span>
+            <input id="lookupFrequency" name="frequency" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="9.955 or 9955" aria-label="Radio frequency in megahertz or kilohertz" aria-describedby="lookupFrequencyHint lookupStatus">
+            <span id="lookupFrequencyUnit">kHz</span>
           </div>
-          <button class="lookup-submit" type="submit">REFRESH</button>
+          <button class="lookup-submit" type="submit">LOOKUP</button>
         </form>
+        <p class="lookup-manual-hint" id="lookupFrequencyHint">Hearing something on your own radio? Enter <strong>9.955</strong> MHz or <strong>9955</strong> kHz and tap LOOKUP. No remote receiver required.</p>
         <div class="lookup-radio-actions">
           <span class="lookup-mode-chip" id="lookupModeChip">AM</span>
           <a class="lookup-radio-change" href="/explore">CHANGE RECEIVER</a>
@@ -120,7 +121,7 @@
   <script src="/lookup-category-ranking-v2.js?v=2"></script>
   <script src="/lookup-category-diversity.js?v=2"></script>
   <script src="/lookup-category-contextual-v2.js?v=2"></script>
-  <script src="/lookup-page.js?v=4"></script>
+  <script src="/lookup-page.js?v=5"></script>
   <script src="/program-guide.js?v=3"></script>
 </body>
 </html>

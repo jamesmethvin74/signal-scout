@@ -12,11 +12,15 @@
   const receiverName = document.querySelector('#lookupReceiverName');
   const receiverPlace = document.querySelector('#lookupReceiverPlace');
   const modeChip = document.querySelector('#lookupModeChip');
+  const sourceLabel = document.querySelector('#lookupRadioLabel');
+  const frequencyUnit = document.querySelector('#lookupFrequencyUnit');
   const submit = form?.querySelector('.lookup-submit');
+  const radioNav = document.querySelector('.fb-bottom-nav a[href="/zero"]');
   if (!engine || !form || !input || !stage || !count || !status) return;
 
   let lookupToken = 0;
   let validatedReceiver = null;
+  let manualMode = false;
 
   function esc(value) {
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -39,6 +43,61 @@
 
   function contextMode(context = radioContext()) {
     return String(context?.mode || 'am').toUpperCase();
+  }
+
+  // A portable radio can show 9.955 MHz or 9955 kHz. Accept either without
+  // depending on an active Kiwi receiver or retuning the SDR.
+  function parseEnteredFrequency(raw) {
+    const clean = String(raw || '').trim().toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+    const match = /^(\d+(?:\.\d+)?)(mhz|khz|m|k)?$/.exec(clean);
+    if (!match) return null;
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    const unit = match[2] || '';
+    const kHz = unit === 'mhz' || unit === 'm' || (!unit && numeric < 30) ? numeric * 1000 : numeric;
+    return Number.isFinite(kHz) && kHz >= 30 && kHz <= 30000 ? kHz : null;
+  }
+
+  function updateFrequencyUnit() {
+    if (!frequencyUnit) return;
+    const raw = String(input.value || '').trim().toLowerCase();
+    const explicitKHz = /(?:khz|k)\s*$/.test(raw);
+    const explicitMHz = /(?:mhz|m)\s*$/.test(raw);
+    const numeric = Number(raw.replace(/,/g, '').replace(/(?:mhz|khz|m|k)\s*$/, '').trim());
+    frequencyUnit.textContent = explicitMHz || (!explicitKHz && numeric > 0 && numeric < 30) ? 'MHz' : 'kHz';
+  }
+
+  function listenerLocation() {
+    try {
+      const saved = JSON.parse(window.localStorage?.getItem('signalScout:location:v1') || 'null');
+      const lat = Number(saved?.lat);
+      const lon = Number(saved?.lon);
+      if (saved?.version !== 1 || !Number.isFinite(lat) || !Number.isFinite(lon)
+          || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      return { lat, lon, identity: String(saved?.label || 'your saved listening location') };
+    } catch {
+      return null;
+    }
+  }
+
+  function paintManualContext() {
+    receiverCard?.classList.add('is-manual');
+    receiverCard?.classList.remove('is-missing');
+    if (sourceLabel) sourceLabel.textContent = 'YOUR OWN RADIO';
+    if (receiverName) receiverName.textContent = 'Manual frequency identification';
+    if (receiverPlace) receiverPlace.textContent = 'Look up what you hear on a portable radio, without an SDR connection.';
+    if (modeChip) modeChip.textContent = 'MANUAL';
+  }
+
+  function showEntryPrompt() {
+    if (radioNav) radioNav.href = '/zero';
+    paintManualContext();
+    count.textContent = '';
+    if (resultsTitle) resultsTitle.textContent = 'WHAT YOU MAY BE HEARING';
+    status.className = 'lookup-status';
+    status.textContent = 'Type a frequency such as 9.955 MHz or 9955 kHz and tap LOOKUP.';
+    stage.innerHTML = '<div class="lookup-empty"><strong>Identify a signal from your radio.</strong><p>Enter its frequency above. You do not need to select a remote receiver.</p></div>';
+    if (submit) submit.disabled = false;
   }
 
   function receiverFromFeature(feature) {
@@ -91,7 +150,9 @@
   }
 
   function paintRadioContext(receiver, context) {
+    receiverCard?.classList.remove('is-manual');
     receiverCard?.classList.toggle('is-missing', !receiver);
+    if (sourceLabel) sourceLabel.textContent = 'LISTENING THROUGH';
     if (receiverName) receiverName.textContent = receiver ? receiver.name : 'Choose a receiver in Explore';
     if (receiverPlace) receiverPlace.textContent = receiver
       ? receiver.location
@@ -99,15 +160,18 @@
     if (modeChip) modeChip.textContent = contextMode(context);
   }
 
-  function showMissingContext(message, context = radioContext()) {
-    paintRadioContext(null, context);
-    const frequencyKHz = contextFrequency(context);
-    input.value = frequencyKHz == null ? '—' : frequencyKHz.toFixed(3);
-    count.textContent = '';
-    if (resultsTitle) resultsTitle.textContent = "WHAT YOU'RE HEARING";
-    status.className = 'lookup-status is-error';
-    status.textContent = message;
-    stage.innerHTML = `<div class="lookup-empty"><strong>Radio context required.</strong><p>${esc(message)}</p><a class="lookup-radio-change" href="/explore">CHOOSE RECEIVER</a></div>`;
+  // Zero already supports this exact deeplink as its initial SND and W/F
+  // frequency. Do not mutate live radio state or start a receiver from Lookup.
+  function radioHref(frequencyKHz) {
+    const value = Number(frequencyKHz);
+    if (!Number.isFinite(value) || value < 30 || value > 30000) return '/zero';
+    const requestedMode = manualMode ? 'am' : contextMode(radioContext()).toLowerCase();
+    const mode = ['am', 'sam', 'usb', 'lsb', 'cw', 'nbfm'].includes(requestedMode) ? requestedMode : 'am';
+    return `/zero?from=lookup&frequency=${value.toFixed(3)}&mode=${mode}`;
+  }
+
+  function setRadioHandoff(frequencyKHz) {
+    if (radioNav) radioNav.href = radioHref(frequencyKHz);
   }
 
   function categoryLabel(entry) {
@@ -156,7 +220,7 @@
         <p class="lookup-card-description">${esc(description)}</p>
         <div class="lookup-tags"><span class="lookup-tag">${esc(categoryLabel(entry))}</span>${entry.language ? `<span class="lookup-tag">${esc(entry.language)}</span>` : ''}</div>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div>
     </article>`;
   }
 
@@ -171,6 +235,7 @@
   }
 
   function renderRange(result) {
+    const frequencyKHz = result.frequencyKHz;
     const range = result.range;
     count.textContent = `1 result for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
     stage.innerHTML = `<article class="lookup-result-card is-best">
@@ -182,17 +247,19 @@
         <div class="lookup-card-program-label">Frequency Guide</div>
         <p class="lookup-card-description">${esc(range.description || 'Known radio allocation or service range.')}</p>
       </div>
-      <div class="lookup-card-actions"><a class="lookup-tune" href="/zero">RADIO</a></div>
+      <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div>
     </article>`;
   }
 
   function renderUnknown(result) {
+    const frequencyKHz = result.frequencyKHz;
     count.textContent = `No catalog match for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
-    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact identity is stored yet for the frequency this receiver is tuned to.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="/zero">RADIO</a></div></div>`;
+    stage.innerHTML = `<div class="lookup-empty"><strong>${esc(Number(result.frequencyKHz).toFixed(3))} kHz</strong><p>No exact station identity is stored yet for this frequency.</p><div class="lookup-card-actions" style="justify-content:center;padding-top:12px"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div></div>`;
   }
 
   function render(result) {
     if (!result) return;
+    setRadioHandoff(result.frequencyKHz);
     if (result.kind === 'exact') renderExact(result);
     else if (result.kind === 'range') renderRange(result);
     else renderUnknown(result);
@@ -201,13 +268,60 @@
   async function runLookup({ forceReceiverRefresh = false } = {}) {
     const token = ++lookupToken;
     const context = radioContext();
-    const frequencyKHz = contextFrequency(context);
-    if (frequencyKHz == null) {
-      showMissingContext('Open Radio and tune a frequency first.', context);
+    let frequencyKHz = manualMode ? parseEnteredFrequency(input.value) : contextFrequency(context);
+
+    // Manual lookup never requires a KiwiSDR session, receiver cookie, or
+    // receiver-health evidence. Use the listener's saved location only to
+    // rank plausible station identities, not to claim signal reception.
+    if (manualMode || frequencyKHz == null) {
+      if (!manualMode && frequencyKHz == null && !String(input.value || '').trim()) {
+        showEntryPrompt();
+        return;
+      }
+      manualMode = true;
+      frequencyKHz = parseEnteredFrequency(input.value);
+      if (frequencyKHz == null) {
+        if (radioNav) radioNav.href = '/zero';
+        paintManualContext();
+        count.textContent = '';
+        status.className = 'lookup-status is-error';
+        status.textContent = 'Enter a valid frequency from 30 to 30,000 kHz (e.g. 9.955 MHz or 9955 kHz).';
+        stage.innerHTML = '<div class="lookup-empty"><strong>Check the frequency.</strong><p>Use 9.955 or 9955 for a shortwave signal at 9955 kHz.</p></div>';
+        if (submit) submit.disabled = false;
+        return;
+      }
+
+      paintManualContext();
+      updateFrequencyUnit();
+      if (resultsTitle) resultsTitle.textContent = 'WHAT YOU MAY BE HEARING';
+      const location = listenerLocation();
+      const options = { now: new Date() };
+      if (location) options.receiver = location;
+      status.className = 'lookup-status is-working';
+      status.textContent = 'Checking broadcast identity and schedule for ' + frequencyKHz.toFixed(3) + ' kHz…';
+      if (submit) submit.disabled = true;
+      render(engine.identify(frequencyKHz, options));
+
+      if (typeof engine.identifyAsync === 'function') {
+        try {
+          const enriched = await engine.identifyAsync(frequencyKHz, options);
+          if (token !== lookupToken) return;
+          render(enriched);
+        } catch (error) {
+          console.warn('FREQBEACON manual frequency enrichment failed:', error);
+        }
+      }
+      if (token !== lookupToken) return;
+      status.className = 'lookup-status';
+      status.textContent = 'Manual lookup · schedule/catalog identification'
+        + (location ? ' · ranked for your saved location' : '')
+        + ' · not proof of live reception';
+      if (submit) submit.disabled = false;
       return;
     }
 
     input.value = frequencyKHz.toFixed(3);
+    updateFrequencyUnit();
     if (modeChip) modeChip.textContent = contextMode(context);
     status.className = 'lookup-status is-working';
     status.textContent = 'Confirming the active trusted receiver…';
@@ -222,9 +336,10 @@
     }
     if (token !== lookupToken) return;
     if (!receiver) {
-      if (submit) submit.disabled = false;
-      showMissingContext('Choose a currently trusted receiver in Explore, then open Radio before using Lookup.', context);
-      return;
+      // A missing remote receiver must not block the user from identifying
+      // their own radio's frequency, even when Radio context is cached.
+      manualMode = true;
+      return runLookup();
     }
 
     paintRadioContext(receiver, context);
@@ -245,12 +360,12 @@
       receiver: {
         lat: receiver.lat,
         lon: receiver.lon,
-        identity: `${receiver.name} · ${receiver.location}`
+        identity: receiver.name + ' · ' + receiver.location
       }
     };
 
     status.className = 'lookup-status is-working';
-    status.textContent = `Identifying ${frequencyKHz.toFixed(3)} kHz as heard from ${receiver.location}…`;
+    status.textContent = 'Identifying ' + frequencyKHz.toFixed(3) + ' kHz as heard from ' + receiver.location + '…';
     render(engine.identify(frequencyKHz, options));
 
     if (typeof engine.identifyAsync === 'function') {
@@ -265,21 +380,33 @@
     if (token !== lookupToken) return;
 
     status.className = 'lookup-status';
-    status.textContent = `${contextMode(context)} · ${receiver.name} · ranked from the receiver's location`;
+    status.textContent = contextMode(context) + ' · ' + receiver.name + ' · ranked from the receiver\'s location';
     if (submit) submit.disabled = false;
   }
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    runLookup({ forceReceiverRefresh: true });
+    manualMode = true;
+    runLookup();
   });
 
-  window.addEventListener('freqbeacon:lookup-filter-change', () => {
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('input', () => {
+    manualMode = true;
+    updateFrequencyUnit();
+    // Category browsing is specific to a remote receiver; clear its selection
+    // when the user starts identifying a signal on their own radio.
+    if (categorySelected()) window.FREQBEACON_LOOKUP_CATEGORIES?.clearSelection?.();
+  });
+
+  window.addEventListener('freqbeacon:lookup-filter-change', (event) => {
+    if (manualMode && !event?.detail?.category) return;
+    manualMode = false;
     runLookup();
   });
 
   window.addEventListener('freqbeacon:radio-context', () => {
-    runLookup();
+    if (!manualMode) runLookup();
   });
 
   history.replaceState(null, '', '/lookup.html');

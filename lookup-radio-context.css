@@ -82,8 +82,8 @@
 }
 .lookup-form.is-radio-bound .lookup-input-shell { opacity: .92; }
 .lookup-form.is-radio-bound #lookupFrequency {
-  cursor: default;
-  caret-color: transparent;
+  cursor: text;
+  caret-color: var(--zero-amber-hot);
 }
 .lookup-form.is-radio-bound .lookup-submit { min-width: 92px; }
 .lookup-form.is-radio-bound .lookup-submit:disabled { opacity: .48; cursor: default; }
@@ -106,3 +106,18 @@
   .lookup-form.is-radio-bound { grid-template-columns: minmax(0,1fr) 88px; }
   .lookup-form.is-radio-bound .lookup-submit { min-width: 0; }
 }
+
+/* Portable-radio lookup is independent of the remote KiwiSDR session. */
+.lookup-radio-context.is-manual {
+  border-color: #67502d;
+  border-left-color: var(--zero-amber);
+  background: linear-gradient(90deg, rgba(255,200,100,.1), rgba(0,0,0,.04));
+}
+.lookup-radio-context.is-manual .lookup-radio-health { display: none; }
+.lookup-manual-hint {
+  margin: 7px 1px 0;
+  color: #9ea9ad;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.lookup-manual-hint strong { color: #e1c18a; }
