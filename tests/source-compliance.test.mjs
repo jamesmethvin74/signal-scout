@@ -69,11 +69,17 @@ assert.doesNotMatch(fccGenerator, /Roger-Need\/StationFinder|githubusercontent\.
 assert.match(fccGenerator, /REFUSING INCOMPLETE FCC AM DATA/);
 assert.match(pkg.scripts.test, /test:compliance/);
 
-// The generated public-asset snapshot must exist and have a substantive FCC
-// dataset; a compliance-disabled empty station list must not ship silently.
-assert.match(fccAsset, /FCC Public Inspection Files API/);
+// A raw checkout contains the safe, disabled placeholder. Cloudflare's
+// postinstall replaces it with a validated first-party FCC snapshot.
+// GitHub runs npm test without postinstall; both states must be valid.
 assert.match(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG/);
-assert.doesNotMatch(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG = Object\.freeze\(\[\]\)/);
+if (fccAsset.includes('Generated from official FCC Public Inspection Files API')) {
+  assert.match(fccAsset, /FCC Public Inspection Files/);
+  assert.doesNotMatch(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG = Object\.freeze\(\[\]\)/);
+} else {
+  assert.match(fccAsset, /FREQBEACON_ZERO_US_AM_FCC_CATALOG = Object\.freeze\(\[\]\)/);
+  assert.match(pkg.scripts.postinstall, /generate-fcc-am-catalog/);
+}
 assert.doesNotMatch(terrestrialGenerator, /Roger-Need\/StationFinder/);
 assert.match(terrestrialGenerator, /fallbackEntries=\[\]/);
 
