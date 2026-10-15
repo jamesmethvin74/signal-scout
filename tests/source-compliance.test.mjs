@@ -94,18 +94,31 @@ assert.match(kiwiDirectory, /KIWI_DIRECTORY_MIN_FETCH_MS = 60 \* 60 \* 1000/);
 assert.match(kiwiDirectory, /extApi < 1/);
 assert.doesNotMatch(kiwiDirectory, /receiverbook\.de/i);
 
-// Temporary read-only first-party FCC API shape verification.
+// Temporary read-only official federal source check. Remove after migration.
 if (process.env.CI === 'true') {
-  for(const prefix of ['K','W','KA','WA']) {
+  const urls = [
+    'https://transition.fcc.gov/ftp/Bureaus/MB/Databases/cdbs/facility.zip',
+    'https://transition.fcc.gov/ftp/Bureaus/MB/Databases/cdbs/_readme.html',
+    'https://www.fcc.gov/mb/databases/cdbs/',
+    'https://publicfiles.fcc.gov/api/service/facility/search/WNSR.json',
+    'https://enterpriseefiling.fcc.gov/dataentry/public/tv/lmsDatabase.html',
+    'https://services.arcgis.com/0ZRg6WRC7mxSLyKX/ArcGIS/rest/services/HIFLD_Infrastructure_Communication_SAMPLE_Layers/FeatureServer/7/query?where=1%3D1&returnCountOnly=true&f=pjson'
+  ];
+  for(const url of urls) {
     try {
-      const r=await fetch('https://publicfiles.fcc.gov/api/service/facility/search/'+prefix+'.json', {
-        signal:AbortSignal.timeout(10000),headers:{accept:'application/json'}
+      const r=await fetch(url,{
+        method:url.endsWith('.zip')?'HEAD':'GET',redirect:'follow',
+        headers:{accept:'application/json, text/html, */*'},
+        signal:AbortSignal.timeout(7500)
       });
-      const d=await r.json();
-      const g=d?.results?.globalSearchResults;
-      console.log('FCC CALLSIGN DIAG',prefix,'HTTP',r.status,'AM-count',g?.amResultsCount,
-        'AM-rows',g?.amFacilityList?.length,'sample',JSON.stringify(g?.amFacilityList?.[0]||{}).slice(0,650));
-    } catch(e) {console.log('FCC CALLSIGN DIAG',prefix,'ERROR',e.message);}
+      const type=r.headers.get('content-type')||'';
+      let sample='';
+      if(!url.endsWith('.zip')&&r.ok) {
+        const t=await r.text();
+        sample=t.slice(0,220).replace(/\\s+/g,' ');
+      }
+      console.log('OFFICIAL_SOURCE_CHECK',JSON.stringify({url,status:r.status,type,size:r.headers.get('content-length'),sample}));
+    } catch(e) {console.log('OFFICIAL_SOURCE_CHECK_ERROR',url,e.message);}
   }
 }
 console.log('source compliance guards: ok');
