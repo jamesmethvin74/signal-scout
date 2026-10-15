@@ -34,6 +34,11 @@ let result=engine.identify(660,{receiver:{lat:40.72,lon:-74.0},now:new Date('202
 assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WFAN');
 result=engine.identify(920,{receiver:{lat:34.75,lon:-92.3},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'KARN');
+result=engine.identify(560,{receiver:{lat:36.1,lon:-86.8},now:new Date('2026-10-15T03:30:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WNSR');
+assert.equal(result.entry.sourceUrl,'https://wnsr.com/contact/station-info');
+result=engine.identify(560,{receiver:{lat:25.84,lon:-80.19},now:new Date('2026-10-15T03:30:00Z')});
+assert.equal(result.kind,'exact'); assert.equal(result.entry.callsign,'WQAM');
 result=await engine.identifyAsync(9955,{receiver:{lat:25.8,lon:-80.2},now:new Date('2026-09-15T19:00:00Z')});
 assert.equal(result.kind,'exact'); assert.equal(result.entry.band,'SW'); assert.equal(result.entry.name,'A26 TEST 9955');
 assert.equal(result.nominalFrequencyKHz,9955); assert.equal(result.frequencyOffsetKHz,0);
