@@ -237,15 +237,21 @@
   function renderRange(result) {
     const frequencyKHz = result.frequencyKHz;
     const range = result.range;
-    count.textContent = `1 result for ${Number(result.frequencyKHz).toFixed(3)} kHz`;
+    const amBandOnly = frequencyKHz >= 520 && frequencyKHz <= 1710
+      && String(range.name || '').includes('AM Broadcast');
+    count.textContent = amBandOnly
+      ? `No station ID in current catalog for ${frequencyKHz.toFixed(3)} kHz`
+      : `1 result for ${frequencyKHz.toFixed(3)} kHz`;
     stage.innerHTML = `<article class="lookup-result-card is-best">
       <div class="lookup-card-body">
-        <span class="lookup-best-badge">BEST MATCH</span>
+        <span class="lookup-best-badge">${amBandOnly ? 'BAND ONLY · NOT STATION ID' : 'BAND GUIDE'}</span>
         <div class="lookup-card-title-row"><h3 class="lookup-card-title">${esc(range.name)}</h3><span class="lookup-status-pill"><i aria-hidden="true"></i>KNOWN RANGE</span></div>
         <div class="lookup-card-meta"><span>${esc(engine.formatFrequency(result.frequencyKHz))}</span><span>${esc(range.mode || 'Varies')}</span><span>${esc(categoryLabel(range))}</span></div>
         <div class="lookup-card-divider"></div>
         <div class="lookup-card-program-label">Frequency Guide</div>
-        <p class="lookup-card-description">${esc(range.description || 'Known radio allocation or service range.')}</p>
+        <p class="lookup-card-description">${amBandOnly
+          ? 'No verified station matched this frequency near the selected receiver in the current catalog. U.S. AM station coverage is incomplete; this band description does not identify the signal.'
+          : esc(range.description || 'Known radio allocation or service range.')}</p>
       </div>
       <div class="lookup-card-actions"><a class="lookup-tune" href="${esc(radioHref(frequencyKHz))}">RADIO</a></div>
     </article>`;
