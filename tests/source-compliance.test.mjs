@@ -102,7 +102,10 @@ if (process.env.CI === 'true') {
     const r = await fetch(u, {signal:AbortSignal.timeout(8000),headers:{accept:'application/json'}});
     const raw = r.ok ? await r.json() : null;
     console.log('FCC API DIAGNOSTIC:',r.status,'AM count:',raw?.results?.globalSearchResults?.amResultsCount,
-      'AM rows:',raw?.results?.globalSearchResults?.amFacilityList?.length);
+      'AM rows:',raw?.results?.globalSearchResults?.amFacilityList?.length,
+      'topKeys:',Object.keys(raw||{}),'resultsKeys:',Object.keys(raw?.results||{}),
+      'globalKeys:',Object.keys(raw?.results?.globalSearchResults||{}),
+      'sample:',JSON.stringify(raw).slice(0,700));
   } catch (error) {
     console.log('FCC API DIAGNOSTIC ERROR:',error?.message || String(error));
   }
