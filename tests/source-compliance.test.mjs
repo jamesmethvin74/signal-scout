@@ -94,4 +94,17 @@ assert.match(kiwiDirectory, /KIWI_DIRECTORY_MIN_FETCH_MS = 60 \* 60 \* 1000/);
 assert.match(kiwiDirectory, /extApi < 1/);
 assert.doesNotMatch(kiwiDirectory, /receiverbook\.de/i);
 
+// Read-only source health diagnostic for the official FCC API during this
+// migration. Never logs station/user secrets and does not affect CI success.
+if (process.env.CI === 'true') {
+  try {
+    const u = 'https://publicfiles.fcc.gov/api/service/facility/search/AR.json';
+    const r = await fetch(u, {signal:AbortSignal.timeout(8000),headers:{accept:'application/json'}});
+    const raw = r.ok ? await r.json() : null;
+    console.log('FCC API DIAGNOSTIC:',r.status,'AM count:',raw?.results?.globalSearchResults?.amResultsCount,
+      'AM rows:',raw?.results?.globalSearchResults?.amFacilityList?.length);
+  } catch (error) {
+    console.log('FCC API DIAGNOSTIC ERROR:',error?.message || String(error));
+  }
+}
 console.log('source compliance guards: ok');
