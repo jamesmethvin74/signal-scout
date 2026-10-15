@@ -14,12 +14,19 @@
   }
 
   const receiverId = selectedReceiverId();
+  // Always expose CHANGE, even when this origin has no receiver cookie.
+  // Production and Worker previews do not share their browser cookies.
+  panel.hidden = false;
   if (!receiverId) {
+    panel.classList.add('is-loading');
+    nameEl.textContent = 'No receiver selected';
+    placeEl.textContent = 'Tap CHANGE to select a receiver in Explore.';
+    const statusLabel = panel.querySelector('.zero-receiver-context-status span');
+    if (statusLabel) statusLabel.textContent = 'NOT SET';
     window.FREQBEACON_RADIO_CONTEXT?.clearReceiver?.();
     return;
   }
 
-  panel.hidden = false;
   panel.classList.add('is-loading');
   nameEl.textContent = 'Confirming selected receiver…';
   placeEl.textContent = receiverId;
