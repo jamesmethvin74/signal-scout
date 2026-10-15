@@ -779,11 +779,36 @@
     if (button) setRegion(button.dataset.region || 'all');
   });
 
+  function receiverRadioDestination() {
+    const params = new URLSearchParams(location.search);
+    const frequencyKHz = Number(params.get('returnFrequency'));
+    const requestedMode = String(params.get('returnMode') || 'am').toLowerCase();
+    if (!Number.isFinite(frequencyKHz) || frequencyKHz < 30 || frequencyKHz > 30000) {
+      return '/zero?from=explore';
+    }
+    const mode = ['am', 'sam', 'usb', 'lsb', 'cw', 'nbfm'].includes(requestedMode)
+      ? requestedMode : 'am';
+    return `/zero?from=lookup&frequency=${frequencyKHz.toFixed(3)}&mode=${mode}`;
+  }
+
   els.listenButton.addEventListener('click', () => {
     if (!state.selected) return;
     setSelectionCookie(state.selected.id);
-    location.assign('/zero?from=explore');
+    location.assign(receiverRadioDestination());
   });
+
+  // The verified-receiver globe card's Radio button is added by the existing
+  // Worker runtime. Capture only a pending return from Radio, before that
+  // button's original click handler, so it keeps the Lookup frequency too.
+  document.addEventListener('click', (event) => {
+    if (!event.target?.closest?.('#globeOpenRadio') || !state.selected) return;
+    const destination = receiverRadioDestination();
+    if (destination === '/zero?from=explore') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setSelectionCookie(state.selected.id);
+    location.assign(destination);
+  }, true);
 
   els.zoomIn?.addEventListener('click', () => animateZoomTo(state.zoom * BUTTON_ZOOM_FACTOR));
   els.zoomOut?.addEventListener('click', () => animateZoomTo(state.zoom / BUTTON_ZOOM_FACTOR));

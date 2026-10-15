@@ -12,6 +12,7 @@ export default {
 
     if (request.method === 'GET' && (url.pathname === '/zero' || url.pathname === '/zero/')) {
       const zeroUrl = new URL('/freqbeacon-zero.html', request.url);
+      zeroUrl.search = url.search; // Preserve Lookup frequency/mode through the asset route.
       return env.ASSETS.fetch(new Request(zeroUrl.toString(), {
         method: 'GET',
         headers: request.headers

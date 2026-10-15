@@ -13,13 +13,61 @@
     try { return decodeURIComponent(match[1]); } catch { return ''; }
   }
 
+
   const receiverId = selectedReceiverId();
+  const power = document.getElementById('power');
+  let confirmedReceiver = false;
+
+  function exploreUrl() {
+    // Preserve the actual tuned frequency when choosing a new receiver.
+    const params = new URLSearchParams(location.search);
+    const rawDisplay = String(document.getElementById('frequencyDisplay')?.textContent || '').replace(/,/g, '');
+    const display = Number(rawDisplay);
+    const unit = document.getElementById('frequencyUnit')?.textContent || 'kHz';
+    const displayedKHz = /mhz/i.test(unit) ? display * 1000 : display;
+    const fromLookup = params.get('from') === 'lookup' ? Number(params.get('frequency')) : NaN;
+    const frequencyKHz = Number.isFinite(displayedKHz) && displayedKHz >= 30 && displayedKHz <= 30000
+      ? displayedKHz : fromLookup;
+    const mode = document.querySelector('[data-shell-mode].active')?.dataset?.shellMode
+      || params.get('mode') || 'am';
+    const url = new URL('/explore', location.href);
+    if (Number.isFinite(frequencyKHz) && frequencyKHz >= 30 && frequencyKHz <= 30000) {
+      url.searchParams.set('returnFrequency', frequencyKHz.toFixed(3));
+      if (['am', 'sam', 'usb', 'lsb', 'cw', 'nbfm'].includes(mode)) url.searchParams.set('returnMode', mode);
+    }
+    return url.pathname + url.search;
+  }
+
+  const changeButton = panel.querySelector('.zero-receiver-context-change');
+  if (changeButton) changeButton.href = exploreUrl();
+
+  // Both the main power control and the large START control must refuse to
+  // open any Kiwi session until the selected ID is confirmed by the directory.
+  // Capture runs before the existing start listeners. STOP remains usable.
+  document.addEventListener('click', (event) => {
+    if (!event.target?.closest?.('#power, #scopeStartButton')) return;
+    if (power?.getAttribute('aria-pressed') === 'true' || confirmedReceiver) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    location.assign(exploreUrl());
+  }, true);
+  changeButton?.addEventListener('click', () => {
+    changeButton.href = exploreUrl();
+  });
+
+  // Always expose CHANGE, even when this origin has no receiver cookie.
+  // Production and Worker previews do not share their browser cookies.
+  panel.hidden = false;
   if (!receiverId) {
+    panel.classList.add('is-loading');
+    nameEl.textContent = 'No receiver selected';
+    placeEl.textContent = 'Tap CHANGE to select a receiver in Explore.';
+    const statusLabel = panel.querySelector('.zero-receiver-context-status span');
+    if (statusLabel) statusLabel.textContent = 'NOT SET';
     window.FREQBEACON_RADIO_CONTEXT?.clearReceiver?.();
     return;
   }
 
-  panel.hidden = false;
   panel.classList.add('is-loading');
   nameEl.textContent = 'Confirming selected receiver…';
   placeEl.textContent = receiverId;
@@ -43,6 +91,7 @@
       const name = String(properties.name || 'Trusted KiwiSDR');
       const place = String(properties.location || properties.country || receiverId);
       panel.classList.remove('is-loading', 'is-error');
+      confirmedReceiver = true;
       nameEl.textContent = name;
       placeEl.textContent = place;
       panel.setAttribute('aria-label', `Remote receiver ${name}, ${place}`);
@@ -64,6 +113,7 @@
       });
     })
     .catch(() => {
+      confirmedReceiver = false;
       window.FREQBEACON_RADIO_CONTEXT?.clearReceiver?.();
       panel.classList.remove('is-loading');
       panel.classList.add('is-error');
