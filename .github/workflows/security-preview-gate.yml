@@ -55,11 +55,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Confirm blocked assets are not publicly retrievable
-        env:
-          BASE: https://audit-freqbeacon-static-asset-lockdown-20261008-signal-scout.james-methvin74.workers.dev
         shell: bash
         run: |
           set -euo pipefail
+          # Test the current PR branch, never a hard-coded previous release.
+          BASE="https://${GITHUB_HEAD_REF//\//-}-signal-scout.james-methvin74.workers.dev"
           # Limited retries allow Cloudflare Git integration time to deploy this PR commit.
           for i in 1 2 3 4 5; do
             code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/" || true)"
@@ -169,3 +169,103 @@ jobs:
           done
           if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
           echo "PASS: production 48 blocked GET/HEAD requests and 10 core public routes"
+
+  api-preview:
+    if: github.event_name == 'pull_request'
+    name: Verify API default-deny and live cost guard (preview)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for exact release marker and test low-volume safe requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://${GITHUB_HEAD_REF//\//-}-signal-scout.james-methvin74.workers.dev"
+          ready=0
+          # Cloudflare deployments finish asynchronously; old revisions cannot pass this gate.
+          for i in $(seq 1 24); do
+            headers="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -D - -o /dev/null "$BASE/api/unrecognized-security-proof" || true)"
+            if printf '%s' "$headers" | tr -d '\r' | grep -qi '^x-freqbeacon-security-policy: api-cost-guard-v1$'; then
+              ready=1
+              break
+            fi
+            echo "Awaiting current security-policy marker ($i)"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: expected deployed release marker absent"; exit 1; }
+          errors=0
+          check() {
+            local method="$1" path="$2" expected="$3" type="${4:-}"
+            local status
+            if [[ -n "$type" ]]; then
+              status="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -X "$method" -H "Content-Type: $type" -o /dev/null -w '%{http_code}' "$BASE$path" || true)"
+            else
+              status="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -X "$method" -o /dev/null -w '%{http_code}' "$BASE$path" || true)"
+            fi
+            echo "$method $path -> HTTP $status (expected $expected)"
+            if [[ "$status" != "$expected" ]]; then errors=$((errors+1)); fi
+          }
+          check GET /api/unrecognized-security-proof 404
+          check POST /api/unrecognized-security-proof 404
+          check GET /api/explore/admin 404
+          check GET /api/explore/refresh 404
+          check GET /api/zero/admin 404
+          check GET /api/sdr/diagnostics 404
+          check POST /api/explore/status 405
+          check POST /api/explore/live-failure 415 text/plain
+          check GET /api/sdr/ws 426
+          check GET /api/zero/bootstrap 200
+          check GET /api/explore/status 200
+          check GET /api/explore/receivers 200
+          [[ "$errors" -eq 0 ]] || { echo "FAIL: $errors API route checks"; exit 1; }
+          echo "PASS: 12 low-volume live API checks, exact release identity verified"
+
+  api-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Verify API default-deny and live cost guard (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for exact release marker and test low-volume safe requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://freqbeacon.methvindigitalworks.com"
+          ready=0
+          # Cloudflare deployments finish asynchronously; old revisions cannot pass this gate.
+          for i in $(seq 1 24); do
+            headers="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -D - -o /dev/null "$BASE/api/unrecognized-security-proof" || true)"
+            if printf '%s' "$headers" | tr -d '\r' | grep -qi '^x-freqbeacon-security-policy: api-cost-guard-v1$'; then
+              ready=1
+              break
+            fi
+            echo "Awaiting current security-policy marker ($i)"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: expected deployed release marker absent"; exit 1; }
+          errors=0
+          check() {
+            local method="$1" path="$2" expected="$3" type="${4:-}"
+            local status
+            if [[ -n "$type" ]]; then
+              status="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -X "$method" -H "Content-Type: $type" -o /dev/null -w '%{http_code}' "$BASE$path" || true)"
+            else
+              status="$(curl -sS --retry 2 --retry-all-errors --max-time 15 -X "$method" -o /dev/null -w '%{http_code}' "$BASE$path" || true)"
+            fi
+            echo "$method $path -> HTTP $status (expected $expected)"
+            if [[ "$status" != "$expected" ]]; then errors=$((errors+1)); fi
+          }
+          check GET /api/unrecognized-security-proof 404
+          check POST /api/unrecognized-security-proof 404
+          check GET /api/explore/admin 404
+          check GET /api/explore/refresh 404
+          check GET /api/zero/admin 404
+          check GET /api/sdr/diagnostics 404
+          check POST /api/explore/status 405
+          check POST /api/explore/live-failure 415 text/plain
+          check GET /api/sdr/ws 426
+          check GET /api/zero/bootstrap 200
+          check GET /api/explore/status 200
+          check GET /api/explore/receivers 200
+          [[ "$errors" -eq 0 ]] || { echo "FAIL: $errors API route checks"; exit 1; }
+          echo "PASS: 12 low-volume live API checks, exact release identity verified"

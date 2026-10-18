@@ -27,6 +27,11 @@
       "name": "SDR_CONTROL_RATE_LIMITER",
       "namespace_id": "5292603",
       "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      "name": "EXPLORE_API_RATE_LIMITER",
+      "namespace_id": "5292604",
+      "simple": { "limit": 120, "period": 60 }
     }
   ],
   "d1_databases": [

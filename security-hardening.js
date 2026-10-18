@@ -111,10 +111,13 @@ export function validateSecurityRequest(request) {
 
   if (path === '/api/explore/live-failure') {
     if (!methodAllowed(method, ['POST'])) return verdict(false, 405, 'Method not allowed');
-    const length = Number(request.headers.get('content-length') || 0);
-    if (Number.isFinite(length) && length > 2048) return verdict(false, 413, 'Request too large');
+    const declaredLength = request.headers.get('content-length');
+    const length = declaredLength === null ? null : Number(declaredLength);
+    if (length !== null && (!Number.isSafeInteger(length) || length < 0 || length > 2048)) {
+      return verdict(false, 413, 'Request too large');
+    }
     const contentType = String(request.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('application/json')) {
+    if (!/^application\/json(?:\s*;|\s*$)/.test(contentType)) {
       return verdict(false, 415, 'JSON required');
     }
     const rawCookie = String(request.headers.get('cookie') || '');
@@ -163,7 +166,8 @@ export function validateSecurityRequest(request) {
     return verdict(true);
   }
 
-  return verdict(true);
+  // No legacy/new API route may silently inherit permissive access.
+  return verdict(false, 404, 'Not found');
 }
 
 function clientIdentity(request) {
@@ -173,9 +177,14 @@ function clientIdentity(request) {
 
 function sessionIdentity(request) {
   const url = new URL(request.url);
-  const receiver = url.searchParams.get('receiver') || selectedReceiverPreference(request) || 'fixed-zero';
-  const timestamp = url.searchParams.get('ts') || 'none';
-  return `${clientIdentity(request)}|${url.pathname}|${receiver}|${timestamp}`;
+  // The Zero browser preference is an untrusted, mutable cookie. Rotating
+  // that cookie must not mint fresh rate-limit keys for the same connection.
+  const receiver = url.pathname === '/api/sdr/ws'
+    ? (url.searchParams.get('receiver') || 'unknown-sdr')
+    : 'zero-session';
+  // Timestamp is caller controlled and changes across legitimate reconnects.
+  // Including it would create a fresh limiter key on every retry.
+  return `${clientIdentity(request)}|${url.pathname}|${receiver}`;
 }
 
 async function checkLimiter(binding, key) {
@@ -191,13 +200,25 @@ async function checkLimiter(binding, key) {
 export async function enforceAbuseLimits(request, env) {
   const path = new URL(request.url).pathname;
   const isSocket = path === '/api/sdr/ws' || path === '/api/zero/ws' || path === '/api/zero-bench/ws';
+  const isExplore = path === '/api/explore/receivers'
+    || path === '/api/explore/status'
+    || path === '/api/explore/recommendation'
+    || path === '/api/explore/live-failure';
   const isControl = path === '/api/sdr/receivers'
     || path === '/api/zero/bootstrap'
     || path === '/api/zero/diagnostics'
     || path === '/api/zero-bench/bootstrap'
     || path === '/api/zero-bench/diagnostics';
 
-  if (!isSocket && !isControl) return verdict(true);
+  if (!isSocket && !isControl && !isExplore) return verdict(true);
+
+  // This bucket covers every public Explore API call as one budget, not a
+  // different budget per endpoint. Fail closed before any D1/upstream work.
+  if (isExplore) {
+    const explore = await checkLimiter(env?.EXPLORE_API_RATE_LIMITER, `explore|${clientIdentity(request)}`);
+    if (explore.unavailable) return verdict(false, 503, 'Explore protection unavailable');
+    if (!explore.success) return verdict(false, 429, 'Too many Explore requests');
+  }
 
   if (isSocket) {
     const client = await checkLimiter(env?.SDR_CLIENT_RATE_LIMITER, `socket|${clientIdentity(request)}`);
@@ -233,6 +254,7 @@ export function applySecurityHeaders(response) {
   const headers = new Headers(response.headers);
   headers.set('content-security-policy', CSP);
   headers.set('x-content-type-options', 'nosniff');
+  headers.set('x-freqbeacon-security-policy', 'api-cost-guard-v1');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   headers.set('permissions-policy', 'geolocation=(self), camera=(), microphone=(), payment=(), usb=()');
   headers.set('x-frame-options', 'DENY');
