@@ -169,3 +169,38 @@ jobs:
           done
           if ((failures)); then echo "FAIL: $failures security/availability checks"; exit 1; fi
           echo "PASS: production 48 blocked GET/HEAD requests and 10 core public routes"
+
+  legal-preview:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'legal/')
+    name: Verify this legal branch's public pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check actual legal-branch deployment and direct links
+        env:
+          BASE: https://legal-freqbeacon-readiness-2026-10-09-signal-scout.james-methvin74.workers.dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 20); do
+            code="$(curl -sS -L -o /tmp/freq-legal-home.html -w '%{http_code}' --max-time 15 "$BASE/legal.html" || true)"
+            if [[ "$code" == "200" ]] && grep -q 'DRAFT' /tmp/freq-legal-home.html; then ready=1; break; fi
+            echo "Waiting for legal-branch-specific preview: attempt $i; HTTP $code"
+            sleep 8
+          done
+          [[ "$ready" == "1" ]] || { echo "FAIL: legal branch is not on its own preview"; exit 1; }
+          for page in legal.html privacy.html terms.html disclaimer.html data-sources.html; do
+            for method in GET HEAD; do
+              status="$(curl -sS -L --max-time 15 -o /dev/null -w '%{http_code}' -X "$method" "$BASE/$page" || true)"
+              echo "$method /$page -> $status"
+              [[ "$status" == "200" ]] || exit 1
+            done
+          done
+          for page in legal.html privacy.html terms.html disclaimer.html; do
+            curl -fsSL --max-time 15 "$BASE/$page" | grep -q 'DRAFT' || { echo "FAIL: draft warning missing /$page"; exit 1; }
+          done
+          for page in index.html freqbeacon-zero.html lookup.html explore.html near-me.html; do
+            curl -fsSL --max-time 15 "$BASE/$page" | grep -q 'href="/legal.html"' || { echo "FAIL: legal link missing /$page"; exit 1; }
+          done
+          echo "PASS: actual legal-branch public pages, draft warning and five entry-point links"
