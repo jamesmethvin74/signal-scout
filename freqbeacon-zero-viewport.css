@@ -16,6 +16,22 @@
   height: auto;
 }
 
+/*
+ * Wider tablet/desktop layouts can exceed the visible browser height even
+ * though the phone layout fits as a fixed instrument panel. Let those wider
+ * layouts scroll beneath the fixed app nav and reserve enough trailing space
+ * to expose the full lower-control deck and receiver strip.
+ */
+@media (min-width: 601px) {
+  .zero-radio > .fb-page-scroll {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(var(--fb-nav-reserved-height) + 18px) !important;
+    scroll-padding-bottom: calc(var(--fb-nav-reserved-height) + 18px);
+  }
+}
+
 @media (max-width: 600px) {
   .zero-radio > .fb-page-scroll {
     padding: 2px 6px 2px;
