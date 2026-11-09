@@ -108,7 +108,7 @@ try {
   const cached=await refreshEiBiIfDue(env,new Date(now.getTime()+3600000));
   assert.equal(cached.status,'fresh');
   assert.equal(fetches,2);
-  const response=await eibiResponse(new Request('https://example.test/api/eibi/identify?frequency=9955&at=2026-11-09T22%3A00%3A00Z'),env);
+  const response=await eibiResponse(new Request('https://example.test/api/eibi/identify?frequency=9955&at=2020-01-01T00%3A00%3A00Z'),env);
   // The read API intentionally applies a 45-day request clock bound.
   assert.equal(response.status,400);
 
