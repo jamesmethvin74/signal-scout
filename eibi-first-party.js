@@ -146,12 +146,15 @@ async function checksum(text) {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(data), b => b.toString(16).padStart(2, '0')).join('');
 }
+// 250 kHz buckets keep D1 reads small and writes within its 100-bind limit.
+const BUCKET_KHZ = 250;
 function frequencyGroups(rows) {
   const result = new Map();
   for (const row of rows) {
-    const list = result.get(row.frequencyKHz) || [];
+    const bucket = Math.floor(row.frequencyKHz / BUCKET_KHZ) * BUCKET_KHZ;
+    const list = result.get(bucket) || [];
     list.push(row);
-    result.set(row.frequencyKHz, list);
+    result.set(bucket, list);
   }
   return [...result].sort((a, b) => a[0] - b[0]);
 }
@@ -181,14 +184,15 @@ export async function refreshEiBiIfDue(env, now = new Date()) {
     const csv = await publisherText(csvUrl, MAX_BYTES);
     const rows = parseEiBi(csv);
     const groups = frequencyGroups(rows);
-    if (rows.length < MIN_ROWS || groups.length < 300) {
-      throw new Error('Incomplete EiBi ' + season + ' data: ' + rows.length + ' rows on ' + groups.length + ' frequencies');
+    const distinctFrequencies = new Set(rows.map(row => row.frequencyKHz)).size;
+    if (rows.length < MIN_ROWS || distinctFrequencies < 300 || groups.length < 40) {
+      throw new Error('Incomplete EiBi ' + season + ' data: ' + rows.length + ' rows on ' + distinctFrequencies + ' frequencies');
     }
     const hash = await checksum(csv);
     const snapshot = season + '-' + hash.slice(0, 20);
     // Upsert the staging snapshot in small batches to respect D1 binding limits.
-    for (let offset = 0; offset < groups.length; offset += 35) {
-      const chunk = groups.slice(offset, offset + 35);
+    for (let offset = 0; offset < groups.length; offset += 30) {
+      const chunk = groups.slice(offset, offset + 30);
       const placeholders = chunk.map(() => '(?,?,?)').join(',');
       const values = chunk.flatMap(([frequency, entries]) => [snapshot, frequency, JSON.stringify(entries)]);
       await db.prepare('INSERT OR REPLACE INTO freqbeacon_eibi_frequency(snapshot,frequency,payload) VALUES ' + placeholders)
@@ -196,7 +200,7 @@ export async function refreshEiBiIfDue(env, now = new Date()) {
     }
     const details = {
       season: season.toUpperCase(), snapshot, updatedAt: now.getTime(), rowCount: rows.length,
-      frequencyCount: groups.length, sha256: hash, source: csvUrl, terms: README,
+      frequencyCount: distinctFrequencies, sha256: hash, source: csvUrl, terms: README,
       attribution:'EiBi shortwave schedules by Eike Bierwirth'
     };
     await writeMeta(db, 'active', JSON.stringify(details));
@@ -239,11 +243,14 @@ export async function eibiResponse(request, env) {
     return json({status:'error',message:'Invalid EiBi frequency/time'},400);
   }
   if (!current) return json({status:'unavailable',frequencyKHz:frequency,matches:[]});
-  const result = await db.prepare('SELECT payload FROM freqbeacon_eibi_frequency WHERE snapshot = ? AND frequency BETWEEN ? AND ? LIMIT 12')
-    .bind(info.snapshot, frequency - 2.5, frequency + 2.5).all();
-  const matches = (result.results || []).flatMap(r => JSON.parse(r.payload)).map(e => ({
-    ...e,active:scheduleActive(e,at)
-  })).sort((a,b) =>
+  const lo = Math.floor((frequency - 2.5) / BUCKET_KHZ) * BUCKET_KHZ;
+  const hi = Math.floor((frequency + 2.5) / BUCKET_KHZ) * BUCKET_KHZ;
+  const result = await db.prepare('SELECT payload FROM freqbeacon_eibi_frequency WHERE snapshot = ? AND frequency BETWEEN ? AND ? LIMIT 2')
+    .bind(info.snapshot, lo, hi).all();
+  const matches = (result.results || [])
+    .flatMap(r => JSON.parse(r.payload))
+    .filter(e => Math.abs(e.frequencyKHz - frequency) <= 2.5)
+    .map(e => ({...e,active:scheduleActive(e,at)})).sort((a,b) =>
     Math.abs(a.frequencyKHz-frequency)-Math.abs(b.frequencyKHz-frequency)
     || (b.active===true?1:b.active===false?-1:0) - (a.active===true?1:a.active===false?-1:0)
   ).slice(0,60);
