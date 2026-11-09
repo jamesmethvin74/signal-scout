@@ -165,7 +165,7 @@ export async function refreshEiBiIfDue(env, now = new Date()) {
   const season = eibiSeason(now);
   const priorRaw = await metaValue(db, 'active');
   const prior = priorRaw ? JSON.parse(priorRaw) : null;
-  if (prior && prior.season === season && now.getTime() - prior.updatedAt < FRESH_MS) {
+  if (prior && prior.season === season.toUpperCase() && now.getTime() - prior.updatedAt < FRESH_MS) {
     return {status:'fresh', ...prior};
   }
   // Atomic attempt lease blocks duplicate updates from concurrent HTTP requests.
