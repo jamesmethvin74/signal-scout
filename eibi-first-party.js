@@ -20,7 +20,7 @@ export function eibiSeason(at = new Date()) {
   const summer = (month > 2 && month < 9)
     || (month === 2 && day >= lastSundayUTC(year, 2))
     || (month === 9 && day < lastSundayUTC(year, 9));
-  const seasonYear = !summer && month < 2 ? year - 1 : year;
+  const seasonYear = !summer && month < 9 ? year - 1 : year;
   return (summer ? 'a' : 'b') + String(seasonYear).slice(-2);
 }
 
