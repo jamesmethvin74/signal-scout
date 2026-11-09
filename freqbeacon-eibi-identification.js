@@ -14,13 +14,13 @@
       band: 'SW', frequencyKHz: Number(row.frequencyKHz),
       name, mode: utility ? 'Varies' : 'AM',
       country: row.itu || '', location: row.itu ? 'Origin: ' + row.itu : '',
-      language: row.language || '', start: row.start, end: row.end, days: row.days,
+      language: ({E:'English',F:'French',D:'German',S:'Spanish'})[row.language] || row.language || '', start: row.start, end: row.end, days: row.days,
       target: row.target || '',
       categories: utility ? ['shortwave','utility'] : ['shortwave','broadcast','international'],
       description: 'EiBi ' + season + ' schedule: ' + row.start + '–' + row.end
         + ' UTC' + (row.days ? ' (' + row.days + ')' : '')
         + (row.target ? '. Target: ' + row.target : '')
-        + (row.remarks ? '. Transmitter/remarks: ' + row.remarks : '')
+        + (row.remarks && row.remarks.length > 4 ? '. EiBi notes: ' + row.remarks : '')
         + '. Scheduled service, not confirmation of live RF reception or an exact program.',
       source: 'EiBi ' + season + ' — Eike Bierwirth (eibispace.de)',
       scheduleSource: 'eibi', season
@@ -48,6 +48,17 @@
             if (exact.length) {
               const candidate = exact[0];
               const entry = station(candidate, data.season);
+              // Retain a verified transmitter site from our own curated
+              // catalog only when its station name also matches this service.
+              const known = engine.identify(frequency, options);
+              const knownName = String(known?.entry?.name || '').trim().toLowerCase();
+              const candidateName = String(entry.name || '').trim().toLowerCase();
+              if (known?.kind === 'exact' && known?.entry?.type === 'station'
+                && knownName.length >= 4 && (candidateName === knownName
+                  || candidateName.startsWith(knownName + ' '))) {
+                if (known.entry.transmitter) entry.transmitter = known.entry.transmitter;
+                if (known.entry.location) entry.location = known.entry.location;
+              }
               const other = exact.slice(1, 7).map(r => ({
                 entry: station(r, data.season),
                 distance: Infinity,
