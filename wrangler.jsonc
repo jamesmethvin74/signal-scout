@@ -51,6 +51,7 @@
       "/_freqbeacon/explore/*",
       "/api/explore/*",
       "/api/sdr/*",
+      "/api/eibi/*",
       "/api/program-guide",
       "/api/program-guide/*",
       "/api/ham-activity",
