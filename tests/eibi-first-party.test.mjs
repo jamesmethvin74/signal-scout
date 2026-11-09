@@ -119,4 +119,21 @@ try {
   assert.equal(JSON.parse(db.meta.get('active')).snapshot,r.snapshot);
   assert.ok(db.rows.size>=300);
 } finally { globalThis.fetch=oldFetch; }
+// Temporary read-only verification of the publisher's current source files.
+// No mirrors or third-party caches are consulted. Remove after verification.
+if (process.env.CI === 'true') {
+  for (const filename of ['README.TXT', 'sked-b26.csv']) {
+    for (const scheme of ['https:', 'http:']) {
+      const url = scheme + '//www.eibispace.de/dx/' + filename;
+      try {
+        const r = await fetch(url, {signal:AbortSignal.timeout(8500),headers:{accept:'text/plain,text/csv,*/*'}});
+        const txt = r.ok ? await r.text() : '';
+        console.log('EIBI LIVE SOURCE:',JSON.stringify({url,status:r.status,bytes:txt.length,
+          licenseVerified:filename==='README.TXT'?termsAllowUse(txt):undefined,
+          parsedCount:filename.endsWith('.csv')?parseEiBi(txt).length:undefined,
+          firstLine:txt.slice(0,140).replace(/\s+/g,' ')}));
+      } catch(error) {console.log('EIBI LIVE SOURCE ERROR:',url,error.message);}
+    }
+  }
+}
 console.log('EiBi season, publisher terms, schedule parser, D1 cache and safe-refresh tests passed');
