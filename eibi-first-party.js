@@ -73,7 +73,7 @@ export function parseEiBi(csv) {
       name,
       language: lang.slice(0, 20),
       target: String(row[6] || '').trim().slice(0, 40),
-      remarks: String(row.slice(7).join(';') || '').trim().slice(0, 120),
+      remarks: String(row[7] || '').trim().slice(0, 120),
       type: lang.startsWith('-') ? 'service' : 'station'
     });
   }
