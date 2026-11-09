@@ -119,18 +119,4 @@ try {
   assert.equal(JSON.parse(db.meta.get('active')).snapshot,r.snapshot);
   assert.ok(db.rows.size>=40);
 } finally { globalThis.fetch=oldFetch; }
-// One-time read-only integration probe of the already-built Cloudflare preview.
-// This uses the real Worker API and D1 binding, not an emulated response.
-if (process.env.CI === 'true') {
-  const host = 'https://eaa44f4c-signal-scout.james-methvin74.workers.dev';
-  for (const endpoint of ['/api/eibi/status', '/api/eibi/identify?frequency=9955']) {
-    try {
-      const r = await fetch(host + endpoint, {signal:AbortSignal.timeout(27000)});
-      const payload = await r.text();
-      console.log('EIBI PREVIEW INTEGRATION:',JSON.stringify({endpoint,http:r.status,response:payload.slice(0,1200)}));
-    } catch(error) {
-      console.log('EIBI PREVIEW INTEGRATION ERROR:',endpoint,error?.message||String(error));
-    }
-  }
-}
 console.log('EiBi season, publisher terms, schedule parser, D1 cache and safe-refresh tests passed');
