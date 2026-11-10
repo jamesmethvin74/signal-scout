@@ -88,6 +88,7 @@
   function scheduleLabel(entry, schedule) {
     if (!entry?.start || !entry?.end) return '';
     const window = `${String(entry.start).padStart(4, '0')}–${String(entry.end).padStart(4, '0')} UTC`;
+    if (entry.scheduleSource === 'eibi') return `EiBi scheduled transmission ${window} (not RF proof)`;
     if (!schedule) return `static schedule ${window}`;
     return `${schedule.active ? 'in' : 'outside'} static schedule ${window}`;
   }

@@ -192,6 +192,7 @@
   }
 
   function statusLabel(candidate, isBest) {
+    if (candidate.entry?.scheduleSource === 'eibi' && candidate.schedule?.active === true) return { text: 'SCHEDULED NOW', now: true };
     if (candidate.schedule?.active === true) return { text: 'ON NOW', now: true };
     if (candidate.schedule?.active === false) return { text: 'SCHEDULED', now: false };
     if (candidate.entry?.type === 'station' && isBest) return { text: 'LIKELY NOW', now: false };
@@ -207,7 +208,7 @@
     const guideClass = entry.type === 'station' && String(entry.band || '').toUpperCase() === 'SW' ? ' lookup-result' : '';
     return `<article class="lookup-result-card${guideClass} ${index === 0 ? 'is-best' : ''}">
       <div class="lookup-card-body">
-        ${index === 0 ? '<span class="lookup-best-badge">BEST MATCH</span>' : ''}
+        ${index === 0 ? '<span class="lookup-best-badge">' + (entry.scheduleSource === 'eibi' ? 'EiBi SCHEDULE MATCH' : 'BEST MATCH') + '</span>' : ''}
         <div class="lookup-card-title-row">
           <h3 class="lookup-card-title station-name">${esc(entry.name || entry.callsign || 'Known signal')}</h3>
           <span class="lookup-status-pill ${statusState.now ? 'is-now' : ''}"><i aria-hidden="true"></i>${esc(statusState.text)}</span>
@@ -216,7 +217,7 @@
         <div class="lookup-card-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>
         ${place ? `<div class="lookup-card-location">${esc(place)}</div>` : ''}
         <div class="lookup-card-divider"></div>
-        <div class="lookup-card-program-label">${candidate.schedule?.active === true ? 'Now Playing' : 'Identification'}</div>
+        <div class="lookup-card-program-label">${entry.scheduleSource === 'eibi' ? 'Scheduled transmission · not live proof' : candidate.schedule?.active === true ? 'Now Playing' : 'Identification'}</div>
         <p class="lookup-card-description">${esc(description)}</p>
         <div class="lookup-tags"><span class="lookup-tag">${esc(categoryLabel(entry))}</span>${entry.language ? `<span class="lookup-tag">${esc(entry.language)}</span>` : ''}</div>
       </div>

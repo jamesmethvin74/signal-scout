@@ -6,6 +6,7 @@ import {
   validateSecurityRequest
 } from './security-hardening.js';
 import { refreshKiwiPublicDirectory } from './kiwi-public-directory.js';
+import { eibiResponse, refreshEiBiIfDue } from './eibi-first-party.js';
 
 const RECEIVER_HEALTH_CRON = '* * * * *';
 
@@ -69,6 +70,21 @@ export default {
     const abuse = await enforceAbuseLimits(request, env);
     if (!abuse.ok) return securityResponse(abuse.message, abuse.status);
 
+    // Approved EiBi frequency schedules are separate from the currently
+    // disabled broadcaster program-guide and uncleared HFCC sources.
+    const pathname = new URL(request.url).pathname;
+    if (pathname === '/api/eibi/status' || pathname === '/api/eibi/identify') {
+      const initial = await eibiResponse(request, env);
+      if (request.method === 'GET' && initial.status === 200) {
+        const payload = await initial.clone().json();
+        if (payload.status === 'unavailable') {
+          await refreshEiBiIfDue(env);
+          return applySecurityHeaders(await eibiResponse(request, env));
+        }
+      }
+      return applySecurityHeaders(initial);
+    }
+
     const complianceBlocked = legacyProgramFirewall(request, env);
     if (complianceBlocked) return await complianceBlocked;
 
@@ -87,6 +103,14 @@ export default {
       return;
     }
 
+    // Existing one-minute receiver-health cron also drives one
+    // due-check per hour; the cache itself refreshes at most once per day.
+    // This does not resume any legacy, unlicensed schedule warmers.
+    if (new Date(event?.scheduledTime || Date.now()).getUTCMinutes() === 17) {
+      const refresh = refreshEiBiIfDue(env).catch(error =>
+        console.warn('FREQBEACON scheduled EiBi refresh:', String(error?.message || error)));
+      ctx?.waitUntil?.(refresh);
+    }
     if (typeof baseWorker.scheduled === 'function') {
       return baseWorker.scheduled(event, env, ctx);
     }
