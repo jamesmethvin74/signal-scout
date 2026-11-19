@@ -215,7 +215,8 @@
     state.attempted.add(currentId);
 
     try {
-      await reportLiveFailure(title, detail);
+      // Reporting is advisory and must never delay local failover.
+      void reportLiveFailure(title, detail);
       const response = await fetch('/api/explore/receivers', {
         cache: 'no-store',
         headers: { accept: 'application/geo+json,application/json' }
