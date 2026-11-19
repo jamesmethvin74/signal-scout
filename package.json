@@ -4,7 +4,7 @@
   "scripts": {
     "postinstall": "node scripts/generate-global-terrestrial-catalog.mjs && node scripts/wire-terrestrial-assets.mjs && npm run test",
     "test:catalogs": "node tests/terrestrial-catalog.test.mjs && node tests/terrestrial-identification.test.mjs && node tests/eibi-first-party.test.mjs",
-    "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs",
+    "test:receiver-health": "node tests/receiver-health-backfill.test.mjs && node tests/receiver-health-scheduler.test.mjs && node tests/zero-connection-reliability.test.mjs",
     "test:security": "node tests/security-hardening.test.mjs",
     "test": "npm run test:catalogs && npm run test:receiver-health && npm run test:security && npm run test:compliance",
     "test:compliance": "node tests/source-compliance.test.mjs && node tests/kiwi-public-directory.test.mjs"

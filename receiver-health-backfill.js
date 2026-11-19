@@ -29,8 +29,13 @@ function candidateSelect() {
 
 export function candidateBudget(trustedCount = 0, limit = BACKFILL_BATCH_SIZE) {
   const safeLimit = Math.max(1, Math.min(12, Math.floor(Number(limit) || BACKFILL_BATCH_SIZE)));
-  const trusted = Number(trustedCount || 0) < 125 ? 1 : 2;
-  const promotion = Math.min(7, Math.max(4, Math.ceil(safeLimit * 0.6)));
+  // Once bootstrapped, spend six of ten hourly proof checks revalidating
+  // trusted radios, rather than only two (which could leave them unchecked
+  // for multiple days). Keep four slots for newly qualifying receivers.
+  const trusted = Number(trustedCount || 0) < 125 ? 1 : 6;
+  const promotion = Number(trustedCount || 0) < 125
+    ? Math.min(7, Math.max(4, Math.ceil(safeLimit * 0.6)))
+    : Math.min(4, Math.max(1, safeLimit - 6));
   return {
     limit: safeLimit,
     promotion,

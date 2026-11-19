@@ -21,6 +21,8 @@ const FIXED = Object.freeze({
   tuneStepKHz: 1,
   audioProofFrames: 5,
   noFrameTimeoutMs: 7000,
+  socketOpenTimeoutMs: 8000,
+  bootstrapTimeoutMs: 6500,
   keepaliveMs: 15000
 });
 
@@ -542,13 +544,26 @@ function setSignal(rssi) {
 
 function openSnd(generation) {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(socketUrl('SND'));
+    let socket;
+    try { socket = new WebSocket(socketUrl('SND')); }
+    catch { reject(new Error('SND SOCKET CREATE FAILED')); return; }
     socket.binaryType = 'arraybuffer';
     state.snd = socket;
     let frameWatchdog = null;
     let settled = false;
+    // A WebSocket can remain CONNECTING indefinitely. The frame watchdog only
+    // starts after OPEN, so guard the opening handshake separately.
+    const openWatchdog = watchdog(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('SND receiver connection timed out'));
+      } else {
+        fatalStop('SND ERROR', 'Receiver audio connection timed out.');
+      }
+    }, FIXED.socketOpenTimeoutMs);
 
     socket.onopen = () => {
+      cancelWatchdog(openWatchdog);
       if (generation !== state.generation) return;
       send(socket, 'SET auth t=kiwi p=');
       addKeepalive(socket);
@@ -611,12 +626,14 @@ function openSnd(generation) {
     };
 
     socket.onerror = () => {
+      cancelWatchdog(openWatchdog);
       if (generation !== state.generation || state.stopping) return;
       if (!settled) reject(new Error('SND ERROR'));
       fatalStop('SND ERROR', 'The receiver audio socket failed.');
     };
 
     socket.onclose = (event) => {
+      cancelWatchdog(openWatchdog);
       cancelWatchdog(frameWatchdog);
       if (generation !== state.generation || state.stopping) return;
       const suffix = event.reason ? ` · ${event.reason}` : ` · code ${event.code}`;
@@ -630,12 +647,16 @@ function openWf(generation) {
   if (state.wf || generation !== state.generation || state.stopping) return;
 
   setMessage('AUDIO LIVE', 'Opening the paired real RF waterfall on the same Kiwi session.');
-  const socket = new WebSocket(socketUrl('W/F'));
+  let socket;
+  try { socket = new WebSocket(socketUrl('W/F')); }
+  catch { fatalStop('W/F ERROR', 'Could not create the paired RF socket.'); return; }
   socket.binaryType = 'arraybuffer';
   state.wf = socket;
   let frameWatchdog = null;
+  const openWatchdog = watchdog(() => fatalStop('W/F ERROR', 'Paired RF connection timed out.'), FIXED.socketOpenTimeoutMs);
 
   socket.onopen = () => {
+    cancelWatchdog(openWatchdog);
     if (generation !== state.generation) return;
     send(socket, 'SET auth t=kiwi p=');
     configureWf();
@@ -671,11 +692,13 @@ function openWf(generation) {
   };
 
   socket.onerror = () => {
+    cancelWatchdog(openWatchdog);
     if (generation !== state.generation || state.stopping) return;
     fatalStop('W/F ERROR', 'The paired RF socket failed.');
   };
 
   socket.onclose = (event) => {
+    cancelWatchdog(openWatchdog);
     cancelWatchdog(frameWatchdog);
     if (generation !== state.generation || state.stopping) return;
     const suffix = event.reason ? ` · ${event.reason}` : ` · code ${event.code}`;
@@ -684,7 +707,17 @@ function openWf(generation) {
 }
 
 async function loadBootstrap(generation) {
-  const response = await fetch('/api/zero/bootstrap', { cache: 'no-store' });
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), FIXED.bootstrapTimeoutMs);
+  let response;
+  try {
+    response = await fetch('/api/zero/bootstrap', { cache: 'no-store', signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('RECEIVER bootstrap timed out');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
   let payload;
   try {
     payload = await response.json();

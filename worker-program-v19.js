@@ -124,7 +124,7 @@ async function trustedReceiverFeedResponse(request, env) {
           country: receiver.country || '',
           receiverType: receiver.receiverType || 'KiwiSDR',
           antenna: receiver.antenna || '',
-          status: 'Healthy',
+          status: 'Previously verified',
           trusted: true
         }
       }));

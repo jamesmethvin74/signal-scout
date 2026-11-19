@@ -3,7 +3,9 @@
 
   const COOKIE = 'fb_explore_receiver';
   const MAX_SWITCHES = 3;
-  const FAILURE_RE = /^(?:SND ERROR|SND CLOSED|NO AUDIO FRAMES|RECEIVER BUSY|RECEIVER DOWN|W\/F ERROR|W\/F CLOSED|NO W\/F FRAMES)$/i;
+  const FAILED_KEY = 'freqbeacon:recentReceiverFailures:v1';
+  const COOLDOWN_MS = 15 * 60 * 1000;
+  const FAILURE_RE = /^(?:SND ERROR|SND CLOSED|NO AUDIO FRAMES|RECEIVER BUSY|RECEIVER DOWN|AUTH FAILED|W\/F ERROR|W\/F CLOSED|NO W\/F FRAMES)$/i;
   const state = {
     handling: false,
     switches: 0,
@@ -12,6 +14,46 @@
 
   const message = document.getElementById('scopeMessage');
   if (!message) return;
+
+  // Local session evidence is intentionally not authoritative D1 trust.
+  // Cool recently failed receivers only in this browser, never globally.
+  function readCooldowns() {
+    try {
+      const source = JSON.parse(localStorage.getItem(FAILED_KEY) || '{}');
+      const now = Date.now();
+      return Object.fromEntries(Object.entries(source || {})
+        .filter(([, until]) => Number(until) > now && Number(until) < now + COOLDOWN_MS + 1000));
+    } catch { return {}; }
+  }
+
+  function rememberFailure(id) {
+    if (!id) return;
+    try {
+      localStorage.setItem(FAILED_KEY, JSON.stringify({
+        ...readCooldowns(), [id]: Date.now() + COOLDOWN_MS
+      }));
+    } catch {}
+  }
+
+  function recentlyFailed(id) {
+    return Number(readCooldowns()[id] || 0) > Date.now();
+  }
+
+  function restartWithReplacement() {
+    const power = document.getElementById('power');
+    let checks = 0;
+    const resume = () => {
+      if (++checks > 40) return;
+      if (state.handling || !power || power.disabled || power.getAttribute('aria-pressed') !== 'false') {
+        window.setTimeout(resume, 100);
+        return;
+      }
+      // Zero's existing START path always performs fresh bootstrap + SND/W/F
+      // validation; no special Kiwi commands or new proxy routes.
+      power.click();
+    };
+    window.setTimeout(resume, 180);
+  }
 
   function selectedReceiverId() {
     const match = document.cookie.match(/(?:^|;\s*)fb_explore_receiver=([^;]+)/);
@@ -82,7 +124,7 @@
     const currentCountry = String(current.country || '').trim().toLowerCase();
     const candidates = (feed?.features || [])
       .map(receiverFromFeature)
-      .filter((receiver) => receiver.id && !state.attempted.has(receiver.id))
+      .filter((receiver) => receiver.id && !state.attempted.has(receiver.id) && !recentlyFailed(receiver.id))
       .map((receiver) => ({
         receiver,
         distance: milesBetween(current, receiver),
@@ -130,7 +172,7 @@
       : `${frequency.toFixed(0)} kHz`;
     const distanceText = Number.isFinite(distance) ? ` (${Math.round(distance).toLocaleString()} mi away)` : '';
     message.classList.remove('error');
-    message.innerHTML = `<strong>NEARBY RECEIVER READY</strong><span>${escapeHtml(previousName)} became unavailable. Switched to ${escapeHtml(alternate.name)}${escapeHtml(distanceText)}. Press START to retry ${escapeHtml(frequencyText)}.</span>`;
+    message.innerHTML = `<strong>TRYING NEARBY RECEIVER</strong><span>${escapeHtml(previousName)} became unavailable. Trying ${escapeHtml(alternate.name)}${escapeHtml(distanceText)} at ${escapeHtml(frequencyText)}.</span>`;
   }
 
   function showNoFallback(previousName) {
@@ -157,24 +199,38 @@
   }
 
   async function handleFailure() {
-    if (state.handling || state.switches >= MAX_SWITCHES) return;
+    if (state.handling) return;
     const title = message.querySelector('strong')?.textContent?.trim() || '';
     const detail = message.querySelector('span')?.textContent?.trim() || '';
     if (!FAILURE_RE.test(title) && !(title === 'START FAILED' && /SND|W\/F|receiver|socket|audio|waterfall/i.test(detail))) return;
 
     const currentId = selectedReceiverId();
     if (!currentId) return;
+    rememberFailure(currentId);
+    if (state.switches >= MAX_SWITCHES) {
+      showNoFallback(document.getElementById('zeroReceiverContextName')?.textContent?.trim() || 'Selected receiver');
+      return;
+    }
     state.handling = true;
     state.attempted.add(currentId);
 
     try {
-      await reportLiveFailure(title, detail);
-      const response = await fetch('/api/explore/receivers', {
-        cache: 'no-store',
-        headers: { accept: 'application/geo+json,application/json' }
-      });
-      if (!response.ok) throw new Error(`trusted receiver feed ${response.status}`);
-      const feed = await response.json();
+      // Reporting is advisory and must never delay local failover.
+      void reportLiveFailure(title, detail);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 6000);
+      let feed;
+      try {
+        const response = await fetch('/api/explore/receivers', {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { accept: 'application/geo+json,application/json' }
+        });
+        if (!response.ok) throw new Error(`trusted receiver feed ${response.status}`);
+        feed = await response.json();
+      } finally {
+        window.clearTimeout(timeout);
+      }
       const current = currentReceiver(feed, currentId);
       const previousName = current?.name
         || window.FREQBEACON_RADIO_CONTEXT?.read?.()?.receiver?.name
@@ -192,6 +248,7 @@
       setSelectedReceiver(next.receiver.id);
       updateReceiverUi(next.receiver, previousName, next.distance);
       window.setTimeout(() => showReady(previousName, next.receiver, next.distance), 120);
+      restartWithReplacement();
     } catch {
       const previousName = window.FREQBEACON_RADIO_CONTEXT?.read?.()?.receiver?.name
         || document.getElementById('zeroReceiverContextName')?.textContent?.trim()

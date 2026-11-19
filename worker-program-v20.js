@@ -45,7 +45,7 @@ function receiverFromFeature(feature) {
     country: String(properties.country || ''),
     receiverType: String(properties.receiverType || 'KiwiSDR'),
     antenna: String(properties.antenna || ''),
-    status: 'Healthy',
+    status: 'Previously verified',
     trusted: true,
     lat,
     lon
@@ -237,7 +237,7 @@ function launchpadMarkup() {
             <strong id="launchReceiverName">Checking trusted receivers…</strong>
             <small id="launchReceiverLocation">Verified SND + paired W/F only</small>
           </div>
-          <div class="launchpad-health" id="launchReceiverHealth" hidden><i aria-hidden="true"></i><span>HEALTHY</span></div>
+          <div class="launchpad-health" id="launchReceiverHealth" hidden><i aria-hidden="true"></i><span>VERIFIED</span></div>
         </div>
 
         <div class="launchpad-actions">
