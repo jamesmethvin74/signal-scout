@@ -1,8 +1,15 @@
-/* FREQBEACON Zero is an instrument panel, not a scrolling document. */
+/* Keep the whole Zero receiver panel accessible above the fixed navigation.
+ * On tall screens the panel stays still. On shorter Android/PWA viewports, only
+ * the instrument content scrolls; the receiver strip and START button can no
+ * longer be clipped behind the nav. Preserve the native RF canvas geometry. */
 .zero-radio > .fb-page-scroll {
-  overflow-y: hidden;
-  overscroll-behavior: none;
-  padding-bottom: 3px;
+  height: calc(100% - var(--fb-nav-reserved-height, 54px));
+  min-height: 0;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+  scroll-padding-bottom: 12px;
 }
 
 /*
