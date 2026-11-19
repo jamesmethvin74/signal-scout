@@ -553,7 +553,14 @@ function openSnd(generation) {
     let settled = false;
     // A WebSocket can remain CONNECTING indefinitely. The frame watchdog only
     // starts after OPEN, so guard the opening handshake separately.
-    const openWatchdog = watchdog(() => fatalStop('SND ERROR', 'Receiver audio connection timed out.'), FIXED.socketOpenTimeoutMs);
+    const openWatchdog = watchdog(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('SND receiver connection timed out'));
+      } else {
+        fatalStop('SND ERROR', 'Receiver audio connection timed out.');
+      }
+    }, FIXED.socketOpenTimeoutMs);
 
     socket.onopen = () => {
       cancelWatchdog(openWatchdog);
