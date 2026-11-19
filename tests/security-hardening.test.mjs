@@ -197,4 +197,80 @@ test('production static assets exclude private Worker modules and public debug s
   }
 });
 
+
+test('unrecognized API routes fail closed without reaching legacy workers', () => {
+  for (const path of [
+    '/api/explore/admin', '/api/explore/refresh', '/api/sdr/diagnostics',
+    '/api/zero/admin', '/api/unknown', '/api/program-guide/refresh'
+  ]) {
+    for (const method of ['GET', 'POST']) {
+      assert.equal(validateSecurityRequest(request(path, { method })).status, 404, `${method} ${path}`);
+    }
+  }
+  assert.equal(validateSecurityRequest(request('/api/explore/status')).ok, true);
+  assert.equal(validateSecurityRequest(request('/api/explore/recommendation')).ok, true);
+  assert.equal(validateSecurityRequest(request('/api/zero/bootstrap')).ok, true);
+});
+
+test('Explore JSON reports reject missing/invalid content type and oversized declared bodies', () => {
+  const base = { method: 'POST', headers: { cookie: 'fb_explore_receiver=receiver.example%3A8073' }, body: '{}' };
+  assert.equal(validateSecurityRequest(request('/api/explore/live-failure', base)).status, 415);
+  const bad = { ...base, headers: { ...base.headers, 'content-type': 'application/octet-stream' } };
+  assert.equal(validateSecurityRequest(request('/api/explore/live-failure', bad)).status, 415);
+  const valid = { ...base, headers: { ...base.headers, 'content-type': 'application/json' } };
+  assert.equal(validateSecurityRequest(request('/api/explore/live-failure', valid)).ok, true);
+  const oversized = { ...valid, headers: { ...valid.headers, 'content-length': '2049' } };
+  assert.equal(validateSecurityRequest(request('/api/explore/live-failure', oversized)).status, 413);
+  const malformed = { ...valid, headers: { ...valid.headers, 'content-length': 'not-a-number' } };
+  assert.equal(validateSecurityRequest(request('/api/explore/live-failure', malformed)).status, 413);
+});
+
+test('rotating a caller-supplied timestamp cannot reset the SDR session limit', async () => {
+  const env = {
+    SDR_CLIENT_RATE_LIMITER: new FakeLimiter(100),
+    SDR_SESSION_RATE_LIMITER: new FakeLimiter(2),
+    SDR_CONTROL_RATE_LIMITER: new FakeLimiter(100)
+  };
+  const make = (stream, ts) => request(`/api/sdr/ws?receiver=receiver.example%3A8073&stream=${stream}&ts=${ts}`, {
+    headers: { Upgrade: 'websocket', 'CF-Connecting-IP': '198.51.100.84' }
+  });
+  assert.equal((await enforceAbuseLimits(make('SND', '1234567890'), env)).ok, true);
+  assert.equal((await enforceAbuseLimits(make('W/F', '1234567890'), env)).ok, true);
+  const bypass = await enforceAbuseLimits(make('SND', '9876543210'), env);
+  assert.equal(bypass.ok, false);
+  assert.equal(bypass.status, 429);
+});
+
+test('rotating Zero receiver preference cookies cannot bypass session limits', async () => {
+  const env = {
+    SDR_CLIENT_RATE_LIMITER: new FakeLimiter(100),
+    SDR_SESSION_RATE_LIMITER: new FakeLimiter(2),
+    SDR_CONTROL_RATE_LIMITER: new FakeLimiter(100)
+  };
+  const make = (stream, ts, receiver) => request(`/api/zero/ws?stream=${stream}&ts=${ts}`, {
+    headers: {
+      Upgrade: 'websocket',
+      'CF-Connecting-IP': '198.51.100.85',
+      cookie: `fb_explore_receiver=${encodeURIComponent(receiver)}`
+    }
+  });
+  assert.equal((await enforceAbuseLimits(make('SND', '1234567890123', 'receiver-one:8073'), env)).ok, true);
+  assert.equal((await enforceAbuseLimits(make('W/F', '1234567890123', 'receiver-one:8073'), env)).ok, true);
+  const bypass = await enforceAbuseLimits(make('SND', '9876543210123', 'receiver-two:8073'), env);
+  assert.equal(bypass.status, 429);
+  assert.equal(bypass.ok, false);
+});
+
+test('all Explore endpoints share a dedicated limiter and fail closed if missing', async () => {
+  const req = (path) => request(path, { headers: { 'CF-Connecting-IP': '198.51.100.93' } });
+  const denied = await enforceAbuseLimits(req('/api/explore/status'), {});
+  assert.equal(denied.status, 503);
+  const env = { EXPLORE_API_RATE_LIMITER: new FakeLimiter(2) };
+  assert.equal((await enforceAbuseLimits(req('/api/explore/status'), env)).ok, true);
+  assert.equal((await enforceAbuseLimits(req('/api/explore/receivers'), env)).ok, true);
+  const blocked = await enforceAbuseLimits(req('/api/explore/recommendation'), env);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.status, 429);
+});
+
 console.log('FREQBEACON security hardening regression checks passed.');
