@@ -30,7 +30,9 @@ assert.equal(warmupBudget.trusted, 1);
 assert.equal(warmupBudget.limit, 10);
 
 const matureBudget = candidateBudget(200, 10);
-assert.equal(matureBudget.trusted, 2);
+assert.equal(matureBudget.trusted, 6);
+assert.equal(matureBudget.promotion, 4);
+assert.equal(matureBudget.trusted + matureBudget.promotion, 10);
 assert.equal(matureBudget.limit, 10);
 
 const ts = BigInt(proxySafeTimestamp('1700000000'));
