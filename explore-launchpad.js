@@ -120,7 +120,7 @@
 
   function renderReady(payload) {
     els.title.textContent = 'READY TO LISTEN';
-    els.status.textContent = 'Your selected receiver is still healthy and trusted.';
+    els.status.textContent = 'Your receiver is still trusted; live availability will be checked when connecting.';
     els.previous.hidden = true;
     showChoice(payload.current, 'YOUR RECEIVER');
     els.primary.textContent = 'CONTINUE LISTENING';
