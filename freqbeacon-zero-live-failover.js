@@ -217,12 +217,20 @@
     try {
       // Reporting is advisory and must never delay local failover.
       void reportLiveFailure(title, detail);
-      const response = await fetch('/api/explore/receivers', {
-        cache: 'no-store',
-        headers: { accept: 'application/geo+json,application/json' }
-      });
-      if (!response.ok) throw new Error(`trusted receiver feed ${response.status}`);
-      const feed = await response.json();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 6000);
+      let feed;
+      try {
+        const response = await fetch('/api/explore/receivers', {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { accept: 'application/geo+json,application/json' }
+        });
+        if (!response.ok) throw new Error(`trusted receiver feed ${response.status}`);
+        feed = await response.json();
+      } finally {
+        window.clearTimeout(timeout);
+      }
       const current = currentReceiver(feed, currentId);
       const previousName = current?.name
         || window.FREQBEACON_RADIO_CONTEXT?.read?.()?.receiver?.name
