@@ -33,7 +33,9 @@ export function candidateBudget(trustedCount = 0, limit = BACKFILL_BATCH_SIZE) {
   // trusted radios, rather than only two (which could leave them unchecked
   // for multiple days). Keep four slots for newly qualifying receivers.
   const trusted = Number(trustedCount || 0) < 125 ? 1 : 6;
-  const promotion = Math.min(7, Math.max(4, Math.ceil(safeLimit * 0.6)));
+  const promotion = Number(trustedCount || 0) < 125
+    ? Math.min(7, Math.max(4, Math.ceil(safeLimit * 0.6)))
+    : Math.min(4, Math.max(1, safeLimit - 6));
   return {
     limit: safeLimit,
     promotion,
