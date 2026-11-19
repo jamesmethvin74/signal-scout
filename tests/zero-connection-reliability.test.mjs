@@ -41,4 +41,13 @@ assert.equal(mature.trusted, 6);
 assert.equal(mature.promotion, 4);
 assert.equal(mature.trusted + mature.promotion, mature.limit);
 
+const viewportCss = source('freqbeacon-zero-viewport.css');
+const zeroHtml = source('freqbeacon-zero.html');
+assert.match(viewportCss, /height:\s*calc\(100%\s*-\s*var\(--fb-nav-reserved-height/);
+assert.match(viewportCss, /overflow-y:\s*auto\s*!important/);
+assert.doesNotMatch(viewportCss, /overflow-y:\s*hidden/,
+  'Zero must not permanently clip controls on short Android screens');
+assert.match(viewportCss, /padding-bottom:\s*max\(10px,\s*env\(safe-area-inset-bottom\)\)\s*!important/);
+assert.match(zeroHtml, /freqbeacon-zero-viewport\.css\?v=4/);
+
 console.log('Zero receiver connection reliability checks passed.');
