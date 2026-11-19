@@ -132,6 +132,15 @@
     oceania: 'Oceania'
   };
 
+  const FAILED_KEY = 'freqbeacon:recentReceiverFailures:v1';
+  function localCooldownUntil(id) {
+    try {
+      const failures = JSON.parse(localStorage.getItem(FAILED_KEY) || '{}');
+      const until = Number(failures?.[id] || 0);
+      return until > Date.now() && until < Date.now() + 15 * 60 * 1000 + 1000 ? until : 0;
+    } catch { return 0; }
+  }
+
   function receiverFromFeature(feature) {
     const coordinates = feature?.geometry?.coordinates;
     const properties = feature?.properties || {};
@@ -145,7 +154,8 @@
       country: String(properties.country || ''),
       receiverType: String(properties.receiverType || 'KiwiSDR'),
       antenna: String(properties.antenna || ''),
-      status: 'Healthy',
+      status: 'Previously verified',
+      retryAfter: localCooldownUntil(String(properties.id)),
       lat,
       lon,
       coord: [lon, lat],
@@ -472,7 +482,9 @@
         <small class="receiver-row-region"></small>`;
       button.querySelector('b').textContent = receiver.name;
       button.querySelector('.receiver-row-copy span').textContent = receiver.location;
-      button.querySelector('.receiver-row-region').textContent = REGION_LABELS[receiver.region] || receiver.region;
+      const cooling = receiver.retryAfter > Date.now();
+      button.querySelector('.receiver-row-region').textContent = cooling ? 'RECENT FAILURE' : (REGION_LABELS[receiver.region] || receiver.region);
+      if (cooling) button.title = 'This receiver failed recently. Choose another while it cools down.';
       button.addEventListener('click', () => selectReceiver(receiver, { focus: true, scroll: false }));
       fragment.append(button);
     }
@@ -492,14 +504,19 @@
       els.selectedLocation.textContent = 'Drag the globe or use the listing below.';
       els.receiverMeta.hidden = true;
       els.listenButton.disabled = true;
+      if (els.detailOpenRadio) els.detailOpenRadio.disabled = true;
       return;
     }
     els.selectedName.textContent = receiver.name;
     els.selectedLocation.textContent = receiver.location;
-    els.selectedType.textContent = receiver.receiverType.toUpperCase();
-    els.selectedAntenna.textContent = receiver.antenna || 'Not published';
+    const cooling = receiver.retryAfter > Date.now();
+    els.selectedType.textContent = cooling ? 'RECENT FAILURE' : receiver.receiverType.toUpperCase();
+    els.selectedAntenna.textContent = cooling
+      ? 'This receiver recently failed here. Choose another or try again later.'
+      : (receiver.antenna || 'Not published');
     els.receiverMeta.hidden = false;
-    els.listenButton.disabled = false;
+    els.listenButton.disabled = cooling;
+    if (els.detailOpenRadio) els.detailOpenRadio.disabled = cooling;
 
     for (const row of els.list.querySelectorAll('.receiver-row')) {
       row.setAttribute('aria-selected', row.dataset.receiverId === receiver.id ? 'true' : 'false');
