@@ -45,7 +45,7 @@ function receiverFromFeature(feature) {
     country: String(properties.country || ''),
     receiverType: String(properties.receiverType || 'KiwiSDR'),
     antenna: String(properties.antenna || ''),
-    status: 'Healthy',
+    status: 'Previously verified',
     trusted: true,
     lat,
     lon
