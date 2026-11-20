@@ -48,9 +48,8 @@ assert.match(viewportCss, /overflow-y:\s*auto\s*!important/);
 assert.doesNotMatch(viewportCss, /overflow-y:\s*hidden/,
   'Zero must not permanently clip controls on short Android screens');
 assert.match(viewportCss, /padding-bottom:\s*max\(10px,\s*env\(safe-area-inset-bottom\)\)\s*!important/);
-assert.match(zeroHtml, /freqbeacon-zero-viewport\.css\?v=5/);
-assert.match(viewportCss, /\.zero-scope-shell \.scope\s*\{\s*height:\s*clamp\(150px,\s*21dvh,\s*220px\)/);
-assert.match(viewportCss, /overflow:\s*hidden/);
-assert.match(viewportCss, /height:\s*auto\s*!important/);
+assert.match(zeroHtml, /freqbeacon-zero-viewport\.css\?v=6/);
+assert.doesNotMatch(viewportCss, /21dvh|\.zero-scope-shell \.scope\s*\{\s*height:/,
+  'Never crop the live waterfall on narrow Android screens');
 
 console.log('Zero receiver connection reliability checks passed.');
