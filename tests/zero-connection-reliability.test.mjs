@@ -53,11 +53,26 @@ assert.doesNotMatch(viewportCss, /21dvh|\.zero-scope-shell \.scope\s*\{\s*height
   'Never crop the live waterfall on narrow Android screens');
 
 const controlFit = source('freqbeacon-zero-controls-fit.css');
-assert.match(zeroHtml, /freqbeacon-zero-controls-fit\\.css\\?v=1/);
-assert.match(controlFit, /\\.tuning-zone/);
-assert.match(controlFit, /\\.band-rail/);
-assert.match(controlFit, /\\.receiver-strip/);
-assert.doesNotMatch(controlFit, /#rfCanvas|\\.zero-scope-shell|\\.scope\\s*\\{|waterfallBins|wf_speed|aspect-ratio|object-fit/,
-  'Mobile controls stylesheet must never modify RF canvas, scope, waterfall geometry or protocol');
+assert.ok(zeroHtml.includes('freqbeacon-zero-controls-fit.css?v=1'));
+assert.ok(controlFit.includes('.tuning-zone'));
+assert.ok(controlFit.includes('.band-rail'));
+assert.ok(controlFit.includes('.receiver-strip'));
+for (const forbidden of ['#rfCanvas', '.zero-scope-shell', 'aspect-ratio', 'object-fit', 'waterfallBins', 'wf_speed']) {
+  assert.ok(!controlFit.includes(forbidden), 'Control-fit CSS must not touch RF: ' + forbidden);
+}
+
+const navLayout = source('freqbeacon-zero-nav-layout.css');
+assert.ok(zeroHtml.includes('freqbeacon-zero-nav-layout.css?v=1'));
+assert.ok(navLayout.includes('grid-template-rows: minmax(0, 1fr) auto'));
+assert.ok(navLayout.includes('.zero-radio.has-fb-bottom-nav > .fb-bottom-nav'));
+assert.ok(navLayout.includes('position: relative !important'));
+assert.ok(navLayout.includes('overflow-y: auto !important'));
+for (const forbidden of ['#rfCanvas', '.zero-scope-shell', 'aspect-ratio', 'wf_speed', 'waterfallBins']) {
+  assert.ok(!navLayout.includes(forbidden), 'Navigation CSS must not touch RF: ' + forbidden);
+}
+assert.equal((zeroHtml.match(/class="fb-source-link"/g) || []).length, 1);
+const sourceLinkAt = zeroHtml.indexOf('class="fb-source-link"');
+const navAt = zeroHtml.indexOf('<nav class="fb-bottom-nav"');
+assert.ok(sourceLinkAt >= 0 && sourceLinkAt < navAt, 'attribution must remain inside scroll content');
 
 console.log('Zero receiver connection reliability checks passed.');
