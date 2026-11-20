@@ -110,6 +110,22 @@
   .receiver-strip .scope-status { min-height: 18px; font-size: 6px; }
 }
 
+/* Keep a full-width RF spectrum on narrow phones; crop only the bottom
+ * portion of the waterfall to make space for every radio control above nav.
+ * Never stretch the 1024x640 canvas or touch Kiwi tuning coordinates. */
+@media (max-width: 430px) {
+  .zero-scope-shell .scope {
+    height: clamp(150px, 21dvh, 220px);
+    overflow: hidden;
+  }
+
+  .zero-scope-shell #rfCanvas {
+    height: auto !important;
+    max-height: none !important;
+    object-fit: initial;
+  }
+}
+
 @media (max-width: 370px), (max-height: 650px) and (max-width: 600px) {
   .zero-header { min-height: 29px; }
   .zero-readout { min-height: 46px; }
