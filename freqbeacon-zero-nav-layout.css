@@ -1,0 +1,48 @@
+/* Zero-only navigation layout repair.
+ * The navigation occupies its own grid row instead of overlaying the radio.
+ * The full-size waterfall and all RF canvas geometry stay untouched.
+ */
+.zero-radio.has-fb-bottom-nav {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden !important;
+}
+
+.zero-radio.has-fb-bottom-nav > .fb-page-scroll {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100% !important;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  scroll-padding-bottom: 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+.zero-radio.has-fb-bottom-nav > .fb-bottom-nav {
+  grid-column: 1;
+  grid-row: 2;
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  transform: none !important;
+  margin: 0;
+  align-self: end;
+}
+
+/* The existing attribution link stays reachable at the end of the scroll
+ * area; do not let it create a third grid row. */
+.zero-radio > .fb-page-scroll > .fb-source-link {
+  margin: 8px auto 12px;
+  padding: 6px 10px;
+}
