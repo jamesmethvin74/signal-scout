@@ -60,4 +60,17 @@ assert.match(controlFit, /\\.receiver-strip/);
 assert.doesNotMatch(controlFit, /#rfCanvas|\\.zero-scope-shell|\\.scope\\s*\\{|waterfallBins|wf_speed|aspect-ratio|object-fit/,
   'Mobile controls stylesheet must never modify RF canvas, scope, waterfall geometry or protocol');
 
+const navLayout = source('freqbeacon-zero-nav-layout.css');
+assert.match(zeroHtml, /freqbeacon-zero-nav-layout\\.css\\?v=1/);
+assert.match(navLayout, /grid-template-rows:\\s*minmax\\(0, 1fr\\) auto/);
+assert.match(navLayout, /\\.zero-radio\\.has-fb-bottom-nav > \\.fb-bottom-nav\\s*\\{/);
+assert.match(navLayout, /position:\\s*relative\\s*!important/);
+assert.match(navLayout, /overflow-y:\\s*auto\\s*!important/);
+assert.doesNotMatch(navLayout, /#rfCanvas|\\.zero-scope-shell|\\.scope\\s*\\{|aspect-ratio|wf_speed|waterfallBins/,
+  'Zero nav layout must not touch waterfall, scope, canvas or RF protocol');
+assert.equal((zeroHtml.match(/class="fb-source-link"/g) || []).length, 1);
+const sourceLinkAt = zeroHtml.indexOf('class="fb-source-link"');
+const navAt = zeroHtml.indexOf('<nav class="fb-bottom-nav"');
+assert.ok(sourceLinkAt >= 0 && sourceLinkAt < navAt, 'attribution must remain inside scroll content');
+
 console.log('Zero receiver connection reliability checks passed.');
