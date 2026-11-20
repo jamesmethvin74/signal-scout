@@ -1,0 +1,89 @@
+/* Zero mobile controls only. RF canvas, scope, waterfall and Kiwi data are
+ * intentionally outside the scope of this stylesheet.
+ * Restore room beneath the full-size waterfall by compacting adjacent UI.
+ * Overflow remains scrollable on smaller viewport heights. */
+@media (max-width: 600px) {
+  .zero-radio > .fb-page-scroll {
+    scroll-padding-bottom: 16px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+  }
+  .zero-header {
+    min-height: 26px;
+    padding-block: 0;
+  }
+  .zero-tagline { font-size: 10px; }
+  .zero-receiver-context {
+    min-height: 25px;
+    margin-block: 1px;
+    padding-block: 1px;
+  }
+  .zero-readout {
+    min-height: 43px;
+    padding-block: 0;
+  }
+  .zero-frequency span {
+    font-size: clamp(36px, 12vw, 46px);
+  }
+  .mode-bar {
+    margin-bottom: 0;
+  }
+  .mode-bar button {
+    min-height: 26px;
+  }
+
+  /* The band-rail heights in Zero's HTML are !important; override them
+   * after the inline stylesheet without changing its button order. */
+  .band-explorer { padding-block: 0 1px; }
+  .deck-title { height: 12px; font-size: 8px; }
+  .band-rail {
+    grid-template-rows: repeat(2, 24px) !important;
+    padding: 1px 4px !important;
+    gap: 2px !important;
+  }
+  .band-rail button {
+    min-height: 24px !important;
+    font-size: clamp(9px, 2.3vw, 11px) !important;
+    padding-inline: 2px !important;
+  }
+
+  .hardware-deck {
+    margin-top: 0;
+    padding: 1px 4px 2px;
+  }
+  .tuning-zone {
+    min-height: 82px;
+    gap: 2px;
+  }
+  .tuning-knob { width: clamp(82px, 25vw, 94px); }
+  .fine-tune { gap: 2px; }
+  .fine-buttons button { min-height: 26px; }
+  .step-button { min-height: 27px; }
+  .meter-row {
+    min-height: 37px;
+    margin-bottom: 0;
+  }
+  .lower-controls {
+    padding-block: 0;
+    gap: 3px;
+  }
+  .control-block { gap: 1px; }
+  .hardware-slider { height: 18px; }
+  .hardware-slider::before,
+  .hardware-slider i { top: 8px; }
+  .hardware-slider b { top: 0; }
+  .hardware-button.mute,
+  .agc-switch { min-height: 27px; }
+  .mini-knob { width: 25px; height: 25px; }
+  .receiver-strip {
+    margin-top: 0;
+    padding: 1px 6px;
+  }
+  .receiver-line { min-height: 10px; }
+  .receiver-actions { min-height: 19px; }
+  .receiver-strip .scope-status { min-height: 18px; }
+}
+
+@media (max-width: 370px) {
+  .tuning-zone { min-height: 78px; }
+  .tuning-knob { width: 82px; }
+}

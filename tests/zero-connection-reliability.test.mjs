@@ -52,4 +52,12 @@ assert.match(zeroHtml, /freqbeacon-zero-viewport\.css\?v=6/);
 assert.doesNotMatch(viewportCss, /21dvh|\.zero-scope-shell \.scope\s*\{\s*height:/,
   'Never crop the live waterfall on narrow Android screens');
 
+const controlFit = source('freqbeacon-zero-controls-fit.css');
+assert.match(zeroHtml, /freqbeacon-zero-controls-fit\\.css\\?v=1/);
+assert.match(controlFit, /\\.tuning-zone/);
+assert.match(controlFit, /\\.band-rail/);
+assert.match(controlFit, /\\.receiver-strip/);
+assert.doesNotMatch(controlFit, /#rfCanvas|\\.zero-scope-shell|\\.scope\\s*\\{|waterfallBins|wf_speed|aspect-ratio|object-fit/,
+  'Mobile controls stylesheet must never modify RF canvas, scope, waterfall geometry or protocol');
+
 console.log('Zero receiver connection reliability checks passed.');
