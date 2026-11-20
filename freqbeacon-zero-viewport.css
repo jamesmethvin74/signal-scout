@@ -50,23 +50,6 @@
     font-size: 6px;
   }
 
-  /*
-   * On a compact phone the full-width 1024x640 canvas alone can consume
-   * nearly a third of the screen. Keep native bin geometry and full-width
-   * spectrum; crop only the lower waterfall viewport rather than stretching
-   * RF pixels or hiding the physical controls below the fixed navigation.
-   * The existing scope/canvas coordinate math remains unchanged.
-   */
-  .zero-scope-shell .scope {
-    height: clamp(150px, 21dvh, 220px);
-    overflow: hidden;
-  }
-  .zero-scope-shell #rfCanvas {
-    height: auto !important;
-    max-height: none !important;
-    object-fit: initial;
-  }
-
   .zero-readout { min-height: 49px; }
   .mode-bar { margin-bottom: 1px; }
   .mode-bar button { min-height: 28px; }
@@ -125,6 +108,22 @@
   .receiver-line { min-height: 11px; font-size: 6px; }
   .receiver-actions { min-height: 20px; }
   .receiver-strip .scope-status { min-height: 18px; font-size: 6px; }
+}
+
+/* Keep a full-width RF spectrum on narrow phones; crop only the bottom
+ * portion of the waterfall to make space for every radio control above nav.
+ * Never stretch the 1024x640 canvas or touch Kiwi tuning coordinates. */
+@media (max-width: 430px) {
+  .zero-scope-shell .scope {
+    height: clamp(150px, 21dvh, 220px);
+    overflow: hidden;
+  }
+
+  .zero-scope-shell #rfCanvas {
+    height: auto !important;
+    max-height: none !important;
+    object-fit: initial;
+  }
 }
 
 @media (max-width: 370px), (max-height: 650px) and (max-width: 600px) {
